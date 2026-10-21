@@ -6,6 +6,7 @@ config :bastion,
   agent_token: "test-agent-token",
   admin_password: "secret",
   telegram_bot_token: nil,
+  telegram_polling: false,
   check_certs: false,
   login_failure_delay_ms: 0,
   req_options: [plug: {Req.Test, Bastion.Http}]

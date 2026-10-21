@@ -7,24 +7,30 @@ defmodule Bastion.Application do
 
   @impl true
   def start(_type, _args) do
-    children = [
-      BastionWeb.Telemetry,
-      Bastion.Repo,
-      {DNSCluster, query: Application.get_env(:bastion, :dns_cluster_query) || :ignore},
-      {Phoenix.PubSub, name: Bastion.PubSub},
-      BastionWeb.Presence,
-      {Oban, Application.fetch_env!(:bastion, Oban)},
-      # Start a worker by calling: Bastion.Worker.start_link(arg)
-      # {Bastion.Worker, arg},
-      # Start to serve requests, typically the last entry
-      BastionWeb.Endpoint
-    ]
+    children =
+      [
+        BastionWeb.Telemetry,
+        Bastion.Repo,
+        {DNSCluster, query: Application.get_env(:bastion, :dns_cluster_query) || :ignore},
+        {Phoenix.PubSub, name: Bastion.PubSub},
+        BastionWeb.Presence,
+        {Oban, Application.fetch_env!(:bastion, Oban)},
+        {Task.Supervisor, name: Bastion.TaskSupervisor}
+      ] ++
+        telegram() ++
+        [
+          # Start to serve requests, typically the last entry
+          BastionWeb.Endpoint
+        ]
 
     # See https://elixir.hexdocs.pm/Supervisor.html
     # for other strategies and supported options
     opts = [strategy: :one_for_one, name: Bastion.Supervisor]
     Supervisor.start_link(children, opts)
   end
+
+  defp telegram,
+    do: if(Bastion.Telegram.polling?(), do: [Bastion.Telegram.Server], else: [])
 
   # Tell Phoenix to update the endpoint configuration
   # whenever the application is updated.

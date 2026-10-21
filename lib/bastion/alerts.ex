@@ -1,7 +1,7 @@
 defmodule Bastion.Alerts do
   require Logger
 
-  alias Bastion.Downtime
+  alias Bastion.{Downtime, Telegram}
   alias Bastion.Instances.Instance
 
   @silent ["unknown"]
@@ -14,8 +14,11 @@ defmodule Bastion.Alerts do
       ) do
     if previous in @silent and level == :ok,
       do: :skipped,
-      else: instance |> message(health, downtime) |> send_message()
+      else: instance |> message(health, downtime) |> send_message(open_button(instance))
   end
+
+  defp open_button(instance),
+    do: %{reply_markup: Telegram.keyboard([[{"Открыть", "i:" <> instance.id}]])}
 
   def message(instance, health, downtime \\ :none)
 
@@ -38,21 +41,14 @@ defmodule Bastion.Alerts do
     Enum.join([title | Enum.map(problems, &("• " <> &1))], "\n")
   end
 
-  def send_message(text) do
-    token = Application.get_env(:bastion, :telegram_bot_token)
-    chat_id = Application.get_env(:bastion, :telegram_chat_id)
-
-    if token && chat_id do
-      case Req.post(
-             "https://api.telegram.org/bot#{token}/sendMessage",
-             [json: %{chat_id: chat_id, text: text}, retry: false] ++
-               Application.get_env(:bastion, :req_options, [])
-           ) do
-        {:ok, %{status: 200}} ->
+  def send_message(text, params \\ %{}) do
+    if Telegram.configured?() do
+      case Telegram.send_message(text, params) do
+        {:ok, _message} ->
           :ok
 
-        other ->
-          Logger.warning("telegram alert was not sent: #{inspect(other)}")
+        {:error, reason} ->
+          Logger.warning("telegram alert was not sent: #{inspect(reason)}")
           :error
       end
     else

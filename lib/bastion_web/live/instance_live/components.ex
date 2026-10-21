@@ -96,15 +96,7 @@ defmodule BastionWeb.InstanceLive.Components do
     end
   end
 
-  def action_label("update"), do: "Обновление"
-  def action_label("restart"), do: "Перезапуск"
-  def action_label("stop"), do: "Выключение"
-  def action_label("start"), do: "Включение"
-  def action_label("logs"), do: "Логи"
-  def action_label("status"), do: "Статус"
-  def action_label("env_read"), do: "Чтение .env"
-  def action_label("env_write"), do: "Запись .env"
-  def action_label(action), do: action
+  defdelegate action_label(action), to: Bastion.Instances
 
   attr :status, :string, required: true
 
