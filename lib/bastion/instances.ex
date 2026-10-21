@@ -6,7 +6,8 @@ defmodule Bastion.Instances do
   alias BastionWeb.Presence
 
   @topic "instances"
-  @actions ~w(status update start stop restart logs)
+  @actions ~w(status update start stop restart logs env_read env_write)
+  @secret_args %{"env_write" => ["content"]}
 
   def actions, do: @actions
 
@@ -88,7 +89,7 @@ defmodule Bastion.Instances do
           Repo.insert(%Command{
             instance_id: instance.id,
             action: action,
-            args: args,
+            args: Map.drop(args, Map.get(@secret_args, action, [])),
             status: "sent",
             requested_by: requested_by
           })
@@ -96,7 +97,7 @@ defmodule Bastion.Instances do
         Phoenix.PubSub.broadcast(
           Bastion.PubSub,
           commands_topic(instance.id),
-          {:push_command, command}
+          {:push_command, %{command | args: args}}
         )
 
         broadcast({:ok, command}, :command_updated)
@@ -108,11 +109,15 @@ defmodule Bastion.Instances do
   end
 
   def command_finished(instance_id, command_id, ok?, output) do
-    update_command(instance_id, command_id,
-      status: if(ok?, do: "ok", else: "error"),
-      output: format_output(output),
-      finished_at: now()
-    )
+    update_command(instance_id, command_id, fn command ->
+      if command.action == "env_read" and ok?, do: broadcast_env(command, output)
+
+      [
+        status: if(ok?, do: "ok", else: "error"),
+        output: if(command.action == "env_read" and ok?, do: nil, else: format_output(output)),
+        finished_at: now()
+      ]
+    end)
   end
 
   def list_commands(instance_id, limit \\ 20) do
@@ -126,11 +131,18 @@ defmodule Bastion.Instances do
   defp update_command(instance_id, command_id, changes) do
     with {:ok, command_id} <- Ecto.UUID.cast(command_id),
          %Command{} = command <- Repo.get_by(Command, id: command_id, instance_id: instance_id) do
+      changes = if is_function(changes, 1), do: changes.(command), else: changes
       command |> Ecto.Changeset.change(changes) |> Repo.update() |> broadcast(:command_updated)
     else
       _ -> {:error, :not_found}
     end
   end
+
+  # The .env holds secrets, so it goes to the open pages and never to the database.
+  defp broadcast_env(command, content) when is_binary(content),
+    do: Phoenix.PubSub.broadcast(Bastion.PubSub, @topic, {:env_loaded, command, content})
+
+  defp broadcast_env(_command, _content), do: :ok
 
   defp format_output(output) when is_binary(output), do: output
   defp format_output(nil), do: nil

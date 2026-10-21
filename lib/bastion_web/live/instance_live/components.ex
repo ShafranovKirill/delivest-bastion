@@ -94,6 +94,8 @@ defmodule BastionWeb.InstanceLive.Components do
   def action_label("start"), do: "Включение"
   def action_label("logs"), do: "Логи"
   def action_label("status"), do: "Статус"
+  def action_label("env_read"), do: "Чтение .env"
+  def action_label("env_write"), do: "Запись .env"
   def action_label(action), do: action
 
   attr :status, :string, required: true

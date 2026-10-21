@@ -53,6 +53,22 @@ defmodule Bastion.InstancesTest do
     assert id == command.id
   end
 
+  test "the .env never lands in the database" do
+    instance = instance_fixture()
+    Bastion.Instances.subscribe()
+    Instances.subscribe_commands(instance.id)
+    {:ok, _} = BastionWeb.Presence.track_agent(self(), instance.id)
+
+    assert {:ok, write} = Instances.send_command(instance, "env_write", %{"content" => "A=1"})
+    assert_received {:push_command, %{args: %{"content" => "A=1"}}}
+    assert Repo.reload!(write).args == %{}
+
+    assert {:ok, read} = Instances.send_command(instance, "env_read")
+    assert {:ok, %{output: nil}} = Instances.command_finished(instance.id, read.id, true, "A=1\n")
+    assert_received {:env_loaded, %{id: id}, "A=1\n"}
+    assert id == read.id
+  end
+
   test "deleting an instance removes its commands" do
     instance = instance_fixture()
 

@@ -87,6 +87,26 @@ defmodule BastionWeb.InstanceLiveTest do
     assert_receive {:agent_got, "logs", %{"service" => "server", "tail" => "50"}}
   end
 
+  test "reads the .env and saves the edited one", %{conn: conn} do
+    instance = instance_fixture()
+    bring_online(instance)
+
+    {:ok, lv, _html} = live(log_in(conn), ~p"/instances/#{instance.id}")
+    refute has_element?(lv, "#env-form")
+
+    lv |> element("#env-load") |> render_click()
+    assert_receive {:agent_got, "env_read", %{}}
+
+    [command] = Instances.list_commands(instance.id)
+    Instances.command_finished(instance.id, command.id, true, "PHX_HOST=a.example.com\n")
+
+    assert has_element?(lv, "#env-form textarea", "PHX_HOST=a.example.com")
+    refute render(lv) =~ "<pre"
+
+    lv |> form("#env-form", %{"content" => "PHX_HOST=b.example.com\n"}) |> render_submit()
+    assert_receive {:agent_got, "env_write", %{"content" => "PHX_HOST=b.example.com\n"}}
+  end
+
   test "offline agents get no commands and can be removed", %{conn: conn} do
     instance = instance_fixture()
     {:ok, lv, _html} = live(log_in(conn), ~p"/instances/#{instance.id}")

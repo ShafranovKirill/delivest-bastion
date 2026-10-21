@@ -25,7 +25,10 @@ defmodule BastionWeb.InstanceLive.Show do
          socket
          |> assign(
            page_title: instance.name,
-           logs_form: to_form(%{"service" => "", "tail" => "200"})
+           logs_form: to_form(%{"service" => "", "tail" => "200"}),
+           env_form: to_form(%{"content" => ""}),
+           env_request: nil,
+           env_loaded?: false
          )
          |> assign_instance(instance)
          |> load_commands()}
@@ -42,6 +45,22 @@ defmodule BastionWeb.InstanceLive.Show do
     {:noreply, send_command(socket, "logs", %{"service" => service, "tail" => tail})}
   end
 
+  def handle_event("env_load", _params, socket) do
+    {:noreply, send_command(socket, "env_read", %{}, &assign(&1, env_request: &2.id))}
+  end
+
+  def handle_event("env_change", %{"content" => content}, socket),
+    do: {:noreply, assign(socket, env_form: to_form(%{"content" => content}))}
+
+  def handle_event("env_save", %{"content" => content}, socket) do
+    socket = assign(socket, env_form: to_form(%{"content" => content}))
+
+    {:noreply,
+     send_command(socket, "env_write", %{"content" => content}, fn socket, _command ->
+       put_flash(socket, :info, ".env отправлен агенту, сервисы будут пересозданы")
+     end)}
+  end
+
   def handle_event("delete", _params, socket) do
     {:ok, _} = Instances.delete_instance(socket.assigns.instance)
     {:noreply, socket |> put_flash(:info, "Экземпляр удалён") |> push_navigate(to: ~p"/")}
@@ -55,10 +74,25 @@ defmodule BastionWeb.InstanceLive.Show do
     do: {:noreply, push_navigate(socket, to: ~p"/")}
 
   def handle_info(
-        {:command_updated, %{instance_id: id}},
+        {:command_updated, %{instance_id: id} = command},
         %{assigns: %{instance: %{id: id}}} = socket
-      ),
-      do: {:noreply, load_commands(socket)}
+      ) do
+    socket =
+      if command.id == socket.assigns.env_request and command.status == "error",
+        do: assign(socket, env_request: nil),
+        else: socket
+
+    {:noreply, load_commands(socket)}
+  end
+
+  def handle_info({:env_loaded, %{id: id}, content}, %{assigns: %{env_request: id}} = socket) do
+    {:noreply,
+     assign(socket,
+       env_form: to_form(%{"content" => content}),
+       env_request: nil,
+       env_loaded?: true
+     )}
+  end
 
   def handle_info(%Phoenix.Socket.Broadcast{event: "presence_diff"}, socket),
     do: {:noreply, reload(socket)}
@@ -66,14 +100,14 @@ defmodule BastionWeb.InstanceLive.Show do
   def handle_info(:tick, socket), do: {:noreply, reload(socket)}
   def handle_info(_message, socket), do: {:noreply, socket}
 
-  defp send_command(socket, action, args) do
+  defp send_command(socket, action, args, on_sent \\ fn socket, _command -> socket end) do
     case Instances.send_command(
            socket.assigns.instance,
            action,
            args,
            socket.assigns.current_admin
          ) do
-      {:ok, _command} -> socket
+      {:ok, command} -> on_sent.(socket, command)
       {:error, :offline} -> put_flash(socket, :error, "Агент не на связи")
       {:error, :unknown_action} -> put_flash(socket, :error, "Неизвестная команда")
     end
@@ -97,6 +131,8 @@ defmodule BastionWeb.InstanceLive.Show do
 
   defp services(instance),
     do: instance |> containers() |> Enum.map(& &1["service"]) |> Enum.filter(&is_binary/1)
+
+  defp env_supported?(instance), do: "env_write" in instance.actions
 
   defp busy?(commands), do: Enum.any?(commands, &(&1.status in ["sent", "running"]))
 
@@ -267,6 +303,60 @@ defmodule BastionWeb.InstanceLive.Show do
               disabled={!@instance.online || busy?(@commands)}
             >
               Показать
+            </button>
+          </.form>
+        </div>
+      </section>
+
+      <section id="env" class="card bg-base-100 border border-base-300">
+        <div class="card-body p-4 gap-3">
+          <div class="flex flex-wrap items-start justify-between gap-2">
+            <div>
+              <h2 class="font-bold">Переменные окружения (.env)</h2>
+              <p class="text-xs text-base-content/60">
+                После сохранения прежний файл остаётся в .env.bak, а сервисы пересоздаются с новыми значениями.
+                Свои переменные агент подхватит только после ручного перезапуска.
+              </p>
+            </div>
+            <button
+              id="env-load"
+              type="button"
+              class="btn btn-sm"
+              phx-click="env_load"
+              disabled={
+                !@instance.online || busy?(@commands) || !env_supported?(@instance) || @env_request
+              }
+            >
+              <span :if={@env_request} class="loading loading-spinner loading-xs"></span>
+              <.icon :if={!@env_request} name="hero-arrow-down-tray" class="size-4" />
+              {if @env_loaded?, do: "Перечитать", else: "Загрузить"}
+            </button>
+          </div>
+          <p :if={!env_supported?(@instance)} class="text-sm text-warning">
+            Агент этого экземпляра не умеет работать с .env, сначала обновите экземпляр.
+          </p>
+          <.form
+            :if={@env_loaded?}
+            for={@env_form}
+            id="env-form"
+            phx-change="env_change"
+            phx-submit="env_save"
+            class="space-y-2"
+          >
+            <textarea
+              name="content"
+              rows="18"
+              spellcheck="false"
+              autocomplete="off"
+              class="textarea w-full font-mono text-xs leading-relaxed"
+            >{Phoenix.HTML.Form.normalize_value("textarea", @env_form[:content].value)}</textarea>
+            <button
+              type="submit"
+              class="btn btn-primary btn-sm"
+              disabled={!@instance.online || busy?(@commands)}
+              data-confirm="Сохранить .env и пересоздать сервисы с новыми значениями?"
+            >
+              <.icon name="hero-check" class="size-4" /> Сохранить и применить
             </button>
           </.form>
         </div>
