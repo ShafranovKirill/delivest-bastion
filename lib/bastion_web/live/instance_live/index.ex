@@ -20,21 +20,6 @@ defmodule BastionWeb.InstanceLive.Index do
   end
 
   @impl true
-  def handle_event("update_all", _params, socket) do
-    sent =
-      socket.assigns.instances
-      |> Enum.filter(& &1.online)
-      |> Enum.count(fn instance ->
-        match?(
-          {:ok, _},
-          Instances.send_command(instance, "update", %{}, socket.assigns.current_admin)
-        )
-      end)
-
-    {:noreply, put_flash(socket, :info, "Обновление отправлено на #{sent} экз.")}
-  end
-
-  @impl true
   def handle_info({event, _record}, socket) when event in [:instance_updated, :instance_deleted],
     do: {:noreply, load(socket)}
 
@@ -61,16 +46,6 @@ defmodule BastionWeb.InstanceLive.Index do
             {length(@instances)} всего · {Enum.count(@instances, & &1.online)} на связи
           </p>
         </div>
-        <button
-          :if={Enum.any?(@instances, & &1.online)}
-          id="update-all"
-          type="button"
-          class="btn btn-primary"
-          phx-click="update_all"
-          data-confirm="Обновить все экземпляры, которые на связи?"
-        >
-          <.icon name="hero-arrow-path" class="size-4" /> Обновить все
-        </button>
       </div>
 
       <div :if={@instances == []} id="instances-empty" class="py-16 text-center text-base-content/60">
