@@ -1,7 +1,7 @@
 defmodule Bastion.Checks.Worker do
   use Oban.Worker, queue: :checks, max_attempts: 1
 
-  alias Bastion.{Alerts, Health, Instances}
+  alias Bastion.{Alerts, Downtime, Health, Instances}
   alias Bastion.Checks.External
 
   @impl Oban.Worker
@@ -23,7 +23,11 @@ defmodule Bastion.Checks.Worker do
       previous = instance.health
 
       {:ok, updated} = Instances.update_checks(instance, external, health.level)
-      if to_string(health.level) != previous, do: Alerts.health_changed(updated, previous, health)
+      downtime = Downtime.track(updated, health)
+
+      if to_string(health.level) != previous,
+        do: Alerts.health_changed(updated, previous, health, downtime)
+
       updated
     end
   end

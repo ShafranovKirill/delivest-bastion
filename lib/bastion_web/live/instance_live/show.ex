@@ -3,7 +3,7 @@ defmodule BastionWeb.InstanceLive.Show do
 
   import BastionWeb.InstanceLive.Components
 
-  alias Bastion.{Health, Instances}
+  alias Bastion.{Downtime, Health, Instances}
   alias BastionWeb.Presence
 
   @tick :timer.seconds(15)
@@ -120,8 +120,14 @@ defmodule BastionWeb.InstanceLive.Show do
     end
   end
 
-  defp assign_instance(socket, instance),
-    do: assign(socket, instance: instance, health: Health.evaluate(instance))
+  defp assign_instance(socket, instance) do
+    assign(socket,
+      instance: instance,
+      health: Health.evaluate(instance),
+      uptime: Downtime.summary(instance),
+      incidents: Downtime.list_incidents(instance.id)
+    )
+  end
 
   defp load_commands(socket),
     do: assign(socket, commands: Instances.list_commands(socket.assigns.instance.id))
@@ -277,6 +283,45 @@ defmodule BastionWeb.InstanceLive.Show do
           </div>
         </section>
       </div>
+
+      <section id="uptime" class="card bg-base-100 border border-base-300">
+        <div class="card-body p-4 gap-3">
+          <h2 class="font-bold">Доступность</h2>
+          <div class="grid grid-cols-3 gap-2">
+            <div :for={period <- Downtime.periods()} class="rounded-box bg-base-200 p-3">
+              <div class="text-xs text-base-content/60">{Downtime.format_period(period)}</div>
+              <div class={["text-xl font-bold tabular-nums", uptime_class(@uptime[period].uptime)]}>
+                {format_uptime(@uptime[period].uptime)}
+              </div>
+              <div class="text-xs text-base-content/60">
+                простой {Downtime.format_duration(@uptime[period].down_seconds)}
+              </div>
+            </div>
+          </div>
+          <table :if={@incidents != []} id="incidents" class="table table-sm">
+            <thead>
+              <tr>
+                <th>Начало</th>
+                <th>Длительность</th>
+                <th>Причина</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr :for={incident <- @incidents} id={"incident-#{incident.id}"}>
+                <td class="whitespace-nowrap text-xs">{datetime(incident.started_at)}</td>
+                <td class="whitespace-nowrap">
+                  {Downtime.format_duration(Downtime.duration(incident))}
+                  <span :if={!incident.ended_at} class="badge badge-error badge-sm">идёт</span>
+                </td>
+                <td class="text-xs text-base-content/70">
+                  {Enum.join(incident.problems, "; ")}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <p :if={@incidents == []} class="text-sm text-base-content/60">Простоев не было</p>
+        </div>
+      </section>
 
       <section class="card bg-base-100 border border-base-300">
         <div class="card-body p-4 gap-3">

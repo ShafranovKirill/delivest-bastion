@@ -1,17 +1,30 @@
 defmodule Bastion.Alerts do
   require Logger
 
+  alias Bastion.Downtime
   alias Bastion.Instances.Instance
 
   @silent ["unknown"]
 
-  def health_changed(%Instance{} = instance, previous, %{level: level} = health) do
+  def health_changed(
+        %Instance{} = instance,
+        previous,
+        %{level: level} = health,
+        downtime \\ :none
+      ) do
     if previous in @silent and level == :ok,
       do: :skipped,
-      else: instance |> message(health) |> send_message()
+      else: instance |> message(health, downtime) |> send_message()
   end
 
-  def message(%Instance{name: name}, %{level: level, problems: problems}) do
+  def message(instance, health, downtime \\ :none)
+
+  def message(%Instance{} = instance, health, {:closed, incident}) do
+    message(instance, health) <>
+      "\nПростой: #{Downtime.format_duration(Downtime.duration(incident))}"
+  end
+
+  def message(%Instance{name: name}, %{level: level, problems: problems}, _downtime) do
     title =
       case level do
         :ok -> "✅ #{name}: всё работает"

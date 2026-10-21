@@ -80,6 +80,13 @@ defmodule BastionWeb.InstanceLive.Components do
 
   def disk_percent(_instance), do: nil
 
+  def format_uptime(uptime) when uptime >= 100, do: "100%"
+  def format_uptime(uptime), do: :erlang.float_to_binary(uptime, decimals: 2) <> "%"
+
+  def uptime_class(uptime) when uptime >= 99.9, do: "text-success"
+  def uptime_class(uptime) when uptime >= 99, do: "text-warning"
+  def uptime_class(_uptime), do: "text-error"
+
   def cert_days(nil), do: nil
 
   def cert_days(expires) do

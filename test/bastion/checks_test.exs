@@ -65,6 +65,20 @@ defmodule Bastion.ChecksTest do
 
     assert :ok = perform_job()
     refute_received {:telegram, _}
+
+    stub(fn
+      %{host: "api.telegram.org"} = conn ->
+        {:ok, body, conn} = Plug.Conn.read_body(conn)
+        send(test_pid, {:telegram, Jason.decode!(body)["text"]})
+        Req.Test.json(conn, %{"ok" => true})
+
+      conn ->
+        Plug.Conn.send_resp(conn, 200, "ok")
+    end)
+
+    assert :ok = perform_job()
+    assert_received {:telegram, "✅ Pizza: всё работает\nПростой: " <> _}
+    assert [%{ended_at: %DateTime{}}] = Bastion.Downtime.list_incidents(instance.id)
   end
 
   test "a planned stop and a running command do not raise alarms" do

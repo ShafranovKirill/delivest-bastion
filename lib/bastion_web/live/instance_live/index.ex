@@ -3,7 +3,7 @@ defmodule BastionWeb.InstanceLive.Index do
 
   import BastionWeb.InstanceLive.Components
 
-  alias Bastion.{Health, Instances}
+  alias Bastion.{Downtime, Health, Instances}
   alias BastionWeb.Presence
 
   @tick :timer.seconds(15)
@@ -32,7 +32,8 @@ defmodule BastionWeb.InstanceLive.Index do
   defp load(socket) do
     instances = Instances.list_instances()
     health = Map.new(instances, &{&1.id, Health.evaluate(&1)})
-    assign(socket, instances: instances, health: health)
+    uptime = Map.new(instances, &{&1.id, Downtime.summary(&1)})
+    assign(socket, instances: instances, health: health, uptime: uptime)
   end
 
   @impl true
@@ -61,6 +62,7 @@ defmodule BastionWeb.InstanceLive.Index do
               <th>API</th>
               <th>Сайт</th>
               <th>Версия</th>
+              <th>Аптайм 7 дн</th>
               <th>Диск</th>
               <th>Связь</th>
             </tr>
@@ -92,6 +94,9 @@ defmodule BastionWeb.InstanceLive.Index do
               <td><.check check={instance.external["api"]} /></td>
               <td><.check check={instance.external["site"]} /></td>
               <td class="font-mono text-xs">{revision(instance, "server") || "—"}</td>
+              <td class={["tabular-nums", uptime_class(@uptime[instance.id].week.uptime)]}>
+                {format_uptime(@uptime[instance.id].week.uptime)}
+              </td>
               <td>{(disk_percent(instance) && "#{disk_percent(instance)}%") || "—"}</td>
               <td class="text-xs whitespace-nowrap">{ago(instance.last_seen_at)}</td>
             </tr>

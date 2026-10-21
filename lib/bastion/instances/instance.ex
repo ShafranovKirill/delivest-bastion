@@ -19,6 +19,7 @@ defmodule Bastion.Instances.Instance do
     field :online, :boolean, virtual: true, default: false
 
     has_many :commands, Bastion.Instances.Command
+    has_many :incidents, Bastion.Downtime.Incident
 
     timestamps(type: :utc_datetime)
   end
