@@ -13,11 +13,18 @@ defmodule Bastion.Checks.Worker do
 
   def check(instance) do
     external = External.run(instance.hosts)
-    health = Health.evaluate(%{instance | external: external})
-    previous = instance.health
 
-    {:ok, updated} = Instances.update_checks(instance, external, health.level)
-    if to_string(health.level) != previous, do: Alerts.health_changed(updated, previous, health)
-    updated
+    if Instances.busy?(instance.id) do
+      # An update or a stop is in progress, the site may be down on purpose.
+      {:ok, updated} = Instances.update_checks(instance, external, instance.health)
+      updated
+    else
+      health = Health.evaluate(%{instance | external: external})
+      previous = instance.health
+
+      {:ok, updated} = Instances.update_checks(instance, external, health.level)
+      if to_string(health.level) != previous, do: Alerts.health_changed(updated, previous, health)
+      updated
+    end
   end
 end

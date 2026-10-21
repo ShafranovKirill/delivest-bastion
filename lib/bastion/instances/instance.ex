@@ -15,6 +15,7 @@ defmodule Bastion.Instances.Instance do
     field :external, :map, default: %{}
     field :checked_at, :utc_datetime
     field :health, :string, default: "unknown"
+    field :stopped_at, :utc_datetime
     field :online, :boolean, virtual: true, default: false
 
     has_many :commands, Bastion.Instances.Command

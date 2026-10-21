@@ -6,6 +6,7 @@ defmodule BastionWeb.InstanceLive.Components do
     warning: {"badge-warning", "Предупреждения"},
     down: {"badge-error", "Ошибки"},
     offline: {"badge-neutral", "Не на связи"},
+    stopped: {"badge-info", "Выключен"},
     unknown: {"badge-ghost", "Нет данных"}
   }
 

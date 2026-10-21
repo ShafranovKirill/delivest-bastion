@@ -209,6 +209,14 @@ defmodule BastionWeb.InstanceLive.Show do
         </div>
       </div>
 
+      <div :if={@instance.stopped_at} id="instance-stopped" class="alert alert-info">
+        <.icon name="hero-pause-circle" class="size-5" />
+        <span>
+          Сайт выключен по плану {datetime(@instance.stopped_at)}. Пока его не включат,
+          недоступность не считается ошибкой и уведомления не приходят.
+        </span>
+      </div>
+
       <div :if={@health.problems != []} id="instance-problems" class="alert alert-warning">
         <ul class="list-disc pl-5">
           <li :for={problem <- @health.problems}>{problem}</li>

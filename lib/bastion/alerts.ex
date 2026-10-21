@@ -18,6 +18,7 @@ defmodule Bastion.Alerts do
         :warning -> "⚠️ #{name}: есть предупреждения"
         :down -> "🔴 #{name}: сайт работает с ошибками"
         :offline -> "⚫ #{name}: агент не на связи"
+        :stopped -> "⏸ #{name}: выключен по плану"
         :unknown -> "❔ #{name}: нет данных"
       end
 

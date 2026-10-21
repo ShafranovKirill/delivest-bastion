@@ -38,6 +38,21 @@ defmodule Bastion.HealthTest do
              )
   end
 
+  test "a planned stop is not an error" do
+    status =
+      put_in(Bastion.Fixtures.healthy_status(), ["containers"], [
+        %{"service" => "server", "state" => "exited"}
+      ])
+
+    external = %{"api" => %{"ok" => false, "status" => 502}}
+
+    assert %{level: :stopped, problems: []} =
+             Health.evaluate(
+               instance(%{status: status, external: external, stopped_at: @now}),
+               @now
+             )
+  end
+
   test "stopped containers and failed checks are errors" do
     status =
       Bastion.Fixtures.healthy_status()

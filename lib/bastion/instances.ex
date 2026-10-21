@@ -8,6 +8,8 @@ defmodule Bastion.Instances do
   @topic "instances"
   @actions ~w(status update start stop restart logs env_read env_write)
   @secret_args %{"env_write" => ["content"]}
+  @starting_actions ~w(start restart update env_write)
+  @busy_window_seconds 25 * 60
 
   def actions, do: @actions
 
@@ -109,7 +111,8 @@ defmodule Bastion.Instances do
   end
 
   def command_finished(instance_id, command_id, ok?, output) do
-    update_command(instance_id, command_id, fn command ->
+    instance_id
+    |> update_command(command_id, fn command ->
       if command.action == "env_read" and ok?, do: broadcast_env(command, output)
 
       [
@@ -118,6 +121,17 @@ defmodule Bastion.Instances do
         finished_at: now()
       ]
     end)
+    |> tap(&track_planned_stop/1)
+  end
+
+  @doc "Whether a command is in flight, so the site may be down on purpose."
+  def busy?(instance_id) do
+    since = DateTime.add(now(), -@busy_window_seconds)
+
+    Command
+    |> where([c], c.instance_id == ^instance_id and c.status in ["sent", "running"])
+    |> where([c], c.inserted_at > ^since)
+    |> Repo.exists?()
   end
 
   def list_commands(instance_id, limit \\ 20) do
@@ -143,6 +157,22 @@ defmodule Bastion.Instances do
     do: Phoenix.PubSub.broadcast(Bastion.PubSub, @topic, {:env_loaded, command, content})
 
   defp broadcast_env(_command, _content), do: :ok
+
+  defp track_planned_stop({:ok, %Command{status: "ok", action: action} = command}) do
+    stopped_at =
+      cond do
+        action == "stop" -> now()
+        action in @starting_actions -> nil
+        true -> :keep
+      end
+
+    with true <- stopped_at != :keep,
+         %Instance{} = instance <- Repo.get(Instance, command.instance_id) do
+      instance |> Ecto.Changeset.change(stopped_at: stopped_at) |> Repo.update() |> broadcast()
+    end
+  end
+
+  defp track_planned_stop(_result), do: :ok
 
   defp format_output(output) when is_binary(output), do: output
   defp format_output(nil), do: nil

@@ -12,6 +12,9 @@ defmodule Bastion.Health do
       not instance.online and stale?(instance, now) ->
         %{level: :offline, problems: ["агент не на связи с #{instance.last_seen_at}"]}
 
+      instance.stopped_at ->
+        %{level: :stopped, problems: []}
+
       true ->
         problems = problems(instance)
         warnings = warnings(instance, now)
