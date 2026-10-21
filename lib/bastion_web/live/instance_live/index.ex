@@ -1,0 +1,129 @@
+defmodule BastionWeb.InstanceLive.Index do
+  use BastionWeb, :live_view
+
+  import BastionWeb.InstanceLive.Components
+
+  alias Bastion.{Health, Instances}
+  alias BastionWeb.Presence
+
+  @tick :timer.seconds(15)
+
+  @impl true
+  def mount(_params, _session, socket) do
+    if connected?(socket) do
+      Instances.subscribe()
+      Phoenix.PubSub.subscribe(Bastion.PubSub, Presence.topic())
+      :timer.send_interval(@tick, :tick)
+    end
+
+    {:ok, socket |> assign(page_title: "Экземпляры") |> load()}
+  end
+
+  @impl true
+  def handle_event("update_all", _params, socket) do
+    sent =
+      socket.assigns.instances
+      |> Enum.filter(& &1.online)
+      |> Enum.count(fn instance ->
+        match?(
+          {:ok, _},
+          Instances.send_command(instance, "update", %{}, socket.assigns.current_admin)
+        )
+      end)
+
+    {:noreply, put_flash(socket, :info, "Обновление отправлено на #{sent} экз.")}
+  end
+
+  @impl true
+  def handle_info({event, _record}, socket) when event in [:instance_updated, :instance_deleted],
+    do: {:noreply, load(socket)}
+
+  def handle_info(%Phoenix.Socket.Broadcast{event: "presence_diff"}, socket),
+    do: {:noreply, load(socket)}
+
+  def handle_info(:tick, socket), do: {:noreply, load(socket)}
+  def handle_info(_message, socket), do: {:noreply, socket}
+
+  defp load(socket) do
+    instances = Instances.list_instances()
+    health = Map.new(instances, &{&1.id, Health.evaluate(&1)})
+    assign(socket, instances: instances, health: health)
+  end
+
+  @impl true
+  def render(assigns) do
+    ~H"""
+    <Layouts.app flash={@flash} current_admin={@current_admin}>
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 class="text-2xl font-bold">Экземпляры</h1>
+          <p class="text-sm text-base-content/60">
+            {length(@instances)} всего · {Enum.count(@instances, & &1.online)} на связи
+          </p>
+        </div>
+        <button
+          :if={Enum.any?(@instances, & &1.online)}
+          id="update-all"
+          type="button"
+          class="btn btn-primary"
+          phx-click="update_all"
+          data-confirm="Обновить все экземпляры, которые на связи?"
+        >
+          <.icon name="hero-arrow-path" class="size-4" /> Обновить все
+        </button>
+      </div>
+
+      <div :if={@instances == []} id="instances-empty" class="py-16 text-center text-base-content/60">
+        Пока ни один агент не подключился. Укажите в .env экземпляра BASTION_URL и BASTION_TOKEN.
+      </div>
+
+      <div :if={@instances != []} class="overflow-x-auto rounded-box border border-base-300">
+        <table id="instances" class="table">
+          <thead>
+            <tr>
+              <th>Экземпляр</th>
+              <th>Состояние</th>
+              <th>API</th>
+              <th>Сайт</th>
+              <th>Версия</th>
+              <th>Диск</th>
+              <th>Связь</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              :for={instance <- @instances}
+              id={"instance-#{instance.id}"}
+              class="hover:bg-base-200 cursor-pointer"
+              phx-click={JS.navigate(~p"/instances/#{instance.id}")}
+            >
+              <td>
+                <div class="flex items-center gap-2">
+                  <.online_dot online={instance.online} />
+                  <span class="font-semibold">{instance.name}</span>
+                </div>
+                <div class="text-xs text-base-content/60">{instance.hosts["site"]}</div>
+              </td>
+              <td>
+                <.health_badge level={@health[instance.id].level} />
+                <div
+                  :for={problem <- Enum.take(@health[instance.id].problems, 2)}
+                  class="text-xs text-base-content/60 max-w-64 truncate"
+                  title={problem}
+                >
+                  {problem}
+                </div>
+              </td>
+              <td><.check check={instance.external["api"]} /></td>
+              <td><.check check={instance.external["site"]} /></td>
+              <td class="font-mono text-xs">{revision(instance, "server") || "—"}</td>
+              <td>{(disk_percent(instance) && "#{disk_percent(instance)}%") || "—"}</td>
+              <td class="text-xs whitespace-nowrap">{ago(instance.last_seen_at)}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </Layouts.app>
+    """
+  end
+end

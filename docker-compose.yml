@@ -1,0 +1,26 @@
+services:
+  bastion:
+    image: ghcr.io/shafranovkirill/delivest-bastion:latest
+    container_name: bastion
+    restart: always
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=ecto://postgres:${DB_PASSWORD}@postgres/bastion
+    ports:
+      - "127.0.0.1:${BASTION_PORT:-4100}:4000"
+    depends_on:
+      - postgres
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: bastion_postgres
+    restart: always
+    environment:
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: bastion
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
