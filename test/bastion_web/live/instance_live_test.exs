@@ -169,4 +169,30 @@ defmodule BastionWeb.InstanceLiveTest do
     assert has_element?(lv, "button.btn-active[phx-value-period=month]")
     assert has_element?(lv, "#load-cpu polyline")
   end
+
+  test "orders that did not reach the crm are shown on the pages", %{conn: conn} do
+    instance = instance_fixture(%{info: %{"name" => "Pizza CRM"}})
+
+    status =
+      Map.put(healthy_status(), "crm", [
+        %{
+          "id" => "o1",
+          "number" => "A017",
+          "branch" => "Центр",
+          "status" => "failed",
+          "error" => "timeout",
+          "attempts" => 7,
+          "inserted_at" => "2026-10-22T07:26:43"
+        }
+      ])
+
+    {:ok, _} = Instances.record_heartbeat(instance.id, status)
+
+    {:ok, lv, _html} = live(log_in(conn), ~p"/instances/#{instance.id}")
+    assert has_element?(lv, "#crm-order-o1", "A017")
+    assert has_element?(lv, "#crm-order-o1", "не ушёл")
+
+    {:ok, list, _html} = live(log_in(conn), ~p"/")
+    assert has_element?(list, "#instance-#{instance.id}", "CRM: 1")
+  end
 end

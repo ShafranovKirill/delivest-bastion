@@ -83,6 +83,13 @@ defmodule BastionWeb.InstanceLive.Index do
               </td>
               <td>
                 <.health_badge level={@health[instance.id].level} />
+                <span
+                  :if={Bastion.CrmAlerts.problems(instance) != []}
+                  class="badge badge-error badge-sm ml-1"
+                  title="Заказы не дошли до CRM"
+                >
+                  CRM: {length(Bastion.CrmAlerts.problems(instance))}
+                </span>
                 <div
                   :for={problem <- Enum.take(@health[instance.id].problems, 2)}
                   class="text-xs text-base-content/60 max-w-64 truncate"

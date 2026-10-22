@@ -4,7 +4,7 @@ defmodule BastionWeb.InstanceLive.Show do
   import BastionWeb.InstanceLive.Components
   import BastionWeb.InstanceLive.LoadChart
 
-  alias Bastion.{Backups, Downtime, Health, Instances, Metrics}
+  alias Bastion.{Backups, CrmAlerts, Downtime, Health, Instances, Metrics}
   alias BastionWeb.Presence
 
   @tick :timer.seconds(15)
@@ -296,6 +296,42 @@ defmodule BastionWeb.InstanceLive.Show do
           недоступность не считается ошибкой и уведомления не приходят.
         </span>
       </div>
+
+      <section
+        :if={CrmAlerts.problems(@instance) != []}
+        id="crm-problems"
+        class="rounded-box border border-error/40 bg-error/5 p-4 space-y-2"
+      >
+        <h2 class="flex items-center gap-2 font-bold text-error">
+          <.icon name="hero-exclamation-triangle" class="size-5" /> Заказы не дошли до CRM
+        </h2>
+        <p class="text-xs text-base-content/70">
+          За последние сутки: окончательно не отправленные и висящие в очереди дольше 5 минут.
+          Неотправленные заказы нужно передать в CRM вручную.
+        </p>
+        <div class="overflow-x-auto">
+          <table class="table table-sm">
+            <tbody>
+              <tr :for={order <- CrmAlerts.problems(@instance)} id={"crm-order-#{order["id"]}"}>
+                <td class="font-semibold whitespace-nowrap">№{order["number"]}</td>
+                <td class="whitespace-nowrap">
+                  <span :if={order["status"] == "failed"} class="badge badge-error badge-sm">
+                    не ушёл
+                  </span>
+                  <span :if={order["status"] != "failed"} class="badge badge-warning badge-sm">
+                    в очереди
+                  </span>
+                </td>
+                <td class="text-xs">{order["branch"]}</td>
+                <td class="text-xs text-base-content/70 max-w-80 break-words">{order["error"]}</td>
+                <td class="text-xs whitespace-nowrap text-base-content/60">
+                  {datetime(CrmAlerts.inserted_at(order))}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
 
       <div :if={@health.problems != []} id="instance-problems" class="alert alert-warning">
         <ul class="list-disc pl-5">
