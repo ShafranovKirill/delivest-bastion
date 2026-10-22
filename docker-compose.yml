@@ -7,10 +7,12 @@ services:
       - .env
     environment:
       - DATABASE_URL=ecto://postgres:${DB_PASSWORD}@postgres/bastion
+      - S3_URL=http://s3:8333
     ports:
       - "127.0.0.1:${BASTION_PORT:-4100}:4000"
     depends_on:
       - postgres
+      - s3
 
   postgres:
     image: postgres:16-alpine
@@ -22,5 +24,30 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
+  s3:
+    image: chrislusf/seaweedfs
+    container_name: bastion_s3
+    restart: always
+    entrypoint:
+      - sh
+      - -c
+      - |
+        set -e
+        mkdir -p /etc/seaweedfs
+        cat > /etc/seaweedfs/s3.json <<JSON
+        {"identities": [
+          {"name": "bastion",
+           "credentials": [{"accessKey": "$$S3_ACCESS_KEY", "secretKey": "$$S3_SECRET_KEY"}],
+           "actions": ["Admin", "Read", "List", "Tagging", "Write"]}
+        ]}
+        JSON
+        exec weed server -s3 -s3.port=8333 -s3.config=/etc/seaweedfs/s3.json -dir=/data
+    environment:
+      - S3_ACCESS_KEY=${S3_ACCESS_KEY}
+      - S3_SECRET_KEY=${S3_SECRET_KEY}
+    volumes:
+      - s3_data:/data
+
 volumes:
   postgres_data:
+  s3_data:
