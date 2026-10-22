@@ -1,7 +1,7 @@
 defmodule BastionWeb.InstanceChannel do
   use Phoenix.Channel
 
-  alias Bastion.Instances
+  alias Bastion.{Backups, Instances}
   alias BastionWeb.Presence
 
   @impl true
@@ -49,7 +49,15 @@ defmodule BastionWeb.InstanceChannel do
   end
 
   def handle_in("command_result", %{"id" => id, "ok" => ok?} = result, socket) do
-    Instances.command_finished(socket.assigns.instance_id, id, ok? == true, result["output"])
+    with {:ok, command} <-
+           Instances.command_finished(
+             socket.assigns.instance_id,
+             id,
+             ok? == true,
+             result["output"]
+           ),
+         do: Backups.command_finished(command)
+
     {:reply, :ok, socket}
   end
 

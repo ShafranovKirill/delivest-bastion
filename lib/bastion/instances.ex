@@ -6,8 +6,8 @@ defmodule Bastion.Instances do
   alias BastionWeb.Presence
 
   @topic "instances"
-  @actions ~w(status update start stop restart logs env_read env_write)
-  @secret_args %{"env_write" => ["content"]}
+  @actions ~w(status update start stop restart logs env_read env_write backup restore)
+  @secret_args %{"env_write" => ["content"], "backup" => ["token"], "restore" => ["token"]}
   @starting_actions ~w(start restart update env_write)
   @busy_window_seconds 25 * 60
 
@@ -21,6 +21,8 @@ defmodule Bastion.Instances do
   def action_label("status"), do: "Статус"
   def action_label("env_read"), do: "Чтение .env"
   def action_label("env_write"), do: "Запись .env"
+  def action_label("backup"), do: "Бэкап"
+  def action_label("restore"), do: "Восстановление"
   def action_label(action), do: action
 
   def running_command(instance_id) do

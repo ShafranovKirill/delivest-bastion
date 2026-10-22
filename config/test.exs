@@ -9,7 +9,8 @@ config :bastion,
   telegram_polling: false,
   check_certs: false,
   login_failure_delay_ms: 0,
-  req_options: [plug: {Req.Test, Bastion.Http}]
+  req_options: [plug: {Req.Test, Bastion.Http}],
+  storage: [url: "http://s3.test", bucket: "backups", access_key: "key", secret_key: "secret"]
 
 # Configure your database
 #

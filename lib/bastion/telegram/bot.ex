@@ -4,7 +4,7 @@ defmodule Bastion.Telegram.Bot do
   alias Bastion.{Instances, Telegram}
   alias Bastion.Telegram.Screens
 
-  @notify_actions ~w(update start stop restart env_write)
+  @notify_actions ~w(update start stop restart env_write restore)
   @commands [
     %{command: "menu", description: "Главное меню"},
     %{command: "sites", description: "Сети и их состояние"},

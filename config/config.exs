@@ -60,10 +60,11 @@ config :phoenix, :json_library, Jason
 config :bastion, Oban,
   engine: Oban.Engines.Basic,
   repo: Bastion.Repo,
-  queues: [checks: 2],
+  queues: [checks: 2, backups: 1],
   plugins: [
     {Oban.Plugins.Pruner, max_age: 86_400},
-    {Oban.Plugins.Cron, crontab: [{"* * * * *", Bastion.Checks.Worker}]}
+    {Oban.Plugins.Cron,
+     crontab: [{"* * * * *", Bastion.Checks.Worker}, {"0 0 * * *", Bastion.Backups.Worker}]}
   ]
 
 config :bastion,

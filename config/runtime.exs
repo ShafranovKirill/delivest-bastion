@@ -52,6 +52,14 @@ if config_env() != :test do
   end
 end
 
+if config_env() != :test do
+  config :bastion, :storage,
+    url: System.get_env("S3_URL", "http://s3:8333"),
+    bucket: System.get_env("S3_BUCKET", "backups"),
+    access_key: System.get_env("S3_ACCESS_KEY"),
+    secret_key: System.get_env("S3_SECRET_KEY")
+end
+
 if config_env() == :prod do
   for env <- ["AGENT_TOKEN", "ADMIN_PASSWORD"], System.get_env(env) in [nil, ""] do
     raise "environment variable #{env} is missing"

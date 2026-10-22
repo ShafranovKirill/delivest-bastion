@@ -24,8 +24,15 @@ defmodule BastionWeb.Router do
     delete "/logout", SessionController, :delete
   end
 
+  scope "/agent", BastionWeb do
+    put "/backups/:id", BackupController, :upload
+    get "/backups/:id/file", BackupController, :file
+  end
+
   scope "/", BastionWeb do
     pipe_through [:browser, :admin]
+
+    get "/backups/:id/download", BackupController, :download
 
     live_session :admin, on_mount: [{BastionWeb.Auth, :require_admin}] do
       live "/", InstanceLive.Index, :index
