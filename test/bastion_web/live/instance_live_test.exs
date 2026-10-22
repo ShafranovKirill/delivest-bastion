@@ -69,6 +69,7 @@ defmodule BastionWeb.InstanceLiveTest do
 
     lv |> element("#instance-actions button", "Обновить") |> render_click()
     assert_receive {:agent_got, "update", %{}}
+    assert_patch(lv, ~p"/instances/#{instance.id}?tab=logs")
     assert has_element?(lv, "[id^=command-]", "Обновление")
 
     [command] = Instances.list_commands(instance.id)
@@ -81,7 +82,7 @@ defmodule BastionWeb.InstanceLiveTest do
     {:ok, _} = Instances.record_heartbeat(instance.id, healthy_status())
     bring_online(instance)
 
-    {:ok, lv, _html} = live(log_in(conn), ~p"/instances/#{instance.id}")
+    {:ok, lv, _html} = live(log_in(conn), ~p"/instances/#{instance.id}?tab=logs")
 
     lv |> form("#logs-form", %{"service" => "server", "tail" => "50"}) |> render_submit()
     assert_receive {:agent_got, "logs", %{"service" => "server", "tail" => "50"}}
@@ -91,7 +92,7 @@ defmodule BastionWeb.InstanceLiveTest do
     instance = instance_fixture()
     bring_online(instance)
 
-    {:ok, lv, _html} = live(log_in(conn), ~p"/instances/#{instance.id}")
+    {:ok, lv, _html} = live(log_in(conn), ~p"/instances/#{instance.id}?tab=settings")
     refute has_element?(lv, "#env-form")
 
     lv |> element("#env-load") |> render_click()
@@ -109,7 +110,7 @@ defmodule BastionWeb.InstanceLiveTest do
 
   test "offline agents get no commands and can be removed", %{conn: conn} do
     instance = instance_fixture()
-    {:ok, lv, _html} = live(log_in(conn), ~p"/instances/#{instance.id}")
+    {:ok, lv, _html} = live(log_in(conn), ~p"/instances/#{instance.id}?tab=settings")
 
     assert lv |> element("#instance-actions button", "Обновить") |> render() =~ "disabled"
 
@@ -121,29 +122,63 @@ defmodule BastionWeb.InstanceLiveTest do
   test "backups are made and restored from the instance page", %{conn: conn} do
     Req.Test.stub(Bastion.Http, &Plug.Conn.send_resp(&1, 200, ""))
     instance = instance_fixture(%{info: %{"name" => "Pizza Backup"}})
-    other = instance_fixture(%{info: %{"name" => "Pizza Source"}})
 
     {:ok, done} =
       Bastion.Repo.insert(%Bastion.Backups.Backup{
-        instance_id: other.id,
-        instance_name: other.name,
+        instance_id: instance.id,
+        instance_name: instance.name,
         key: "x.dump",
         status: "ok",
         size: 2_097_152
       })
 
     bring_online(instance)
-    {:ok, lv, _html} = live(log_in(conn), ~p"/instances/#{instance.id}")
+    {:ok, lv, _html} = live(log_in(conn), ~p"/instances/#{instance.id}?tab=backups")
 
-    assert has_element?(lv, "#restore-other option", "Pizza Source")
+    lv |> element("#backup-#{done.id} button", "Восстановить") |> render_click()
+    assert_receive {:agent_got, "restore", %{"backup_id" => backup_id}}
+    assert backup_id == done.id
+
+    [command] = Instances.list_commands(instance.id)
+    Instances.command_finished(instance.id, command.id, true, "restored")
+    {:ok, lv, _html} = live(log_in(conn), ~p"/instances/#{instance.id}?tab=backups")
 
     lv |> element("#backup-now") |> render_click()
     assert_receive {:agent_got, "backup", %{"upload_url" => _}}
     assert has_element?(lv, "#backup-list .badge", "идёт")
+  end
 
-    lv |> form("#restore-other", %{"backup_id" => done.id}) |> render_submit()
+  test "a dump file can be uploaded and restored", %{conn: conn} do
+    Req.Test.stub(Bastion.Http, &Plug.Conn.send_resp(&1, 200, ""))
+    instance = instance_fixture(%{info: %{"name" => "Pizza Upload"}})
+    bring_online(instance)
+
+    {:ok, lv, _html} = live(log_in(conn), ~p"/instances/#{instance.id}?tab=backups")
+
+    dump =
+      file_input(lv, "#restore-file", :dump, [
+        %{name: "prod.dump", content: "PGDMP-file", type: "application/octet-stream"}
+      ])
+
+    render_upload(dump, "prod.dump")
+    lv |> form("#restore-file") |> render_submit()
+
     assert_receive {:agent_got, "restore", %{"backup_id" => backup_id}}
-    assert backup_id == done.id
+    assert %{instance_id: id, status: "ok"} = Bastion.Backups.get(backup_id)
+    assert id == instance.id
+  end
+
+  test "a file that is not a dump is refused", %{conn: conn} do
+    instance = instance_fixture()
+    bring_online(instance)
+
+    {:ok, lv, _html} = live(log_in(conn), ~p"/instances/#{instance.id}?tab=backups")
+
+    dump = file_input(lv, "#restore-file", :dump, [%{name: "notes.txt", content: "hello"}])
+    render_upload(dump, "notes.txt")
+
+    assert lv |> form("#restore-file") |> render_submit() =~ "Файл не принят"
+    refute_receive {:agent_got, "restore", _}
   end
 
   test "the load of the host is shown with charts for a period", %{conn: conn} do
@@ -189,10 +224,20 @@ defmodule BastionWeb.InstanceLiveTest do
     {:ok, _} = Instances.record_heartbeat(instance.id, status)
 
     {:ok, lv, _html} = live(log_in(conn), ~p"/instances/#{instance.id}")
+    assert has_element?(lv, "#tab-errors .badge", "1")
+
+    lv |> element("#tab-errors") |> render_click()
     assert has_element?(lv, "#crm-order-o1", "A017")
     assert has_element?(lv, "#crm-order-o1", "не ушёл")
 
     {:ok, list, _html} = live(log_in(conn), ~p"/")
     assert has_element?(list, "#instance-#{instance.id}", "CRM: 1")
+
+    lv |> element("#crm-order-o1 button", "Убрал") |> render_click()
+    refute has_element?(lv, "#crm-order-o1")
+    assert has_element?(lv, "#tab-errors-panel", "Ошибок нет")
+
+    {:ok, list, _html} = live(log_in(conn), ~p"/")
+    refute has_element?(list, "#instance-#{instance.id}", "CRM:")
   end
 end

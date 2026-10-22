@@ -8,6 +8,14 @@ defmodule BastionWeb.InstanceLive.Show do
   alias BastionWeb.Presence
 
   @tick :timer.seconds(15)
+  @tabs [
+    {"state", "Состояние"},
+    {"errors", "Ошибки"},
+    {"logs", "Логи"},
+    {"backups", "Бэкапы"},
+    {"settings", "Настройки"}
+  ]
+  @max_dump_size 5 * 1024 * 1024 * 1024
 
   @impl true
   def mount(%{"id" => id}, _session, socket) do
@@ -30,8 +38,10 @@ defmodule BastionWeb.InstanceLive.Show do
            env_form: to_form(%{"content" => ""}),
            env_request: nil,
            env_loaded?: false,
-           metrics_period: :day
+           metrics_period: :day,
+           tab: "state"
          )
+         |> allow_upload(:dump, accept: :any, max_entries: 1, max_file_size: @max_dump_size)
          |> assign_instance(instance)
          |> load_commands()
          |> load_backups()
@@ -40,13 +50,49 @@ defmodule BastionWeb.InstanceLive.Show do
   end
 
   @impl true
+  def handle_params(params, _uri, socket) do
+    tab = if Enum.any?(@tabs, &(elem(&1, 0) == params["tab"])), do: params["tab"], else: "state"
+    {:noreply, assign(socket, tab: tab)}
+  end
+
+  @impl true
   def handle_event("command", %{"action" => action}, socket) do
-    {:noreply, send_command(socket, action, %{})}
+    {:noreply, send_command(socket, action, %{}, &show_logs/2)}
   end
 
   def handle_event("logs", %{"service" => service, "tail" => tail}, socket) do
     socket = assign(socket, logs_form: to_form(%{"service" => service, "tail" => tail}))
     {:noreply, send_command(socket, "logs", %{"service" => service, "tail" => tail})}
+  end
+
+  def handle_event("crm_dismiss", %{"id" => order_id}, socket) do
+    case CrmAlerts.dismiss(socket.assigns.instance, order_id) do
+      {:ok, instance} ->
+        {:noreply, assign_instance(socket, instance)}
+
+      {:error, _changeset} ->
+        {:noreply, put_flash(socket, :error, "Не удалось убрать оповещение")}
+    end
+  end
+
+  def handle_event("validate_dump", _params, socket), do: {:noreply, socket}
+
+  def handle_event("restore_file", _params, socket) do
+    %{instance: instance, current_admin: admin} = socket.assigns
+
+    results =
+      consume_uploaded_entries(socket, :dump, fn %{path: path}, entry ->
+        {:ok, Backups.import_file(instance, path, "#{admin} · #{entry.client_name}")}
+      end)
+
+    socket =
+      case results do
+        [{:ok, backup}] -> restore_backup(socket, backup)
+        [{:error, reason}] -> put_flash(socket, :error, "Файл не принят: #{reason}")
+        [] -> put_flash(socket, :error, "Выберите файл дампа")
+      end
+
+    {:noreply, load_backups(socket)}
   end
 
   def handle_event("env_load", _params, socket) do
@@ -82,16 +128,9 @@ defmodule BastionWeb.InstanceLive.Show do
 
   def handle_event("restore", %{"backup_id" => backup_id}, socket) do
     socket =
-      with %{status: "ok"} = backup <- Backups.get(backup_id),
-           {:ok, _command} <-
-             Backups.restore(socket.assigns.instance, backup, socket.assigns.current_admin) do
-        put_flash(socket, :info, "Агент восстанавливает базу из бэкапа")
-      else
-        {:error, :offline} ->
-          put_flash(socket, :error, "Агент не на связи")
-
-        {:error, :unsupported} ->
-          put_flash(socket, :error, "Агент не умеет восстанавливать, обновите экземпляр")
+      case Backups.get(backup_id) do
+        %{status: "ok", instance_id: id} = backup when id == socket.assigns.instance.id ->
+          restore_backup(socket, backup)
 
         _ ->
           put_flash(socket, :error, "Бэкап не найден")
@@ -141,6 +180,24 @@ defmodule BastionWeb.InstanceLive.Show do
   def handle_info(:tick, socket), do: {:noreply, socket |> reload() |> load_metrics()}
   def handle_info(_message, socket), do: {:noreply, socket}
 
+  defp restore_backup(socket, backup) do
+    case Backups.restore(socket.assigns.instance, backup, socket.assigns.current_admin) do
+      {:ok, _command} ->
+        socket
+        |> put_flash(:info, "Агент восстанавливает базу из бэкапа")
+        |> show_logs(nil)
+
+      {:error, :offline} ->
+        put_flash(socket, :error, "Агент не на связи")
+
+      {:error, :unsupported} ->
+        put_flash(socket, :error, "Агент не умеет восстанавливать, обновите экземпляр")
+    end
+  end
+
+  defp show_logs(socket, _command),
+    do: push_patch(socket, to: ~p"/instances/#{socket.assigns.instance.id}?tab=logs")
+
   defp send_command(socket, action, args, on_sent \\ fn socket, _command -> socket end) do
     case Instances.send_command(
            socket.assigns.instance,
@@ -173,10 +230,7 @@ defmodule BastionWeb.InstanceLive.Show do
   defp load_backups(socket) do
     id = socket.assigns.instance.id
 
-    assign(socket,
-      backups: Backups.list(id),
-      other_backups: Enum.reject(Backups.list_restorable(), &(&1.instance_id == id))
-    )
+    assign(socket, backups: Backups.list(id))
   end
 
   defp load_metrics(socket) do
@@ -215,6 +269,17 @@ defmodule BastionWeb.InstanceLive.Show do
   defp env_supported?(instance), do: "env_write" in instance.actions
 
   defp busy?(commands), do: Enum.any?(commands, &(&1.status in ["sent", "running"]))
+
+  defp tabs, do: @tabs
+
+  defp errors_count(instance, health),
+    do:
+      length(CrmAlerts.problems(instance)) + length(health.problems) +
+        map_size(instance.load_alerts)
+
+  defp upload_error(:too_large), do: "файл больше 5 ГБ"
+  defp upload_error(:too_many_files), do: "можно только один файл"
+  defp upload_error(error), do: to_string(error)
 
   @impl true
   def render(assigns) do
@@ -297,446 +362,520 @@ defmodule BastionWeb.InstanceLive.Show do
         </span>
       </div>
 
-      <section
-        :if={CrmAlerts.problems(@instance) != []}
-        id="crm-problems"
-        class="rounded-box border border-error/40 bg-error/5 p-4 space-y-2"
-      >
-        <h2 class="flex items-center gap-2 font-bold text-error">
-          <.icon name="hero-exclamation-triangle" class="size-5" /> Заказы не дошли до CRM
-        </h2>
-        <p class="text-xs text-base-content/70">
-          За последние сутки: окончательно не отправленные и висящие в очереди дольше 5 минут.
-          Неотправленные заказы нужно передать в CRM вручную.
-        </p>
-        <div class="overflow-x-auto">
-          <table class="table table-sm">
-            <tbody>
-              <tr :for={order <- CrmAlerts.problems(@instance)} id={"crm-order-#{order["id"]}"}>
-                <td class="font-semibold whitespace-nowrap">№{order["number"]}</td>
-                <td class="whitespace-nowrap">
-                  <span :if={order["status"] == "failed"} class="badge badge-error badge-sm">
-                    не ушёл
-                  </span>
-                  <span :if={order["status"] != "failed"} class="badge badge-warning badge-sm">
-                    в очереди
-                  </span>
-                </td>
-                <td class="text-xs">{order["branch"]}</td>
-                <td class="text-xs text-base-content/70 max-w-80 break-words">{order["error"]}</td>
-                <td class="text-xs whitespace-nowrap text-base-content/60">
-                  {datetime(CrmAlerts.inserted_at(order))}
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <div :if={@health.problems != []} id="instance-problems" class="alert alert-warning">
-        <ul class="list-disc pl-5">
-          <li :for={problem <- @health.problems}>{problem}</li>
-        </ul>
+      <div role="tablist" id="instance-tabs" class="tabs tabs-box w-fit flex-wrap">
+        <.link
+          :for={{tab, label} <- tabs()}
+          patch={~p"/instances/#{@instance.id}?tab=#{tab}"}
+          role="tab"
+          id={"tab-#{tab}"}
+          class={["tab gap-2", @tab == tab && "tab-active"]}
+        >
+          {label}
+          <span
+            :if={tab == "errors" && errors_count(@instance, @health) > 0}
+            class="badge badge-error badge-sm"
+          >
+            {errors_count(@instance, @health)}
+          </span>
+        </.link>
       </div>
 
-      <div class="grid gap-4 md:grid-cols-2">
-        <section class="card bg-base-100 border border-base-300">
-          <div class="card-body p-4">
-            <h2 class="font-bold">Контейнеры</h2>
-            <table id="containers" class="table table-sm">
-              <tbody>
-                <tr :for={container <- containers(@instance)}>
-                  <td class="font-semibold">{container["service"]}</td>
-                  <td class={(container["state"] == "running" && "text-success") || "text-error"}>
-                    {container["state"]}
-                  </td>
-                  <td class="text-xs text-base-content/60">{container["status"]}</td>
-                  <td class="font-mono text-xs">{String.slice(container["revision"] || "", 0, 7)}</td>
-                </tr>
-                <tr :if={containers(@instance) == []}>
-                  <td class="text-base-content/60">Нет данных</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </section>
+      <div :if={@tab == "state"} id="tab-state-panel" class="space-y-4">
+        <div class="grid gap-4 md:grid-cols-2">
+          <section class="card bg-base-100 border border-base-300">
+            <div class="card-body p-4">
+              <h2 class="font-bold">Контейнеры</h2>
+              <table id="containers" class="table table-sm">
+                <tbody>
+                  <tr :for={container <- containers(@instance)}>
+                    <td class="font-semibold">{container["service"]}</td>
+                    <td class={(container["state"] == "running" && "text-success") || "text-error"}>
+                      {container["state"]}
+                    </td>
+                    <td class="text-xs text-base-content/60">{container["status"]}</td>
+                    <td class="font-mono text-xs">
+                      {String.slice(container["revision"] || "", 0, 7)}
+                    </td>
+                  </tr>
+                  <tr :if={containers(@instance) == []}>
+                    <td class="text-base-content/60">Нет данных</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
 
-        <section class="card bg-base-100 border border-base-300">
-          <div class="card-body p-4">
-            <h2 class="font-bold">Проверки</h2>
-            <table id="checks" class="table table-sm">
-              <thead>
-                <tr>
-                  <th></th>
-                  <th>Изнутри</th>
-                  <th>Снаружи</th>
-                  <th>Сертификат</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr :for={kind <- ["api", "site"]}>
-                  <td class="font-semibold">{if kind == "api", do: "API", else: "Сайт"}</td>
-                  <td><.check check={(@instance.status || %{})["checks"][kind]} /></td>
-                  <td><.check check={@instance.external[kind]} /></td>
-                  <td>
-                    <% days = cert_days(@instance.external[kind]["cert_expires_at"]) %>
-                    <span :if={days} class={days < 14 && "text-warning"}>{days} дн.</span>
-                    <span :if={!days} class="text-base-content/40">—</span>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-            <p class="text-xs text-base-content/60">
-              Диск: {(disk_percent(@instance) && "#{disk_percent(@instance)}% занято") || "—"} ·
-              проверено снаружи {ago(@instance.checked_at)}
+          <section class="card bg-base-100 border border-base-300">
+            <div class="card-body p-4">
+              <h2 class="font-bold">Проверки</h2>
+              <table id="checks" class="table table-sm">
+                <thead>
+                  <tr>
+                    <th></th>
+                    <th>Изнутри</th>
+                    <th>Снаружи</th>
+                    <th>Сертификат</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr :for={kind <- ["api", "site"]}>
+                    <td class="font-semibold">{if kind == "api", do: "API", else: "Сайт"}</td>
+                    <td><.check check={(@instance.status || %{})["checks"][kind]} /></td>
+                    <td><.check check={@instance.external[kind]} /></td>
+                    <td>
+                      <% days = cert_days(@instance.external[kind]["cert_expires_at"]) %>
+                      <span :if={days} class={days < 14 && "text-warning"}>{days} дн.</span>
+                      <span :if={!days} class="text-base-content/40">—</span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+              <p class="text-xs text-base-content/60">
+                Диск: {(disk_percent(@instance) && "#{disk_percent(@instance)}% занято") || "—"} ·
+                проверено снаружи {ago(@instance.checked_at)}
+              </p>
+            </div>
+          </section>
+        </div>
+
+        <section id="load" class="card bg-base-100 border border-base-300">
+          <div class="card-body p-4 gap-4">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <h2 class="font-bold">Нагрузка на сервер</h2>
+              <div role="tablist" class="join">
+                <button
+                  :for={period <- Metrics.periods()}
+                  type="button"
+                  role="tab"
+                  phx-click="metrics_period"
+                  phx-value-period={period}
+                  class={["btn btn-xs join-item", @metrics_period == period && "btn-active"]}
+                >
+                  {Metrics.period_label(period)}
+                </button>
+              </div>
+            </div>
+
+            <div :if={@load} id="load-now" class="grid grid-cols-3 gap-2">
+              <div class="rounded-box bg-base-200 p-3">
+                <div class="text-xs text-base-content/60">Процессор</div>
+                <div class="text-xl font-bold tabular-nums">
+                  {(@load.cpu && percent(@load.cpu)) || "—"}
+                </div>
+                <div :if={@load.cpus} class="text-xs text-base-content/60">{@load.cpus} ядер</div>
+              </div>
+              <div class="rounded-box bg-base-200 p-3">
+                <div class="text-xs text-base-content/60">Память</div>
+                <div class="text-xl font-bold tabular-nums">
+                  {(@load.memory && percent(@load.memory)) || "—"}
+                </div>
+                <div :if={@load.memory_total_kb} class="text-xs text-base-content/60 tabular-nums">
+                  {gigabytes(@load.memory_used_kb)} из {gigabytes(@load.memory_total_kb)}
+                </div>
+              </div>
+              <div class="rounded-box bg-base-200 p-3">
+                <div class="text-xs text-base-content/60">Load average</div>
+                <div class="text-xl font-bold tabular-nums">
+                  {(@load.load && :erlang.float_to_binary(@load.load, decimals: 2)) || "—"}
+                </div>
+                <div class="text-xs text-base-content/60">за минуту</div>
+              </div>
+            </div>
+
+            <p :if={!@load} class="text-sm text-base-content/60">
+              Агент ещё не присылал нагрузку. Если это длится дольше пары минут, обновите агента на сервере.
             </p>
+
+            <div class="grid gap-4 md:grid-cols-2">
+              <.load_chart
+                id="load-cpu"
+                title="Процессор"
+                series={@load_series}
+                field={:cpu}
+                color="text-primary"
+              />
+              <.load_chart
+                id="load-memory"
+                title="Память"
+                series={@load_series}
+                field={:memory}
+                color="text-info"
+              />
+            </div>
+          </div>
+        </section>
+
+        <section id="uptime" class="card bg-base-100 border border-base-300">
+          <div class="card-body p-4 gap-3">
+            <h2 class="font-bold">Доступность</h2>
+            <div class="grid grid-cols-3 gap-2">
+              <div :for={period <- Downtime.periods()} class="rounded-box bg-base-200 p-3">
+                <div class="text-xs text-base-content/60">{Downtime.format_period(period)}</div>
+                <div class={["text-xl font-bold tabular-nums", uptime_class(@uptime[period].uptime)]}>
+                  {format_uptime(@uptime[period].uptime)}
+                </div>
+                <div class="text-xs text-base-content/60">
+                  простой {Downtime.format_duration(@uptime[period].down_seconds)}
+                </div>
+              </div>
+            </div>
           </div>
         </section>
       </div>
 
-      <section id="load" class="card bg-base-100 border border-base-300">
-        <div class="card-body p-4 gap-4">
-          <div class="flex flex-wrap items-center justify-between gap-2">
-            <h2 class="font-bold">Нагрузка на сервер</h2>
-            <div role="tablist" class="join">
-              <button
-                :for={period <- Metrics.periods()}
-                type="button"
-                role="tab"
-                phx-click="metrics_period"
-                phx-value-period={period}
-                class={["btn btn-xs join-item", @metrics_period == period && "btn-active"]}
-              >
-                {Metrics.period_label(period)}
-              </button>
-            </div>
-          </div>
+      <div :if={@tab == "errors"} id="tab-errors-panel" class="space-y-4">
+        <p
+          :if={errors_count(@instance, @health) == 0 && @incidents == []}
+          class="text-sm text-base-content/60"
+        >
+          Ошибок нет
+        </p>
 
-          <div :if={@load} id="load-now" class="grid grid-cols-3 gap-2">
-            <div class="rounded-box bg-base-200 p-3">
-              <div class="text-xs text-base-content/60">Процессор</div>
-              <div class="text-xl font-bold tabular-nums">
-                {(@load.cpu && percent(@load.cpu)) || "—"}
-              </div>
-              <div :if={@load.cpus} class="text-xs text-base-content/60">{@load.cpus} ядер</div>
-            </div>
-            <div class="rounded-box bg-base-200 p-3">
-              <div class="text-xs text-base-content/60">Память</div>
-              <div class="text-xl font-bold tabular-nums">
-                {(@load.memory && percent(@load.memory)) || "—"}
-              </div>
-              <div :if={@load.memory_total_kb} class="text-xs text-base-content/60 tabular-nums">
-                {gigabytes(@load.memory_used_kb)} из {gigabytes(@load.memory_total_kb)}
-              </div>
-            </div>
-            <div class="rounded-box bg-base-200 p-3">
-              <div class="text-xs text-base-content/60">Load average</div>
-              <div class="text-xl font-bold tabular-nums">
-                {(@load.load && :erlang.float_to_binary(@load.load, decimals: 2)) || "—"}
-              </div>
-              <div class="text-xs text-base-content/60">за минуту</div>
-            </div>
-          </div>
+        <div :if={@health.problems != []} id="instance-problems" class="alert alert-warning">
+          <ul class="list-disc pl-5">
+            <li :for={problem <- @health.problems}>{problem}</li>
+          </ul>
+        </div>
 
-          <div
-            :for={{metric, since} <- @instance.load_alerts}
-            id={"load-alert-#{metric}"}
-            class="alert alert-error py-2 text-sm"
-          >
-            <.icon name="hero-fire" class="size-5" />
-            <span>
-              {if metric == "cpu", do: "Процессор", else: "Память"} выше {Bastion.Metrics.Alerts.threshold()}% с {since_label(
-                since
-              )}
-            </span>
-          </div>
+        <div
+          :for={{metric, since} <- @instance.load_alerts}
+          id={"load-alert-#{metric}"}
+          class="alert alert-error py-2 text-sm"
+        >
+          <.icon name="hero-fire" class="size-5" />
+          <span>
+            {if metric == "cpu", do: "Процессор", else: "Память"} выше {Bastion.Metrics.Alerts.threshold()}% с {since_label(
+              since
+            )}
+          </span>
+        </div>
 
-          <p :if={!@load} class="text-sm text-base-content/60">
-            Агент ещё не присылал нагрузку. Если это длится дольше пары минут, обновите агента на сервере.
+        <section
+          :if={CrmAlerts.problems(@instance) != []}
+          id="crm-problems"
+          class="rounded-box border border-error/40 bg-error/5 p-4 space-y-2"
+        >
+          <h2 class="flex items-center gap-2 font-bold text-error">
+            <.icon name="hero-exclamation-triangle" class="size-5" /> Заказы не дошли до CRM
+          </h2>
+          <p class="text-xs text-base-content/70">
+            За последние сутки: окончательно не отправленные и висящие в очереди дольше 5 минут.
+            Неотправленные заказы нужно передать в CRM вручную, а потом нажать «Убрал».
+            В Telegram приходят только заказы, которые окончательно не ушли.
           </p>
-
-          <div class="grid gap-4 md:grid-cols-2">
-            <.load_chart
-              id="load-cpu"
-              title="Процессор"
-              series={@load_series}
-              field={:cpu}
-              color="text-primary"
-            />
-            <.load_chart
-              id="load-memory"
-              title="Память"
-              series={@load_series}
-              field={:memory}
-              color="text-info"
-            />
-          </div>
-        </div>
-      </section>
-
-      <section id="uptime" class="card bg-base-100 border border-base-300">
-        <div class="card-body p-4 gap-3">
-          <h2 class="font-bold">Доступность</h2>
-          <div class="grid grid-cols-3 gap-2">
-            <div :for={period <- Downtime.periods()} class="rounded-box bg-base-200 p-3">
-              <div class="text-xs text-base-content/60">{Downtime.format_period(period)}</div>
-              <div class={["text-xl font-bold tabular-nums", uptime_class(@uptime[period].uptime)]}>
-                {format_uptime(@uptime[period].uptime)}
-              </div>
-              <div class="text-xs text-base-content/60">
-                простой {Downtime.format_duration(@uptime[period].down_seconds)}
-              </div>
-            </div>
-          </div>
-          <table :if={@incidents != []} id="incidents" class="table table-sm">
-            <thead>
-              <tr>
-                <th>Начало</th>
-                <th>Длительность</th>
-                <th>Причина</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr :for={incident <- @incidents} id={"incident-#{incident.id}"}>
-                <td class="whitespace-nowrap text-xs">{datetime(incident.started_at)}</td>
-                <td class="whitespace-nowrap">
-                  {Downtime.format_duration(Downtime.duration(incident))}
-                  <span :if={!incident.ended_at} class="badge badge-error badge-sm">идёт</span>
-                </td>
-                <td class="text-xs text-base-content/70">
-                  {Enum.join(incident.problems, "; ")}
-                </td>
-              </tr>
-            </tbody>
-          </table>
-          <p :if={@incidents == []} class="text-sm text-base-content/60">Простоев не было</p>
-        </div>
-      </section>
-
-      <section class="card bg-base-100 border border-base-300">
-        <div class="card-body p-4 gap-3">
-          <h2 class="font-bold">Логи</h2>
-          <.form
-            for={@logs_form}
-            id="logs-form"
-            phx-submit="logs"
-            class="flex flex-wrap items-end gap-2"
-          >
-            <select name="service" class="select select-sm w-40">
-              <option value="">все сервисы</option>
-              <option
-                :for={service <- services(@instance)}
-                value={service}
-                selected={@logs_form[:service].value == service}
-              >
-                {service}
-              </option>
-            </select>
-            <input
-              type="number"
-              name="tail"
-              value={@logs_form[:tail].value}
-              min="1"
-              max="2000"
-              class="input input-sm w-24"
-            />
-            <button
-              type="submit"
-              class="btn btn-sm"
-              disabled={!@instance.online || busy?(@commands)}
-            >
-              Показать
-            </button>
-          </.form>
-        </div>
-      </section>
-
-      <section id="env" class="card bg-base-100 border border-base-300">
-        <div class="card-body p-4 gap-3">
-          <div class="flex flex-wrap items-start justify-between gap-2">
-            <div>
-              <h2 class="font-bold">Переменные окружения (.env)</h2>
-              <p class="text-xs text-base-content/60">
-                После сохранения прежний файл остаётся в .env.bak, а сервисы пересоздаются с новыми значениями.
-                Свои переменные агент подхватит только после ручного перезапуска.
-              </p>
-            </div>
-            <button
-              id="env-load"
-              type="button"
-              class="btn btn-sm"
-              phx-click="env_load"
-              disabled={
-                !@instance.online || busy?(@commands) || !env_supported?(@instance) || @env_request
-              }
-            >
-              <span :if={@env_request} class="loading loading-spinner loading-xs"></span>
-              <.icon :if={!@env_request} name="hero-arrow-down-tray" class="size-4" />
-              {if @env_loaded?, do: "Перечитать", else: "Загрузить"}
-            </button>
-          </div>
-          <p :if={!env_supported?(@instance)} class="text-sm text-warning">
-            Агент этого экземпляра не умеет работать с .env, сначала обновите экземпляр.
-          </p>
-          <.form
-            :if={@env_loaded?}
-            for={@env_form}
-            id="env-form"
-            phx-change="env_change"
-            phx-submit="env_save"
-            class="space-y-2"
-          >
-            <textarea
-              name="content"
-              rows="18"
-              spellcheck="false"
-              autocomplete="off"
-              class="textarea w-full font-mono text-xs leading-relaxed"
-            >{Phoenix.HTML.Form.normalize_value("textarea", @env_form[:content].value)}</textarea>
-            <button
-              type="submit"
-              class="btn btn-primary btn-sm"
-              disabled={!@instance.online || busy?(@commands)}
-              data-confirm="Сохранить .env и пересоздать сервисы с новыми значениями?"
-            >
-              <.icon name="hero-check" class="size-4" /> Сохранить и применить
-            </button>
-          </.form>
-        </div>
-      </section>
-
-      <section id="backups" class="card bg-base-100 border border-base-300">
-        <div class="card-body p-4 gap-3">
-          <div class="flex flex-wrap items-start justify-between gap-2">
-            <div>
-              <h2 class="font-bold">Бэкапы базы</h2>
-              <p class="text-xs text-base-content/60">
-                Каждый день в 00:00 UTC (03:00 МСК), хранятся последние {Backups.keep()}. Логи сайта в бэкап не входят.
-                При восстановлении сервер ненадолго выключается, а прежняя база остаётся рядом как
-                &lt;имя базы&gt;_before_restore до следующего восстановления.
-              </p>
-            </div>
-            <button
-              id="backup-now"
-              type="button"
-              class="btn btn-sm"
-              phx-click="backup"
-              disabled={!@instance.online || busy?(@commands) || !backups_supported?(@instance)}
-            >
-              <.icon name="hero-circle-stack" class="size-4" /> Сделать бэкап
-            </button>
-          </div>
-
-          <p :if={!backups_supported?(@instance)} class="text-sm text-warning">
-            Агент этого экземпляра не умеет делать бэкапы, сначала обновите экземпляр.
-          </p>
-
           <div class="overflow-x-auto">
-            <table id="backup-list" class="table table-sm">
+            <table class="table table-sm">
               <tbody>
-                <tr :for={backup <- @backups} id={"backup-#{backup.id}"}>
-                  <td class="whitespace-nowrap text-xs">{datetime(backup.inserted_at)}</td>
-                  <td class="whitespace-nowrap tabular-nums">{format_size(backup.size)}</td>
-                  <td>
-                    <span :if={backup.status == "ok"} class="badge badge-success badge-sm">готов</span>
-                    <span :if={backup.status == "pending"} class="badge badge-info badge-sm">идёт</span>
-                    <span :if={backup.status == "error"} class="badge badge-error badge-sm">ошибка</span>
-                    <span :if={backup.error} class="block text-xs text-error whitespace-pre-wrap">
-                      {backup.error}
+                <tr :for={order <- CrmAlerts.problems(@instance)} id={"crm-order-#{order["id"]}"}>
+                  <td class="font-semibold whitespace-nowrap">№{order["number"]}</td>
+                  <td class="whitespace-nowrap">
+                    <span :if={order["status"] == "failed"} class="badge badge-error badge-sm">
+                      не ушёл
+                    </span>
+                    <span :if={order["status"] != "failed"} class="badge badge-warning badge-sm">
+                      в очереди
                     </span>
                   </td>
-                  <td class="text-xs text-base-content/60">{backup.requested_by}</td>
-                  <td class="text-right whitespace-nowrap">
-                    <.link
-                      :if={backup.status == "ok"}
-                      href={~p"/backups/#{backup.id}/download"}
-                      class="btn btn-ghost btn-xs"
-                    >
-                      <.icon name="hero-arrow-down-tray" class="size-4" /> Скачать
-                    </.link>
+                  <td class="text-xs">{order["branch"]}</td>
+                  <td class="text-xs text-base-content/70 max-w-80 break-words">{order["error"]}</td>
+                  <td class="text-xs whitespace-nowrap text-base-content/60">
+                    {datetime(CrmAlerts.inserted_at(order))}
+                  </td>
+                  <td class="text-right">
                     <button
-                      :if={backup.status == "ok"}
                       type="button"
-                      class="btn btn-ghost btn-xs text-error"
-                      phx-click="restore"
-                      phx-value-backup_id={backup.id}
-                      disabled={
-                        !@instance.online || busy?(@commands) || !backups_supported?(@instance)
-                      }
-                      data-confirm={"Восстановить базу #{@instance.name} из бэкапа от #{datetime(backup.inserted_at)}? Всё, что появилось после него, пропадёт из рабочей базы."}
+                      class="btn btn-ghost btn-xs"
+                      phx-click="crm_dismiss"
+                      phx-value-id={order["id"]}
+                      title="Заказ передан вручную или ошибка исправлена"
                     >
-                      Восстановить
+                      <.icon name="hero-check" class="size-4" /> Убрал
                     </button>
                   </td>
                 </tr>
-                <tr :if={@backups == []}>
-                  <td class="text-base-content/60">Бэкапов ещё нет</td>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section :if={@incidents != []} class="card bg-base-100 border border-base-300">
+          <div class="card-body p-4 gap-3">
+            <h2 class="font-bold">Простои</h2>
+            <table id="incidents" class="table table-sm">
+              <thead>
+                <tr>
+                  <th>Начало</th>
+                  <th>Длительность</th>
+                  <th>Причина</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr :for={incident <- @incidents} id={"incident-#{incident.id}"}>
+                  <td class="whitespace-nowrap text-xs">{datetime(incident.started_at)}</td>
+                  <td class="whitespace-nowrap">
+                    {Downtime.format_duration(Downtime.duration(incident))}
+                    <span :if={!incident.ended_at} class="badge badge-error badge-sm">идёт</span>
+                  </td>
+                  <td class="text-xs text-base-content/70">
+                    {Enum.join(incident.problems, "; ")}
+                  </td>
                 </tr>
               </tbody>
             </table>
           </div>
+        </section>
+      </div>
 
-          <.form
-            :if={@other_backups != []}
-            for={%{}}
-            id="restore-other"
-            phx-submit="restore"
-            class="flex flex-wrap items-end gap-2 border-t border-base-300 pt-3"
-          >
-            <label class="flex flex-col gap-1 text-sm">
-              <span class="text-base-content/60">Развернуть сюда бэкап другой сети</span>
-              <select name="backup_id" class="select select-sm w-full sm:w-96">
-                <option :for={backup <- @other_backups} value={backup.id}>
-                  {backup.instance_name} · {datetime(backup.inserted_at)} · {format_size(backup.size)}
+      <div :if={@tab == "logs"} id="tab-logs-panel" class="space-y-4">
+        <section class="card bg-base-100 border border-base-300">
+          <div class="card-body p-4 gap-3">
+            <h2 class="font-bold">Логи</h2>
+            <.form
+              for={@logs_form}
+              id="logs-form"
+              phx-submit="logs"
+              class="flex flex-wrap items-end gap-2"
+            >
+              <select name="service" class="select select-sm w-40">
+                <option value="">все сервисы</option>
+                <option
+                  :for={service <- services(@instance)}
+                  value={service}
+                  selected={@logs_form[:service].value == service}
+                >
+                  {service}
                 </option>
               </select>
-            </label>
-            <button
-              type="submit"
-              class="btn btn-sm btn-error btn-outline"
-              disabled={!@instance.online || busy?(@commands) || !backups_supported?(@instance)}
-              data-confirm={"Заменить базу #{@instance.name} базой из выбранного бэкапа? Текущие данные этой сети пропадут из рабочей базы."}
+              <input
+                type="number"
+                name="tail"
+                value={@logs_form[:tail].value}
+                min="1"
+                max="2000"
+                class="input input-sm w-24"
+              />
+              <button
+                type="submit"
+                class="btn btn-sm"
+                disabled={!@instance.online || busy?(@commands)}
+              >
+                Показать
+              </button>
+            </.form>
+          </div>
+        </section>
+
+        <section class="space-y-2">
+          <h2 class="font-bold">Команды и их вывод</h2>
+          <div :if={@commands == []} class="text-sm text-base-content/60">Команд ещё не было</div>
+          <details
+            :for={command <- @commands}
+            id={"command-#{command.id}"}
+            class="rounded-box border border-base-300 bg-base-100"
+            open={command.action == "logs" && command == hd(@commands)}
+          >
+            <summary class="flex flex-wrap items-center gap-3 p-3 cursor-pointer">
+              <span class="font-semibold">{action_label(command.action)}</span>
+              <span :if={command.args["service"]} class="text-xs">{command.args["service"]}</span>
+              <.command_status status={command.status} />
+              <span class="text-xs text-base-content/60">
+                {datetime(command.inserted_at)} · {command.requested_by}
+              </span>
+            </summary>
+            <pre
+              :if={command.output}
+              class="max-h-96 overflow-auto border-t border-base-300 p-3 text-xs whitespace-pre-wrap"
+            >{command.output}</pre>
+          </details>
+        </section>
+      </div>
+
+      <div :if={@tab == "backups"} id="tab-backups-panel" class="space-y-4">
+        <section id="backups" class="card bg-base-100 border border-base-300">
+          <div class="card-body p-4 gap-3">
+            <div class="flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <h2 class="font-bold">Бэкапы базы</h2>
+                <p class="text-xs text-base-content/60">
+                  Каждый день в 00:00 UTC (03:00 МСК), хранятся последние {Backups.keep()}. Логи сайта в бэкап не входят.
+                  Восстановить можно из бэкапа этой сети или из своего файла.
+                  При восстановлении сервер ненадолго выключается, а прежняя база остаётся рядом как
+                  &lt;имя базы&gt;_before_restore до следующего восстановления.
+                </p>
+              </div>
+              <button
+                id="backup-now"
+                type="button"
+                class="btn btn-sm"
+                phx-click="backup"
+                disabled={!@instance.online || busy?(@commands) || !backups_supported?(@instance)}
+              >
+                <.icon name="hero-circle-stack" class="size-4" /> Сделать бэкап
+              </button>
+            </div>
+
+            <p :if={!backups_supported?(@instance)} class="text-sm text-warning">
+              Агент этого экземпляра не умеет делать бэкапы, сначала обновите экземпляр.
+            </p>
+
+            <div class="overflow-x-auto">
+              <table id="backup-list" class="table table-sm">
+                <tbody>
+                  <tr :for={backup <- @backups} id={"backup-#{backup.id}"}>
+                    <td class="whitespace-nowrap text-xs">{datetime(backup.inserted_at)}</td>
+                    <td class="whitespace-nowrap tabular-nums">{format_size(backup.size)}</td>
+                    <td>
+                      <span :if={backup.status == "ok"} class="badge badge-success badge-sm">готов</span>
+                      <span :if={backup.status == "pending"} class="badge badge-info badge-sm">идёт</span>
+                      <span :if={backup.status == "error"} class="badge badge-error badge-sm">ошибка</span>
+                      <span :if={backup.error} class="block text-xs text-error whitespace-pre-wrap">
+                        {backup.error}
+                      </span>
+                    </td>
+                    <td class="text-xs text-base-content/60">{backup.requested_by}</td>
+                    <td class="text-right whitespace-nowrap">
+                      <.link
+                        :if={backup.status == "ok"}
+                        href={~p"/backups/#{backup.id}/download"}
+                        class="btn btn-ghost btn-xs"
+                      >
+                        <.icon name="hero-arrow-down-tray" class="size-4" /> Скачать
+                      </.link>
+                      <button
+                        :if={backup.status == "ok"}
+                        type="button"
+                        class="btn btn-ghost btn-xs text-error"
+                        phx-click="restore"
+                        phx-value-backup_id={backup.id}
+                        disabled={
+                          !@instance.online || busy?(@commands) || !backups_supported?(@instance)
+                        }
+                        data-confirm={"Восстановить базу #{@instance.name} из бэкапа от #{datetime(backup.inserted_at)}? Всё, что появилось после него, пропадёт из рабочей базы."}
+                      >
+                        Восстановить
+                      </button>
+                    </td>
+                  </tr>
+                  <tr :if={@backups == []}>
+                    <td class="text-base-content/60">Бэкапов ещё нет</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <.form
+              for={%{}}
+              id="restore-file"
+              phx-change="validate_dump"
+              phx-submit="restore_file"
+              class="flex flex-col gap-2 border-t border-base-300 pt-3"
             >
-              Восстановить
-            </button>
-          </.form>
+              <span class="text-sm text-base-content/60">
+                Восстановить из своего файла: дамп pg_dump -Fc, например скачанный здесь же .dump.
+              </span>
+              <div class="flex flex-wrap items-center gap-2">
+                <.live_file_input
+                  upload={@uploads.dump}
+                  class="file-input file-input-sm w-full sm:w-96"
+                />
+                <button
+                  type="submit"
+                  class="btn btn-sm btn-error btn-outline"
+                  disabled={
+                    @uploads.dump.entries == [] || !@instance.online || busy?(@commands) ||
+                      !backups_supported?(@instance)
+                  }
+                  data-confirm={"Заменить базу #{@instance.name} базой из файла? Текущие данные пропадут из рабочей базы."}
+                >
+                  <.icon name="hero-arrow-up-tray" class="size-4" /> Восстановить из файла
+                </button>
+              </div>
+              <div :for={entry <- @uploads.dump.entries} class="text-xs space-y-1">
+                <div class="flex items-center gap-2">
+                  <span class="font-semibold">{entry.client_name}</span>
+                  <span class="text-base-content/60">{format_size(entry.client_size)}</span>
+                  <progress
+                    :if={entry.progress > 0}
+                    class="progress progress-primary w-32"
+                    value={entry.progress}
+                    max="100"
+                  />
+                </div>
+                <p :for={error <- upload_errors(@uploads.dump, entry)} class="text-error">
+                  {upload_error(error)}
+                </p>
+              </div>
+            </.form>
+          </div>
+        </section>
+      </div>
+
+      <div :if={@tab == "settings"} id="tab-settings-panel" class="space-y-4">
+        <section id="env" class="card bg-base-100 border border-base-300">
+          <div class="card-body p-4 gap-3">
+            <div class="flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <h2 class="font-bold">Переменные окружения (.env)</h2>
+                <p class="text-xs text-base-content/60">
+                  После сохранения прежний файл остаётся в .env.bak, а сервисы пересоздаются с новыми значениями.
+                  Свои переменные агент подхватит только после ручного перезапуска.
+                </p>
+              </div>
+              <button
+                id="env-load"
+                type="button"
+                class="btn btn-sm"
+                phx-click="env_load"
+                disabled={
+                  !@instance.online || busy?(@commands) || !env_supported?(@instance) || @env_request
+                }
+              >
+                <span :if={@env_request} class="loading loading-spinner loading-xs"></span>
+                <.icon :if={!@env_request} name="hero-arrow-down-tray" class="size-4" />
+                {if @env_loaded?, do: "Перечитать", else: "Загрузить"}
+              </button>
+            </div>
+            <p :if={!env_supported?(@instance)} class="text-sm text-warning">
+              Агент этого экземпляра не умеет работать с .env, сначала обновите экземпляр.
+            </p>
+            <.form
+              :if={@env_loaded?}
+              for={@env_form}
+              id="env-form"
+              phx-change="env_change"
+              phx-submit="env_save"
+              class="space-y-2"
+            >
+              <textarea
+                name="content"
+                rows="18"
+                spellcheck="false"
+                autocomplete="off"
+                class="textarea w-full font-mono text-xs leading-relaxed"
+              >{Phoenix.HTML.Form.normalize_value("textarea", @env_form[:content].value)}</textarea>
+              <button
+                type="submit"
+                class="btn btn-primary btn-sm"
+                disabled={!@instance.online || busy?(@commands)}
+                data-confirm="Сохранить .env и пересоздать сервисы с новыми значениями?"
+              >
+                <.icon name="hero-check" class="size-4" /> Сохранить и применить
+              </button>
+            </.form>
+          </div>
+        </section>
+
+        <div class="pt-4 border-t border-base-300">
+          <button
+            id="delete-instance"
+            type="button"
+            class="btn btn-ghost btn-sm text-error"
+            phx-click="delete"
+            data-confirm="Удалить экземпляр из бастиона? Если агент снова подключится, экземпляр появится заново."
+          >
+            Удалить из бастиона
+          </button>
         </div>
-      </section>
-
-      <section class="space-y-2">
-        <h2 class="font-bold">Команды</h2>
-        <div :if={@commands == []} class="text-sm text-base-content/60">Команд ещё не было</div>
-        <details
-          :for={command <- @commands}
-          id={"command-#{command.id}"}
-          class="rounded-box border border-base-300 bg-base-100"
-          open={command.action == "logs" && command == hd(@commands)}
-        >
-          <summary class="flex flex-wrap items-center gap-3 p-3 cursor-pointer">
-            <span class="font-semibold">{action_label(command.action)}</span>
-            <span :if={command.args["service"]} class="text-xs">{command.args["service"]}</span>
-            <.command_status status={command.status} />
-            <span class="text-xs text-base-content/60">
-              {datetime(command.inserted_at)} · {command.requested_by}
-            </span>
-          </summary>
-          <pre
-            :if={command.output}
-            class="max-h-96 overflow-auto border-t border-base-300 p-3 text-xs whitespace-pre-wrap"
-          >{command.output}</pre>
-        </details>
-      </section>
-
-      <div class="pt-4 border-t border-base-300">
-        <button
-          id="delete-instance"
-          type="button"
-          class="btn btn-ghost btn-sm text-error"
-          phx-click="delete"
-          data-confirm="Удалить экземпляр из бастиона? Если агент снова подключится, экземпляр появится заново."
-        >
-          Удалить из бастиона
-        </button>
       </div>
     </Layouts.app>
     """
