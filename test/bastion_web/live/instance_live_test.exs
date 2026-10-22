@@ -145,4 +145,28 @@ defmodule BastionWeb.InstanceLiveTest do
     assert_receive {:agent_got, "restore", %{"backup_id" => backup_id}}
     assert backup_id == done.id
   end
+
+  test "the load of the host is shown with charts for a period", %{conn: conn} do
+    instance = instance_fixture()
+    now = DateTime.utc_now(:second)
+
+    for minutes <- [3, 2, 1] do
+      Bastion.Metrics.record(
+        instance.id,
+        healthy_status()["metrics"],
+        DateTime.add(now, -minutes * 60)
+      )
+    end
+
+    {:ok, lv, _html} = live(log_in(conn), ~p"/instances/#{instance.id}")
+
+    assert has_element?(lv, "#load-now", "13%")
+    assert has_element?(lv, "#load-now", "4 ядер")
+    assert has_element?(lv, "#load-cpu polyline")
+    assert has_element?(lv, "#load-memory", "в среднем 25%")
+
+    lv |> element("button[phx-value-period=month]") |> render_click()
+    assert has_element?(lv, "button.btn-active[phx-value-period=month]")
+    assert has_element?(lv, "#load-cpu polyline")
+  end
 end

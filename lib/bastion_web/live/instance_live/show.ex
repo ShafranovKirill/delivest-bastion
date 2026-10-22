@@ -2,8 +2,9 @@ defmodule BastionWeb.InstanceLive.Show do
   use BastionWeb, :live_view
 
   import BastionWeb.InstanceLive.Components
+  import BastionWeb.InstanceLive.LoadChart
 
-  alias Bastion.{Backups, Downtime, Health, Instances}
+  alias Bastion.{Backups, Downtime, Health, Instances, Metrics}
   alias BastionWeb.Presence
 
   @tick :timer.seconds(15)
@@ -28,11 +29,13 @@ defmodule BastionWeb.InstanceLive.Show do
            logs_form: to_form(%{"service" => "", "tail" => "200"}),
            env_form: to_form(%{"content" => ""}),
            env_request: nil,
-           env_loaded?: false
+           env_loaded?: false,
+           metrics_period: :day
          )
          |> assign_instance(instance)
          |> load_commands()
-         |> load_backups()}
+         |> load_backups()
+         |> load_metrics()}
     end
   end
 
@@ -60,6 +63,11 @@ defmodule BastionWeb.InstanceLive.Show do
      send_command(socket, "env_write", %{"content" => content}, fn socket, _command ->
        put_flash(socket, :info, ".env отправлен агенту, сервисы будут пересозданы")
      end)}
+  end
+
+  def handle_event("metrics_period", %{"period" => period}, socket) do
+    period = Enum.find(Metrics.periods(), :day, &(to_string(&1) == period))
+    {:noreply, socket |> assign(metrics_period: period) |> load_metrics()}
   end
 
   def handle_event("backup", _params, socket) do
@@ -130,7 +138,7 @@ defmodule BastionWeb.InstanceLive.Show do
   def handle_info(%Phoenix.Socket.Broadcast{event: "presence_diff"}, socket),
     do: {:noreply, reload(socket)}
 
-  def handle_info(:tick, socket), do: {:noreply, reload(socket)}
+  def handle_info(:tick, socket), do: {:noreply, socket |> reload() |> load_metrics()}
   def handle_info(_message, socket), do: {:noreply, socket}
 
   defp send_command(socket, action, args, on_sent \\ fn socket, _command -> socket end) do
@@ -170,6 +178,17 @@ defmodule BastionWeb.InstanceLive.Show do
       other_backups: Enum.reject(Backups.list_restorable(), &(&1.instance_id == id))
     )
   end
+
+  defp load_metrics(socket) do
+    id = socket.assigns.instance.id
+
+    assign(socket,
+      load: Metrics.latest(id),
+      load_series: Metrics.series(id, socket.assigns.metrics_period)
+    )
+  end
+
+  defp gigabytes(kb), do: :erlang.float_to_binary(kb / 1_048_576, decimals: 1) <> " ГБ"
 
   defp backups_supported?(instance), do: Backups.supported?(instance)
 
@@ -331,6 +350,73 @@ defmodule BastionWeb.InstanceLive.Show do
           </div>
         </section>
       </div>
+
+      <section id="load" class="card bg-base-100 border border-base-300">
+        <div class="card-body p-4 gap-4">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <h2 class="font-bold">Нагрузка на сервер</h2>
+            <div role="tablist" class="join">
+              <button
+                :for={period <- Metrics.periods()}
+                type="button"
+                role="tab"
+                phx-click="metrics_period"
+                phx-value-period={period}
+                class={["btn btn-xs join-item", @metrics_period == period && "btn-active"]}
+              >
+                {Metrics.period_label(period)}
+              </button>
+            </div>
+          </div>
+
+          <div :if={@load} id="load-now" class="grid grid-cols-3 gap-2">
+            <div class="rounded-box bg-base-200 p-3">
+              <div class="text-xs text-base-content/60">Процессор</div>
+              <div class="text-xl font-bold tabular-nums">
+                {(@load.cpu && percent(@load.cpu)) || "—"}
+              </div>
+              <div :if={@load.cpus} class="text-xs text-base-content/60">{@load.cpus} ядер</div>
+            </div>
+            <div class="rounded-box bg-base-200 p-3">
+              <div class="text-xs text-base-content/60">Память</div>
+              <div class="text-xl font-bold tabular-nums">
+                {(@load.memory && percent(@load.memory)) || "—"}
+              </div>
+              <div :if={@load.memory_total_kb} class="text-xs text-base-content/60 tabular-nums">
+                {gigabytes(@load.memory_used_kb)} из {gigabytes(@load.memory_total_kb)}
+              </div>
+            </div>
+            <div class="rounded-box bg-base-200 p-3">
+              <div class="text-xs text-base-content/60">Load average</div>
+              <div class="text-xl font-bold tabular-nums">
+                {(@load.load && :erlang.float_to_binary(@load.load, decimals: 2)) || "—"}
+              </div>
+              <div class="text-xs text-base-content/60">за минуту</div>
+            </div>
+          </div>
+
+          <p :if={!@load} class="text-sm text-base-content/60">
+            Агент ещё не присылал нагрузку. Если это длится дольше пары минут, обновите агента на сервере.
+          </p>
+
+          <div class="grid gap-4 md:grid-cols-2">
+            <.load_chart
+              id="load-cpu"
+              title="Процессор"
+              series={@load_series}
+              field={:cpu}
+              color="text-primary"
+            />
+            <.load_chart
+              id="load-memory"
+              title="Память"
+              series={@load_series}
+              field={:memory}
+              color="text-info"
+            />
+          </div>
+        </div>
+      </section>
 
       <section id="uptime" class="card bg-base-100 border border-base-300">
         <div class="card-body p-4 gap-3">
