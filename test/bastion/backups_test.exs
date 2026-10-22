@@ -180,7 +180,28 @@ defmodule Bastion.BackupsTest do
 
     {:ok, _} = Instances.delete_instance(Instances.get_instance(instance.id))
 
-    assert [%{id: id, instance_id: nil}] = Backups.list_restorable()
-    assert id == backup.id
+    assert %{instance_id: nil, status: "ok"} = Backups.get(backup.id)
+  end
+
+  test "an uploaded dump is stored as a backup of the instance" do
+    instance = instance_fixture(%{info: %{"name" => "Pizza Upload"}})
+    path = Plug.Upload.random_file!("dump")
+    File.write!(path, "PGDMP-uploaded")
+
+    assert {:ok, %Backup{status: "ok", size: 14} = backup} =
+             Backups.import_file(instance, path, "admin")
+
+    assert backup.instance_id == instance.id
+    assert_received {:s3, "PUT", "/backups/" <> key, "PGDMP-uploaded"}
+    assert key == backup.key
+  end
+
+  test "a file that is not a pg_dump archive is refused" do
+    instance = instance_fixture()
+    path = Plug.Upload.random_file!("dump")
+    File.write!(path, "CREATE TABLE x();")
+
+    assert {:error, "это не дамп базы" <> _} = Backups.import_file(instance, path, "admin")
+    assert Repo.all(Backup) == []
   end
 end

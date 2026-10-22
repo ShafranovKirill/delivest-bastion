@@ -25,13 +25,6 @@ defmodule Bastion.Backups do
     |> Repo.all()
   end
 
-  def list_restorable do
-    Backup
-    |> where([b], b.status == "ok")
-    |> order_by([b], asc: b.instance_name, desc: b.inserted_at)
-    |> Repo.all()
-  end
-
   def start(%Instance{} = instance, requested_by \\ nil) do
     cond do
       not Storage.configured?() ->
@@ -64,6 +57,21 @@ defmodule Bastion.Backups do
           {:error, reason} ->
             fail(backup, inspect(reason))
         end
+    end
+  end
+
+  def import_file(%Instance{} = instance, path, requested_by \\ nil) do
+    cond do
+      not Storage.configured?() -> {:error, "хранилище бэкапов не настроено"}
+      not pg_dump?(path) -> {:error, "это не дамп базы: нужен файл pg_dump -Fc (.dump)"}
+      true -> instance |> insert(requested_by) |> store(path)
+    end
+  end
+
+  defp pg_dump?(path) do
+    case File.open(path, [:read, :binary], &IO.binread(&1, 5)) do
+      {:ok, "PGDMP"} -> true
+      _ -> false
     end
   end
 
