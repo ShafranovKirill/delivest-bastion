@@ -51,6 +51,7 @@ defmodule BastionWeb.InstanceChannelTest do
     ref = push(socket, "heartbeat", Bastion.Fixtures.healthy_status())
     assert_reply ref, :ok
     assert %{status: %{"disk" => _}} = Instances.get_instance(id)
+    assert %{cpu: 12.5, memory: 25.0} = Bastion.Metrics.latest(id)
 
     {:ok, command} = Instances.send_command(Instances.get_instance(id), "restart", %{}, "admin")
     command_id = command.id

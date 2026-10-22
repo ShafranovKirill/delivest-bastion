@@ -64,7 +64,11 @@ config :bastion, Oban,
   plugins: [
     {Oban.Plugins.Pruner, max_age: 86_400},
     {Oban.Plugins.Cron,
-     crontab: [{"* * * * *", Bastion.Checks.Worker}, {"0 0 * * *", Bastion.Backups.Worker}]}
+     crontab: [
+       {"* * * * *", Bastion.Checks.Worker},
+       {"0 0 * * *", Bastion.Backups.Worker},
+       {"30 0 * * *", Bastion.Metrics.PruneWorker}
+     ]}
   ]
 
 config :bastion,

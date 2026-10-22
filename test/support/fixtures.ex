@@ -29,7 +29,13 @@ defmodule Bastion.Fixtures do
         "api" => %{"ok" => true, "status" => 200, "ms" => 5},
         "site" => %{"ok" => true, "status" => 200, "ms" => 3}
       },
-      "disk" => %{"total_kb" => 1000, "used_kb" => 400, "free_kb" => 600}
+      "disk" => %{"total_kb" => 1000, "used_kb" => 400, "free_kb" => 600},
+      "metrics" => %{
+        "cpu_percent" => 12.5,
+        "cpus" => 4,
+        "load" => [0.5, 0.4, 0.3],
+        "memory" => %{"total_kb" => 8_000_000, "available_kb" => 6_000_000}
+      }
     }
   end
 end
