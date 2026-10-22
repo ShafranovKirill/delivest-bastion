@@ -53,23 +53,38 @@ defmodule Bastion.CrmAlertsTest do
     refute_received {:telegram, _}
   end
 
-  test "a stuck order alerts, then alerts again when it fails", %{instance: instance} do
+  test "a stuck order stays silent until it fails", %{instance: instance} do
     CrmAlerts.check(instance.id, [order("pending", %{"error" => nil, "attempts" => 0})])
-    assert_received {:telegram, "⏳ Pizza: заказ №A017 больше 5 минут не уходит в Frontpad" <> _}
+    refute_received {:telegram, _}
 
     CrmAlerts.check(instance.id, [order("failed", %{"attempts" => 7})])
     assert_received {:telegram, "🚨 Pizza: заказ №A017 не ушёл в Frontpad" <> _}
+
+    CrmAlerts.check(instance.id, [])
+    refute_received {:telegram, _}
+    assert %{crm_alerts: alerts} = Instances.get_instance(instance.id)
+    assert alerts == %{}
+  end
+
+  test "a dismissed order is hidden and does not alert", %{instance: instance} do
+    Instances.record_heartbeat(instance.id, %{"crm" => [order("pending")]})
+    instance = Instances.get_instance(instance.id)
+    assert [_] = CrmAlerts.problems(instance)
+
+    assert {:ok, instance} = CrmAlerts.dismiss(instance, "order-1")
+    assert CrmAlerts.problems(instance) == []
+
+    CrmAlerts.check(instance.id, [order("failed")])
     refute_received {:telegram, _}
   end
 
-  test "a stuck order that leaves the queue is reported", %{instance: instance} do
-    CrmAlerts.check(instance.id, [order("pending")])
-    assert_received {:telegram, "⏳" <> _}
+  test "dismissals of orders the agent no longer reports are dropped", %{instance: instance} do
+    Instances.record_heartbeat(instance.id, %{"crm" => [order("failed")]})
+    {:ok, _} = instance.id |> Instances.get_instance() |> CrmAlerts.dismiss("order-1")
 
-    CrmAlerts.check(instance.id, [])
-    assert_received {:telegram, "✅ Pizza: заказ №A017 больше не ждёт отправки в Frontpad"}
-    assert %{crm_alerts: alerts} = Instances.get_instance(instance.id)
-    assert alerts == %{}
+    Instances.record_heartbeat(instance.id, %{"crm" => [order("failed", %{"id" => "order-2"})]})
+    instance = Instances.get_instance(instance.id)
+    assert {:ok, %{crm_dismissed: ["order-2"]}} = CrmAlerts.dismiss(instance, "order-2")
   end
 
   test "a missing report from an old agent changes nothing", %{instance: instance} do

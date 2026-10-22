@@ -19,6 +19,7 @@ defmodule Bastion.Instances.Instance do
     field :down_since, :utc_datetime
     field :load_alerts, :map, default: %{}
     field :crm_alerts, :map, default: %{}
+    field :crm_dismissed, {:array, :string}, default: []
     field :online, :boolean, virtual: true, default: false
 
     has_many :commands, Bastion.Instances.Command
