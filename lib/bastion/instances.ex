@@ -80,9 +80,14 @@ defmodule Bastion.Instances do
     end
   end
 
-  def update_checks(%Instance{} = instance, external, health) do
+  def update_checks(%Instance{} = instance, external, health, down_since \\ nil) do
     instance
-    |> Ecto.Changeset.change(external: external, health: to_string(health), checked_at: now())
+    |> Ecto.Changeset.change(
+      external: external,
+      health: to_string(health),
+      down_since: down_since,
+      checked_at: now()
+    )
     |> Repo.update()
     |> broadcast()
   end
@@ -140,15 +145,21 @@ defmodule Bastion.Instances do
     |> tap(&track_planned_stop/1)
   end
 
-  @doc "Whether a command is in flight, so the site may be down on purpose."
   def busy?(instance_id) do
     since = DateTime.add(now(), -@busy_window_seconds)
+    settling_since = DateTime.add(now(), -settle_seconds())
 
     Command
-    |> where([c], c.instance_id == ^instance_id and c.status in ["sent", "running"])
-    |> where([c], c.inserted_at > ^since)
+    |> where([c], c.instance_id == ^instance_id)
+    |> where(
+      [c],
+      (c.status in ["sent", "running"] and c.inserted_at > ^since) or
+        (c.action in ^@starting_actions and c.finished_at > ^settling_since)
+    )
     |> Repo.exists?()
   end
+
+  defp settle_seconds, do: Application.get_env(:bastion, :settle_after_start_seconds, 120)
 
   def list_commands(instance_id, limit \\ 20) do
     Command

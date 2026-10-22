@@ -57,11 +57,20 @@ defmodule Bastion.ChecksTest do
 
     assert :ok = perform_job()
 
+    assert [%{health: "unknown", down_since: %DateTime{} = down_since}] =
+             Instances.list_instances()
+
+    refute_received {:telegram, _}
+
+    assert :ok = perform_job()
+
     assert [%{health: "down", external: %{"api" => %{"status" => 502}}}] =
              Instances.list_instances()
 
     assert_received {:telegram,
                      "🔴 Pizza: сайт работает с ошибками\n• API не отвечает снаружи (HTTP 502)"}
+
+    assert [%{started_at: ^down_since}] = Bastion.Downtime.list_incidents(instance.id)
 
     assert :ok = perform_job()
     refute_received {:telegram, _}
@@ -127,6 +136,51 @@ defmodule Bastion.ChecksTest do
 
     {:ok, _} = Instances.command_finished(instance.id, start.id, true, "started")
     assert [%{stopped_at: nil}] = Instances.list_instances()
+  end
+
+  test "a single failed check is not downtime" do
+    Application.put_env(:bastion, :down_confirm_seconds, 50)
+    on_exit(fn -> Application.put_env(:bastion, :down_confirm_seconds, 0) end)
+
+    stub(&Plug.Conn.send_resp(&1, 502, ""))
+    instance = instance_fixture()
+    {:ok, _} = Instances.record_heartbeat(instance.id, healthy_status())
+    {:ok, _} = Instances.update_checks(Instances.get_instance(instance.id), %{}, :ok)
+    now = DateTime.utc_now(:second)
+
+    Worker.check(Instances.get_instance(instance.id), now)
+    Worker.check(Instances.get_instance(instance.id), DateTime.add(now, 30))
+    assert [%{health: "ok"}] = Instances.list_instances()
+
+    stub(&Plug.Conn.send_resp(&1, 200, "ok"))
+    Worker.check(Instances.get_instance(instance.id), DateTime.add(now, 60))
+    assert [%{health: "ok", down_since: nil}] = Instances.list_instances()
+    assert Bastion.Downtime.list_incidents(instance.id) == []
+
+    stub(&Plug.Conn.send_resp(&1, 502, ""))
+    Worker.check(Instances.get_instance(instance.id), DateTime.add(now, 120))
+    Worker.check(Instances.get_instance(instance.id), DateTime.add(now, 180))
+    assert [%{health: "down"}] = Instances.list_instances()
+    assert [_incident] = Bastion.Downtime.list_incidents(instance.id)
+  end
+
+  test "the site gets time to start after a restart" do
+    stub(&Plug.Conn.send_resp(&1, 502, ""))
+    instance = instance_fixture()
+    {:ok, _} = Instances.record_heartbeat(instance.id, healthy_status())
+    {:ok, _} = Instances.update_checks(Instances.get_instance(instance.id), %{}, :ok)
+
+    Repo.insert!(%Bastion.Instances.Command{
+      instance_id: instance.id,
+      action: "restart",
+      status: "ok",
+      finished_at: DateTime.add(DateTime.utc_now(:second), -30)
+    })
+
+    assert :ok = perform_job()
+    assert :ok = perform_job()
+    assert [%{health: "ok"}] = Instances.list_instances()
+    assert Bastion.Downtime.list_incidents(instance.id) == []
   end
 
   defp perform_job, do: Worker.perform(%Oban.Job{})
