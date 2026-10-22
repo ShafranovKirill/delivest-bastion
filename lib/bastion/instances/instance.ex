@@ -17,6 +17,7 @@ defmodule Bastion.Instances.Instance do
     field :health, :string, default: "unknown"
     field :stopped_at, :utc_datetime
     field :down_since, :utc_datetime
+    field :load_alerts, :map, default: %{}
     field :online, :boolean, virtual: true, default: false
 
     has_many :commands, Bastion.Instances.Command

@@ -40,7 +40,10 @@ defmodule BastionWeb.InstanceChannel do
   @impl true
   def handle_in("heartbeat", status, socket) when is_map(status) do
     Instances.record_heartbeat(socket.assigns.instance_id, status)
-    Metrics.record(socket.assigns.instance_id, status["metrics"])
+
+    with {:ok, _sample} <- Metrics.record(socket.assigns.instance_id, status["metrics"]),
+         do: Metrics.Alerts.check(socket.assigns.instance_id)
+
     {:reply, :ok, socket}
   end
 

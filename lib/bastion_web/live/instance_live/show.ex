@@ -188,6 +188,13 @@ defmodule BastionWeb.InstanceLive.Show do
     )
   end
 
+  defp since_label(iso) do
+    case DateTime.from_iso8601(iso) do
+      {:ok, at, _offset} -> datetime(at)
+      _ -> iso
+    end
+  end
+
   defp gigabytes(kb), do: :erlang.float_to_binary(kb / 1_048_576, decimals: 1) <> " ГБ"
 
   defp backups_supported?(instance), do: Backups.supported?(instance)
@@ -393,6 +400,19 @@ defmodule BastionWeb.InstanceLive.Show do
               </div>
               <div class="text-xs text-base-content/60">за минуту</div>
             </div>
+          </div>
+
+          <div
+            :for={{metric, since} <- @instance.load_alerts}
+            id={"load-alert-#{metric}"}
+            class="alert alert-error py-2 text-sm"
+          >
+            <.icon name="hero-fire" class="size-5" />
+            <span>
+              {if metric == "cpu", do: "Процессор", else: "Память"} выше {Bastion.Metrics.Alerts.threshold()}% с {since_label(
+                since
+              )}
+            </span>
           </div>
 
           <p :if={!@load} class="text-sm text-base-content/60">
