@@ -3,7 +3,7 @@ defmodule BastionWeb.InstanceLive.Show do
 
   import BastionWeb.InstanceLive.Components
 
-  alias Bastion.{Downtime, Health, Instances}
+  alias Bastion.{Backups, Downtime, Health, Instances}
   alias BastionWeb.Presence
 
   @tick :timer.seconds(15)
@@ -31,7 +31,8 @@ defmodule BastionWeb.InstanceLive.Show do
            env_loaded?: false
          )
          |> assign_instance(instance)
-         |> load_commands()}
+         |> load_commands()
+         |> load_backups()}
     end
   end
 
@@ -61,6 +62,36 @@ defmodule BastionWeb.InstanceLive.Show do
      end)}
   end
 
+  def handle_event("backup", _params, socket) do
+    socket =
+      case Backups.start(socket.assigns.instance, socket.assigns.current_admin) do
+        {:ok, _backup} -> put_flash(socket, :info, "Агент делает бэкап")
+        {:error, reason} -> put_flash(socket, :error, "Бэкап не начат: #{reason}")
+      end
+
+    {:noreply, load_backups(socket)}
+  end
+
+  def handle_event("restore", %{"backup_id" => backup_id}, socket) do
+    socket =
+      with %{status: "ok"} = backup <- Backups.get(backup_id),
+           {:ok, _command} <-
+             Backups.restore(socket.assigns.instance, backup, socket.assigns.current_admin) do
+        put_flash(socket, :info, "Агент восстанавливает базу из бэкапа")
+      else
+        {:error, :offline} ->
+          put_flash(socket, :error, "Агент не на связи")
+
+        {:error, :unsupported} ->
+          put_flash(socket, :error, "Агент не умеет восстанавливать, обновите экземпляр")
+
+        _ ->
+          put_flash(socket, :error, "Бэкап не найден")
+      end
+
+    {:noreply, socket}
+  end
+
   def handle_event("delete", _params, socket) do
     {:ok, _} = Instances.delete_instance(socket.assigns.instance)
     {:noreply, socket |> put_flash(:info, "Экземпляр удалён") |> push_navigate(to: ~p"/")}
@@ -84,6 +115,8 @@ defmodule BastionWeb.InstanceLive.Show do
 
     {:noreply, load_commands(socket)}
   end
+
+  def handle_info({:backup_updated, _backup}, socket), do: {:noreply, load_backups(socket)}
 
   def handle_info({:env_loaded, %{id: id}, content}, %{assigns: %{env_request: id}} = socket) do
     {:noreply,
@@ -128,6 +161,21 @@ defmodule BastionWeb.InstanceLive.Show do
       incidents: Downtime.list_incidents(instance.id)
     )
   end
+
+  defp load_backups(socket) do
+    id = socket.assigns.instance.id
+
+    assign(socket,
+      backups: Backups.list(id),
+      other_backups: Enum.reject(Backups.list_restorable(), &(&1.instance_id == id))
+    )
+  end
+
+  defp backups_supported?(instance), do: Backups.supported?(instance)
+
+  defp format_size(nil), do: "—"
+  defp format_size(bytes) when bytes < 1_048_576, do: "#{max(div(bytes, 1024), 1)} КБ"
+  defp format_size(bytes), do: :erlang.float_to_binary(bytes / 1_048_576, decimals: 1) <> " МБ"
 
   defp load_commands(socket),
     do: assign(socket, commands: Instances.list_commands(socket.assigns.instance.id))
@@ -410,6 +458,104 @@ defmodule BastionWeb.InstanceLive.Show do
               data-confirm="Сохранить .env и пересоздать сервисы с новыми значениями?"
             >
               <.icon name="hero-check" class="size-4" /> Сохранить и применить
+            </button>
+          </.form>
+        </div>
+      </section>
+
+      <section id="backups" class="card bg-base-100 border border-base-300">
+        <div class="card-body p-4 gap-3">
+          <div class="flex flex-wrap items-start justify-between gap-2">
+            <div>
+              <h2 class="font-bold">Бэкапы базы</h2>
+              <p class="text-xs text-base-content/60">
+                Каждый день в 00:00 UTC (03:00 МСК), хранятся последние {Backups.keep()}. Логи сайта в бэкап не входят.
+                При восстановлении сервер ненадолго выключается, а прежняя база остаётся рядом как
+                &lt;имя базы&gt;_before_restore до следующего восстановления.
+              </p>
+            </div>
+            <button
+              id="backup-now"
+              type="button"
+              class="btn btn-sm"
+              phx-click="backup"
+              disabled={!@instance.online || busy?(@commands) || !backups_supported?(@instance)}
+            >
+              <.icon name="hero-circle-stack" class="size-4" /> Сделать бэкап
+            </button>
+          </div>
+
+          <p :if={!backups_supported?(@instance)} class="text-sm text-warning">
+            Агент этого экземпляра не умеет делать бэкапы, сначала обновите экземпляр.
+          </p>
+
+          <div class="overflow-x-auto">
+            <table id="backup-list" class="table table-sm">
+              <tbody>
+                <tr :for={backup <- @backups} id={"backup-#{backup.id}"}>
+                  <td class="whitespace-nowrap text-xs">{datetime(backup.inserted_at)}</td>
+                  <td class="whitespace-nowrap tabular-nums">{format_size(backup.size)}</td>
+                  <td>
+                    <span :if={backup.status == "ok"} class="badge badge-success badge-sm">готов</span>
+                    <span :if={backup.status == "pending"} class="badge badge-info badge-sm">идёт</span>
+                    <span :if={backup.status == "error"} class="badge badge-error badge-sm">ошибка</span>
+                    <span :if={backup.error} class="block text-xs text-error whitespace-pre-wrap">
+                      {backup.error}
+                    </span>
+                  </td>
+                  <td class="text-xs text-base-content/60">{backup.requested_by}</td>
+                  <td class="text-right whitespace-nowrap">
+                    <.link
+                      :if={backup.status == "ok"}
+                      href={~p"/backups/#{backup.id}/download"}
+                      class="btn btn-ghost btn-xs"
+                    >
+                      <.icon name="hero-arrow-down-tray" class="size-4" /> Скачать
+                    </.link>
+                    <button
+                      :if={backup.status == "ok"}
+                      type="button"
+                      class="btn btn-ghost btn-xs text-error"
+                      phx-click="restore"
+                      phx-value-backup_id={backup.id}
+                      disabled={
+                        !@instance.online || busy?(@commands) || !backups_supported?(@instance)
+                      }
+                      data-confirm={"Восстановить базу #{@instance.name} из бэкапа от #{datetime(backup.inserted_at)}? Всё, что появилось после него, пропадёт из рабочей базы."}
+                    >
+                      Восстановить
+                    </button>
+                  </td>
+                </tr>
+                <tr :if={@backups == []}>
+                  <td class="text-base-content/60">Бэкапов ещё нет</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <.form
+            :if={@other_backups != []}
+            for={%{}}
+            id="restore-other"
+            phx-submit="restore"
+            class="flex flex-wrap items-end gap-2 border-t border-base-300 pt-3"
+          >
+            <label class="flex flex-col gap-1 text-sm">
+              <span class="text-base-content/60">Развернуть сюда бэкап другой сети</span>
+              <select name="backup_id" class="select select-sm w-full sm:w-96">
+                <option :for={backup <- @other_backups} value={backup.id}>
+                  {backup.instance_name} · {datetime(backup.inserted_at)} · {format_size(backup.size)}
+                </option>
+              </select>
+            </label>
+            <button
+              type="submit"
+              class="btn btn-sm btn-error btn-outline"
+              disabled={!@instance.online || busy?(@commands) || !backups_supported?(@instance)}
+              data-confirm={"Заменить базу #{@instance.name} базой из выбранного бэкапа? Текущие данные этой сети пропадут из рабочей базы."}
+            >
+              Восстановить
             </button>
           </.form>
         </div>

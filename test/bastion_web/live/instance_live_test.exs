@@ -117,4 +117,32 @@ defmodule BastionWeb.InstanceLiveTest do
     assert_redirect(lv, ~p"/")
     assert Instances.list_instances() == []
   end
+
+  test "backups are made and restored from the instance page", %{conn: conn} do
+    Req.Test.stub(Bastion.Http, &Plug.Conn.send_resp(&1, 200, ""))
+    instance = instance_fixture(%{info: %{"name" => "Pizza Backup"}})
+    other = instance_fixture(%{info: %{"name" => "Pizza Source"}})
+
+    {:ok, done} =
+      Bastion.Repo.insert(%Bastion.Backups.Backup{
+        instance_id: other.id,
+        instance_name: other.name,
+        key: "x.dump",
+        status: "ok",
+        size: 2_097_152
+      })
+
+    bring_online(instance)
+    {:ok, lv, _html} = live(log_in(conn), ~p"/instances/#{instance.id}")
+
+    assert has_element?(lv, "#restore-other option", "Pizza Source")
+
+    lv |> element("#backup-now") |> render_click()
+    assert_receive {:agent_got, "backup", %{"upload_url" => _}}
+    assert has_element?(lv, "#backup-list .badge", "идёт")
+
+    lv |> form("#restore-other", %{"backup_id" => done.id}) |> render_submit()
+    assert_receive {:agent_got, "restore", %{"backup_id" => backup_id}}
+    assert backup_id == done.id
+  end
 end
