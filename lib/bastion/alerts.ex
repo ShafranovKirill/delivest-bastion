@@ -41,6 +41,8 @@ defmodule Bastion.Alerts do
     Enum.join([title | Enum.map(problems, &("• " <> &1))], "\n")
   end
 
+  def notify(%Instance{} = instance, text), do: send_message(text, open_button(instance))
+
   def send_message(text, params \\ %{}) do
     if Telegram.configured?() do
       case Telegram.send_message(text, params) do

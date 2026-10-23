@@ -4,7 +4,7 @@ defmodule BastionWeb.InstanceLive.Show do
   import BastionWeb.InstanceLive.Components
   import BastionWeb.InstanceLive.LoadChart
 
-  alias Bastion.{Backups, CrmAlerts, Downtime, Health, Instances, Metrics}
+  alias Bastion.{Backups, CrmAlerts, Downtime, Health, Instances, Metrics, SiteAlerts}
   alias BastionWeb.Presence
 
   @tick :timer.seconds(15)
@@ -285,6 +285,49 @@ defmodule BastionWeb.InstanceLive.Show do
 
   defp rollback(_instance), do: nil
 
+  defp app_stats?(%{status: %{} = status}),
+    do: is_map(status["orders"]) or is_map(status["errors"]) or is_map(status["database"])
+
+  defp app_stats?(_instance), do: false
+
+  defp latest_errors(%{status: %{"errors" => %{"latest" => latest}}}) when is_list(latest),
+    do: latest
+
+  defp latest_errors(_instance), do: []
+
+  defp database_size(%{status: %{"database" => %{"size_bytes" => bytes}}}) when is_integer(bytes),
+    do: format_size(bytes)
+
+  defp database_size(_instance), do: "—"
+
+  defp free_disk(%{status: %{"disk" => %{"free_kb" => free}}}) when is_integer(free),
+    do: gigabytes(free)
+
+  defp free_disk(_instance), do: "—"
+
+  defp missing_env(%{status: %{"env" => %{"missing" => missing}}}) when is_list(missing),
+    do: missing
+
+  defp missing_env(_instance), do: []
+
+  # app_logs keeps UTC without an offset.
+  defp error_time(at) when is_binary(at) do
+    case NaiveDateTime.from_iso8601(at) do
+      {:ok, at} ->
+        at |> DateTime.from_naive!("Etc/UTC") |> DateTime.truncate(:second) |> datetime()
+
+      _ ->
+        at
+    end
+  end
+
+  defp error_time(_at), do: ""
+
+  defp site_alert_icon("orders"), do: "hero-shopping-cart"
+  defp site_alert_icon("errors"), do: "hero-bug-ant"
+  defp site_alert_icon("disk"), do: "hero-circle-stack"
+  defp site_alert_icon(_key), do: "hero-exclamation-triangle"
+
   defp rollback_label(%{"at" => at}), do: since_label(at)
 
   defp busy?(commands), do: Enum.any?(commands, &(&1.status in ["sent", "running"]))
@@ -294,7 +337,7 @@ defmodule BastionWeb.InstanceLive.Show do
   defp errors_count(instance, health),
     do:
       length(CrmAlerts.problems(instance)) + length(health.problems) +
-        map_size(instance.load_alerts)
+        map_size(instance.load_alerts) + map_size(instance.site_alerts)
 
   defp upload_error(:too_large), do: "файл больше 5 ГБ"
   defp upload_error(:too_many_files), do: "можно только один файл"
@@ -427,6 +470,17 @@ defmodule BastionWeb.InstanceLive.Show do
                     <td class="font-mono text-xs">
                       {String.slice(container["revision"] || "", 0, 7)}
                     </td>
+                    <td
+                      class={[
+                        "text-xs tabular-nums whitespace-nowrap",
+                        (container["restarts"] || 0) > 0 && "text-warning"
+                      ]}
+                      title="Сколько раз docker перезапускал контейнер после падения"
+                    >
+                      <span :if={is_integer(container["restarts"])}>
+                        ↻ {container["restarts"]}
+                      </span>
+                    </td>
                   </tr>
                   <tr :if={containers(@instance) == []}>
                     <td class="text-base-content/60">Нет данных</td>
@@ -468,6 +522,62 @@ defmodule BastionWeb.InstanceLive.Show do
             </div>
           </section>
         </div>
+
+        <section
+          :if={app_stats?(@instance)}
+          id="app-stats"
+          class="card bg-base-100 border border-base-300"
+        >
+          <div class="card-body p-4 gap-3">
+            <h2 class="font-bold">Приложение</h2>
+            <div class="grid grid-cols-3 gap-2">
+              <div class="rounded-box bg-base-200 p-3">
+                <div class="text-xs text-base-content/60">Заказы за час</div>
+                <div class="text-xl font-bold tabular-nums">
+                  {get_in(@instance.status, ["orders", "last_hour"]) || "—"}
+                </div>
+                <div class="text-xs text-base-content/60">
+                  обычно {get_in(@instance.status, ["orders", "usual"]) || "—"}
+                </div>
+              </div>
+              <div class="rounded-box bg-base-200 p-3">
+                <div class="text-xs text-base-content/60">Ошибки за 5 минут</div>
+                <div class={[
+                  "text-xl font-bold tabular-nums",
+                  (get_in(@instance.status, ["errors", "last_5m"]) || 0) > 0 && "text-warning"
+                ]}>
+                  {get_in(@instance.status, ["errors", "last_5m"]) || "—"}
+                </div>
+                <div class="text-xs text-base-content/60">
+                  за час {get_in(@instance.status, ["errors", "last_hour"]) || "—"}
+                </div>
+              </div>
+              <div class="rounded-box bg-base-200 p-3">
+                <div class="text-xs text-base-content/60">База данных</div>
+                <div class="text-xl font-bold tabular-nums">
+                  {database_size(@instance)}
+                </div>
+                <div class="text-xs text-base-content/60">
+                  свободно на диске {free_disk(@instance)}
+                </div>
+              </div>
+            </div>
+            <ul
+              :if={latest_errors(@instance) != []}
+              id="latest-errors"
+              class="space-y-1 text-xs"
+            >
+              <li
+                :for={error <- latest_errors(@instance)}
+                class="rounded-box bg-error/5 border border-error/20 px-3 py-2 break-words"
+              >
+                <span class="text-base-content/60">{error_time(error["inserted_at"])}</span>
+                <span :if={error["source"]} class="font-semibold">{error["source"]}</span>
+                {error["message"]}
+              </li>
+            </ul>
+          </div>
+        </section>
 
         <section id="load" class="card bg-base-100 border border-base-300">
           <div class="card-body p-4 gap-4">
@@ -579,6 +689,15 @@ defmodule BastionWeb.InstanceLive.Show do
               since
             )}
           </span>
+        </div>
+
+        <div
+          :for={{key, _alert} = alert <- Enum.sort(@instance.site_alerts)}
+          id={"site-alert-#{String.replace(key, ":", "-")}"}
+          class="alert alert-error py-2 text-sm"
+        >
+          <.icon name={site_alert_icon(key)} class="size-5" />
+          <span>{SiteAlerts.describe(alert)}</span>
         </div>
 
         <section
@@ -865,6 +984,17 @@ defmodule BastionWeb.InstanceLive.Show do
                 <.icon :if={!@env_request} name="hero-arrow-down-tray" class="size-4" />
                 {if @env_loaded?, do: "Перечитать", else: "Загрузить"}
               </button>
+            </div>
+            <div
+              :if={missing_env(@instance) != []}
+              id="env-missing"
+              class="alert alert-warning py-2 text-sm"
+            >
+              <.icon name="hero-exclamation-triangle" class="size-5" />
+              <span>
+                В .env нет переменных, которые есть в .env.example новой версии: <span class="font-mono">{Enum.join(missing_env(@instance), ", ")}</span>.
+                Добавьте их, если они нужны этому сайту.
+              </span>
             </div>
             <p :if={!env_supported?(@instance)} class="text-sm text-warning">
               Агент этого экземпляра не умеет работать с .env, сначала обновите экземпляр.

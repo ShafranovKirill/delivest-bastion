@@ -84,6 +84,12 @@ defmodule BastionWeb.InstanceLive.Index do
               <td>
                 <.health_badge level={@health[instance.id].level} />
                 <span
+                  :for={key <- instance.site_alerts |> Map.keys() |> Enum.sort()}
+                  class="badge badge-error badge-sm ml-1 whitespace-nowrap"
+                >
+                  {Bastion.SiteAlerts.label(key)}
+                </span>
+                <span
                   :if={Bastion.CrmAlerts.problems(instance) != []}
                   class="badge badge-error badge-sm ml-1"
                   title="Заказы не дошли до CRM"

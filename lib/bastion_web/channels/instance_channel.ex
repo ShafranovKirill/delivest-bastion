@@ -1,7 +1,7 @@
 defmodule BastionWeb.InstanceChannel do
   use Phoenix.Channel
 
-  alias Bastion.{Backups, CrmAlerts, Instances, Metrics}
+  alias Bastion.{Backups, CrmAlerts, Instances, Metrics, SiteAlerts}
   alias BastionWeb.Presence
 
   @impl true
@@ -39,7 +39,9 @@ defmodule BastionWeb.InstanceChannel do
 
   @impl true
   def handle_in("heartbeat", status, socket) when is_map(status) do
+    previous = Instances.get_instance(socket.assigns.instance_id)
     Instances.record_heartbeat(socket.assigns.instance_id, status)
+    if previous, do: SiteAlerts.check(previous, status)
     CrmAlerts.check(socket.assigns.instance_id, status["crm"])
 
     with {:ok, _sample} <- Metrics.record(socket.assigns.instance_id, status["metrics"]),

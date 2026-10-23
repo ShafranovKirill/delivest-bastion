@@ -92,6 +92,40 @@ defmodule BastionWeb.InstanceLiveTest do
     assert_receive {:agent_got, "rollback", %{}}
   end
 
+  test "orders, errors, the database and site alerts are shown", %{conn: conn} do
+    instance = instance_fixture()
+
+    status =
+      Map.merge(healthy_status(), %{
+        "orders" => %{"last_hour" => 0, "usual" => 9},
+        "errors" => %{
+          "last_5m" => 30,
+          "last_hour" => 41,
+          "latest" => [%{"message" => "boom", "inserted_at" => "2026-10-23T10:00:00.123"}]
+        },
+        "database" => %{"size_bytes" => 5_242_880},
+        "env" => %{"missing" => ["NEW_KEY"]}
+      })
+
+    previous = Instances.get_instance(instance.id)
+    {:ok, _} = Instances.record_heartbeat(instance.id, status)
+    Bastion.SiteAlerts.check(previous, status)
+
+    {:ok, lv, _html} = live(log_in(conn), ~p"/instances/#{instance.id}")
+    assert has_element?(lv, "#app-stats", "5.0 МБ")
+    assert has_element?(lv, "#latest-errors", "boom")
+
+    lv |> element("#tab-errors") |> render_click()
+    assert has_element?(lv, "#site-alert-orders")
+    assert has_element?(lv, "#site-alert-errors")
+
+    lv |> element("#tab-settings") |> render_click()
+    assert has_element?(lv, "#env-missing", "NEW_KEY")
+
+    {:ok, index, _html} = live(log_in(build_conn()), ~p"/")
+    assert has_element?(index, "#instance-#{instance.id}", "Нет заказов")
+  end
+
   test "logs request picks a service and tail", %{conn: conn} do
     instance = instance_fixture()
     {:ok, _} = Instances.record_heartbeat(instance.id, healthy_status())

@@ -83,4 +83,18 @@ defmodule Bastion.HealthTest do
            } =
              Health.evaluate(instance(%{status: status, external: external}), @now)
   end
+
+  test "variables missing from .env are a warning" do
+    status =
+      Map.put(Bastion.Fixtures.healthy_status(), "env", %{"missing" => ["SMS_KEY", "NEW_FLAG"]})
+
+    assert %{
+             level: :warning,
+             problems: ["в .env нет переменных из .env.example: SMS_KEY, NEW_FLAG"]
+           } =
+             Health.evaluate(instance(%{status: status}), @now)
+
+    status = Map.put(Bastion.Fixtures.healthy_status(), "env", %{"missing" => []})
+    assert %{level: :ok} = Health.evaluate(instance(%{status: status}), @now)
+  end
 end

@@ -75,7 +75,16 @@ defmodule Bastion.Health do
     stale =
       if instance.online and stale?(instance, now), do: ["нет свежих данных от агента"], else: []
 
-    disk ++ certs ++ stale
+    env =
+      case (instance.status || %{})["env"] do
+        %{"missing" => [_ | _] = missing} ->
+          ["в .env нет переменных из .env.example: #{Enum.join(missing, ", ")}"]
+
+        _ ->
+          []
+      end
+
+    disk ++ certs ++ env ++ stale
   end
 
   defp label("api"), do: "API"
