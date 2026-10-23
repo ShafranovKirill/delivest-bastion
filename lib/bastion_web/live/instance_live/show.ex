@@ -56,6 +56,17 @@ defmodule BastionWeb.InstanceLive.Show do
   end
 
   @impl true
+  def handle_event("command", %{"action" => "update"}, socket) do
+    socket =
+      case Bastion.Updates.update(socket.assigns.instance, socket.assigns.current_admin) do
+        {:ok, command} -> show_logs(socket, command)
+        {:error, :offline} -> put_flash(socket, :error, "Агент не на связи")
+        {:error, :unknown_action} -> put_flash(socket, :error, "Неизвестная команда")
+      end
+
+    {:noreply, socket}
+  end
+
   def handle_event("command", %{"action" => action}, socket) do
     {:noreply, send_command(socket, action, %{}, &show_logs/2)}
   end
@@ -268,6 +279,14 @@ defmodule BastionWeb.InstanceLive.Show do
 
   defp env_supported?(instance), do: "env_write" in instance.actions
 
+  defp rollback(%{actions: actions, status: %{"rollback" => %{} = rollback}}) do
+    if "rollback" in actions, do: rollback
+  end
+
+  defp rollback(_instance), do: nil
+
+  defp rollback_label(%{"at" => at}), do: since_label(at)
+
   defp busy?(commands), do: Enum.any?(commands, &(&1.status in ["sent", "running"]))
 
   defp tabs, do: @tabs
@@ -321,6 +340,18 @@ defmodule BastionWeb.InstanceLive.Show do
             data-confirm="Скачать новые образы и перезапустить сайт?"
           >
             <.icon name="hero-arrow-path" class="size-4" /> Обновить
+          </button>
+          <button
+            :if={rollback(@instance)}
+            id="rollback"
+            type="button"
+            class="btn btn-sm"
+            phx-click="command"
+            phx-value-action="rollback"
+            disabled={!@instance.online || busy?(@commands)}
+            data-confirm={"Вернуть образы и код, которые работали до обновления #{rollback_label(rollback(@instance))}? База останется как есть."}
+          >
+            <.icon name="hero-arrow-uturn-left" class="size-4" /> Откатить
           </button>
           <button
             type="button"

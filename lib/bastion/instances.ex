@@ -6,14 +6,22 @@ defmodule Bastion.Instances do
   alias BastionWeb.Presence
 
   @topic "instances"
-  @actions ~w(status update start stop restart logs env_read env_write backup restore)
-  @secret_args %{"env_write" => ["content"], "backup" => ["token"], "restore" => ["token"]}
-  @starting_actions ~w(start restart update env_write)
-  @busy_window_seconds 25 * 60
+  @actions ~w(status update rollback agent_update start stop restart logs env_read env_write backup restore)
+  @secret_args %{
+    "env_write" => ["content"],
+    "backup" => ["token"],
+    "restore" => ["token"],
+    "update" => ["token"]
+  }
+  @starting_actions ~w(start restart update rollback env_write)
+  # An update may back up the database and wait 5 minutes for the site before it rolls back.
+  @busy_window_seconds 45 * 60
 
   def actions, do: @actions
 
   def action_label("update"), do: "Обновление"
+  def action_label("rollback"), do: "Откат"
+  def action_label("agent_update"), do: "Обновление агента"
   def action_label("restart"), do: "Перезапуск"
   def action_label("stop"), do: "Выключение"
   def action_label("start"), do: "Включение"

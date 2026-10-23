@@ -16,7 +16,8 @@ defmodule Bastion.Telegram.Screens do
   }
 
   @confirm %{
-    "update" => "Скачать новые образы и перезапустить",
+    "update" => "Сделать бэкап, скачать новые образы и перезапустить",
+    "rollback" => "Вернуть образы, которые работали до обновления",
     "restart" => "Перезапустить",
     "stop" => "Выключить"
   }
@@ -189,13 +190,21 @@ defmodule Bastion.Telegram.Screens do
     ]
   end
 
-  defp instance_buttons(%Instance{id: id}) do
+  defp instance_buttons(%Instance{id: id} = instance) do
+    rollback =
+      if "rollback" in instance.actions and is_map((instance.status || %{})["rollback"]),
+        do: [[{"⏪ Откатить обновление", "a:rollback:" <> id}]],
+        else: []
+
     [
-      [{"🔄 Обновить сайт", "a:update:" <> id}, {"♻️ Перезапустить", "a:restart:" <> id}],
-      [{"▶️ Включить", "a:start:" <> id}, {"⏸ Выключить", "a:stop:" <> id}],
-      [{"📜 Логи", "a:logs:" <> id}, {"📉 Простой", "di:" <> id}],
-      [{"⬅️ Сети", "l"}, {"🔄 Обновить", "i:" <> id}]
-    ]
+      [{"🔄 Обновить сайт", "a:update:" <> id}, {"♻️ Перезапустить", "a:restart:" <> id}]
+    ] ++
+      rollback ++
+      [
+        [{"▶️ Включить", "a:start:" <> id}, {"⏸ Выключить", "a:stop:" <> id}],
+        [{"📜 Логи", "a:logs:" <> id}, {"📉 Простой", "di:" <> id}],
+        [{"⬅️ Сети", "l"}, {"🔄 Обновить", "i:" <> id}]
+      ]
   end
 
   defp hosts(%Instance{hosts: hosts}) when map_size(hosts) > 0,

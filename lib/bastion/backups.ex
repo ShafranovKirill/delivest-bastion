@@ -60,6 +60,33 @@ defmodule Bastion.Backups do
     end
   end
 
+  # A backup that the agent uploads as the first step of an update.
+  def prepare_for_update(%Instance{} = instance, requested_by) do
+    if Storage.configured?() and supported?(instance) do
+      backup =
+        insert(
+          instance,
+          Enum.join(Enum.reject([requested_by, "перед обновлением"], &is_nil/1), " · ")
+        )
+
+      {:ok, backup,
+       %{
+         "backup_id" => backup.id,
+         "upload_url" => url("/agent/backups/#{backup.id}"),
+         "token" => sign(:upload, backup)
+       }}
+    else
+      :skip
+    end
+  end
+
+  def attach_command(%Backup{} = backup, %Command{} = command),
+    do: backup |> Ecto.Changeset.change(command_id: command.id) |> Repo.update() |> broadcast()
+
+  def discard(%Backup{} = backup) do
+    with {:ok, backup} <- Repo.delete(backup), do: broadcast({:ok, backup})
+  end
+
   def import_file(%Instance{} = instance, path, requested_by \\ nil) do
     cond do
       not Storage.configured?() -> {:error, "хранилище бэкапов не настроено"}
@@ -118,8 +145,8 @@ defmodule Bastion.Backups do
 
   def fetch(%Backup{status: "ok"} = backup, path), do: Storage.download(backup.key, path)
 
-  def command_finished(%Command{action: "backup", status: status} = command)
-      when status in ["ok", "error"] do
+  def command_finished(%Command{action: action, status: status} = command)
+      when action in ["backup", "update"] and status in ["ok", "error"] do
     with %Backup{status: "pending"} = backup <- Repo.get_by(Backup, command_id: command.id) do
       reason =
         if status == "ok",

@@ -77,6 +77,21 @@ defmodule BastionWeb.InstanceLiveTest do
     assert render(lv) =~ "all good"
   end
 
+  test "a site updated by the agent can be rolled back", %{conn: conn} do
+    instance = instance_fixture()
+    {:ok, _} = Instances.record_heartbeat(instance.id, healthy_status())
+    bring_online(instance)
+
+    {:ok, lv, _html} = live(log_in(conn), ~p"/instances/#{instance.id}")
+    refute has_element?(lv, "#rollback")
+
+    status = Map.put(healthy_status(), "rollback", %{"at" => "2026-10-23T10:00:00Z"})
+    {:ok, _} = Instances.record_heartbeat(instance.id, status)
+
+    lv |> element("#rollback") |> render_click()
+    assert_receive {:agent_got, "rollback", %{}}
+  end
+
   test "logs request picks a service and tail", %{conn: conn} do
     instance = instance_fixture()
     {:ok, _} = Instances.record_heartbeat(instance.id, healthy_status())

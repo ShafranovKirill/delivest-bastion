@@ -204,4 +204,51 @@ defmodule Bastion.BackupsTest do
     assert {:error, "это не дамп базы" <> _} = Backups.import_file(instance, path, "admin")
     assert Repo.all(Backup) == []
   end
+
+  test "an update backs up the database first when the agent can roll back", %{conn: conn} do
+    instance = instance_fixture() |> bring_online()
+
+    assert {:ok, command} = Bastion.Updates.update(instance, "admin")
+    assert_receive {:agent_got, %{action: "update", args: args}}
+    refute Map.has_key?(command.args, "token")
+
+    [backup] = Backups.list(instance.id)
+    assert backup.status == "pending"
+    assert backup.command_id == command.id
+    assert backup.requested_by == "admin · перед обновлением"
+
+    assert %{"ok" => true} = conn |> upload(args) |> json_response(200)
+    Instances.command_finished(instance.id, command.id, true, "done")
+    assert Repo.get!(Backup, backup.id).status == "ok"
+  end
+
+  test "an update that did not upload its backup fails the backup" do
+    instance = instance_fixture() |> bring_online()
+
+    {:ok, command} = Bastion.Updates.update(instance, "admin")
+
+    {:ok, command} =
+      Instances.command_finished(
+        instance.id,
+        command.id,
+        false,
+        "== backup before update failed\nno space"
+      )
+
+    Backups.command_finished(command)
+
+    assert [%{status: "error", error: error}] = Backups.list(instance.id)
+    assert error =~ "no space"
+  end
+
+  test "agents without rollback update without a backup" do
+    instance =
+      instance_fixture(%{info: %{"actions" => Instances.actions() -- ["rollback"]}})
+      |> bring_online()
+
+    assert {:ok, _command} = Bastion.Updates.update(instance, "admin")
+    assert_receive {:agent_got, %{action: "update", args: args}}
+    assert args == %{}
+    assert Backups.list(instance.id) == []
+  end
 end

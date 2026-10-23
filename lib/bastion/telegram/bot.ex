@@ -4,7 +4,7 @@ defmodule Bastion.Telegram.Bot do
   alias Bastion.{Instances, Telegram}
   alias Bastion.Telegram.Screens
 
-  @notify_actions ~w(update start stop restart env_write restore)
+  @notify_actions ~w(update rollback agent_update start stop restart env_write restore)
   @commands [
     %{command: "menu", description: "Главное меню"},
     %{command: "sites", description: "Сети и их состояние"},
@@ -92,8 +92,15 @@ defmodule Bastion.Telegram.Bot do
   defp run(query, instance, action) do
     args = if action == "logs", do: %{"tail" => "100"}, else: %{}
 
+    requested_by = requester(query["from"])
+
+    sent =
+      if action == "update",
+        do: Bastion.Updates.update(instance, requested_by),
+        else: Instances.send_command(instance, action, args, requested_by)
+
     notice =
-      case Instances.send_command(instance, action, args, requester(query["from"])) do
+      case sent do
         {:ok, _command} -> "#{Instances.action_label(action)}: отправлено"
         {:error, :offline} -> "Агент не на связи"
         {:error, :unknown_action} -> "Неизвестная команда"
