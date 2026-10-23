@@ -14,6 +14,11 @@ defmodule Bastion.Backups.Backup do
     field :error, :string
     field :requested_by, :string
     field :finished_at, :utc_datetime
+    field :verify_status, :string
+    field :verify_error, :string
+    field :verified_at, :utc_datetime
+    field :offsite_at, :utc_datetime
+    field :offsite_error, :string
 
     timestamps(type: :utc_datetime)
   end

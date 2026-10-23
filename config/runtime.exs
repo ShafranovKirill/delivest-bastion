@@ -59,6 +59,15 @@ if config_env() != :test do
     bucket: System.get_env("S3_BUCKET", "backups"),
     access_key: System.get_env("S3_ACCESS_KEY"),
     secret_key: System.get_env("S3_SECRET_KEY")
+
+  if System.get_env("OFFSITE_S3_URL") not in [nil, ""] do
+    config :bastion, :offsite_storage,
+      url: System.get_env("OFFSITE_S3_URL"),
+      bucket: System.get_env("OFFSITE_S3_BUCKET", "bastion-backups"),
+      region: System.get_env("OFFSITE_S3_REGION", "us-east-1"),
+      access_key: System.get_env("OFFSITE_S3_ACCESS_KEY"),
+      secret_key: System.get_env("OFFSITE_S3_SECRET_KEY")
+  end
 end
 
 if config_env() == :prod do

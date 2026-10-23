@@ -2,7 +2,7 @@ defmodule Bastion.Backups do
   import Ecto.Query, warn: false
 
   alias Bastion.{Alerts, Instances, Repo, Storage}
-  alias Bastion.Backups.Backup
+  alias Bastion.Backups.{Backup, CheckWorker, Verifier}
   alias Bastion.Instances.{Command, Instance}
 
   @topic "instances"
@@ -136,6 +136,7 @@ defmodule Bastion.Backups do
           |> broadcast()
 
         prune(backup.instance_id)
+        Oban.insert(CheckWorker.new(%{backup_id: backup.id}))
         {:ok, backup}
 
       {:error, reason} ->
@@ -144,6 +145,69 @@ defmodule Bastion.Backups do
   end
 
   def fetch(%Backup{status: "ok"} = backup, path), do: Storage.download(backup.key, path)
+
+  @doc "Reads the stored dump with pg_restore and copies it to the offsite storage."
+  def check(id) do
+    case get(id) do
+      %Backup{status: "ok"} = backup ->
+        path = Path.join(System.tmp_dir!(), "bastion-check-#{backup.id}.dump")
+
+        try do
+          with :ok <- Storage.download(backup.key, path) do
+            backup |> verify(path) |> copy_offsite(path)
+            :ok
+          end
+        after
+          File.rm(path)
+        end
+
+      _ ->
+        :ok
+    end
+  end
+
+  defp verify(backup, path) do
+    {status, error} =
+      case Verifier.run(path) do
+        :ok -> {"ok", nil}
+        :skipped -> {"skipped", nil}
+        {:error, reason} -> {"error", reason}
+      end
+
+    {:ok, backup} =
+      backup
+      |> Ecto.Changeset.change(verify_status: status, verify_error: error, verified_at: now())
+      |> Repo.update()
+      |> broadcast()
+
+    if error do
+      Alerts.send_message(
+        "💾 #{backup.instance_name}: бэкап от #{Calendar.strftime(backup.inserted_at, "%d.%m %H:%M")} не читается, " <>
+          "восстановить из него не получится\n#{error}"
+      )
+    end
+
+    backup
+  end
+
+  defp copy_offsite(backup, path) do
+    if Storage.configured?(:offsite) do
+      changes =
+        case Storage.put_file(backup.key, path, :offsite) do
+          :ok ->
+            [offsite_at: now(), offsite_error: nil]
+
+          {:error, reason} ->
+            Alerts.send_message(
+              "💾 #{backup.instance_name}: копия бэкапа не ушла во внешнее хранилище\n#{reason}"
+            )
+
+            [offsite_error: reason]
+        end
+
+      backup |> Ecto.Changeset.change(changes) |> Repo.update() |> broadcast()
+    end
+  end
 
   def command_finished(%Command{action: action, status: status} = command)
       when action in ["backup", "update"] and status in ["ok", "error"] do
@@ -202,7 +266,10 @@ defmodule Bastion.Backups do
       |> offset(^keep())
       |> Repo.all()
 
-    for backup <- old, Storage.delete(backup.key) == :ok, do: Repo.delete(backup)
+    for backup <- old, Storage.delete(backup.key) == :ok do
+      if backup.offsite_at, do: Storage.delete(backup.key, :offsite)
+      Repo.delete(backup)
+    end
 
     failed_before = DateTime.add(now(), -keep() * 86_400)
 

@@ -1,18 +1,25 @@
 defmodule Bastion.Storage do
-  def configured?,
+  @moduledoc """
+  S3 storage for backups: `:primary` is the bastion's own SeaweedFS and `:offsite` an
+  optional bucket on another server that keeps a copy of every backup.
+  """
+
+  def configured?(target \\ :primary),
     do:
       match?(
-        %{access_key: key, secret_key: secret} when is_binary(key) and is_binary(secret),
-        config()
+        %{access_key: key, secret_key: secret, url: url}
+        when is_binary(key) and is_binary(secret) and is_binary(url),
+        config(target)
       )
 
-  def put_file(key, path) do
-    with :ok <- ensure_bucket() do
+  def put_file(key, path, target \\ :primary) do
+    with :ok <- ensure_bucket(target) do
       size = File.stat!(path).size
 
-      request()
+      target
+      |> request()
       |> Req.put(
-        url: object_path(key),
+        url: object_path(key, target),
         headers: [content_length: size],
         body: File.stream!(path, 1_048_576),
         receive_timeout: 600_000
@@ -21,25 +28,33 @@ defmodule Bastion.Storage do
     end
   end
 
-  def download(key, path) do
+  def download(key, path, target \\ :primary) do
     result =
-      request()
-      |> Req.get(url: object_path(key), into: File.stream!(path), receive_timeout: 600_000)
+      target
+      |> request()
+      |> Req.get(
+        url: object_path(key, target),
+        into: File.stream!(path),
+        receive_timeout: 600_000
+      )
       |> ok()
 
     if result != :ok, do: File.rm(path)
     result
   end
 
-  def delete(key) do
-    case Req.delete(request(), url: object_path(key)) do
+  def delete(key, target \\ :primary) do
+    case Req.delete(request(target), url: object_path(key, target)) do
       {:ok, %{status: status}} when status in [200, 204, 404] -> :ok
       other -> ok(other)
     end
   end
 
-  defp ensure_bucket do
-    case Req.put(request(), url: "/" <> bucket()) do
+  # The bastion creates its own bucket; an offsite bucket is made by whoever rents it.
+  defp ensure_bucket(:offsite), do: :ok
+
+  defp ensure_bucket(target) do
+    case Req.put(request(target), url: "/" <> config(target).bucket) do
       {:ok, %{status: status}} when status in [200, 409] -> :ok
       other -> ok(other)
     end
@@ -49,8 +64,8 @@ defmodule Bastion.Storage do
   defp ok({:ok, %{status: status}}), do: {:error, "S3 HTTP #{status}"}
   defp ok({:error, error}), do: {:error, Exception.message(error)}
 
-  defp request do
-    config = config()
+  defp request(target) do
+    config = config(target)
 
     Req.new(
       base_url: config.url,
@@ -66,11 +81,9 @@ defmodule Bastion.Storage do
     |> Req.merge(Application.get_env(:bastion, :req_options, []))
   end
 
-  defp object_path(key), do: "/" <> bucket() <> "/" <> key
+  defp object_path(key, target), do: "/" <> config(target).bucket <> "/" <> key
 
-  defp bucket, do: config().bucket
-
-  defp config do
+  defp config(:primary) do
     Map.merge(
       %{
         url: "http://s3:8333",
@@ -80,6 +93,19 @@ defmodule Bastion.Storage do
         secret_key: nil
       },
       Map.new(Application.get_env(:bastion, :storage, []))
+    )
+  end
+
+  defp config(:offsite) do
+    Map.merge(
+      %{
+        url: nil,
+        bucket: "bastion-backups",
+        region: "us-east-1",
+        access_key: nil,
+        secret_key: nil
+      },
+      Map.new(Application.get_env(:bastion, :offsite_storage, []))
     )
   end
 end

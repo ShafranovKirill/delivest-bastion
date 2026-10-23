@@ -853,7 +853,9 @@ defmodule BastionWeb.InstanceLive.Show do
               <div>
                 <h2 class="font-bold">Бэкапы базы</h2>
                 <p class="text-xs text-base-content/60">
-                  Каждый день в 00:00 UTC (03:00 МСК), хранятся последние {Backups.keep()}. Логи сайта в бэкап не входят.
+                  Каждый день в 00:00 UTC (03:00 МСК) и перед каждым обновлением, хранятся последние {Backups.keep()}.
+                  Каждый бэкап бастион целиком читает pg_restore, а если настроено внешнее хранилище, кладёт туда копию.
+                  Логи сайта в бэкап не входят.
                   Восстановить можно из бэкапа этой сети или из своего файла.
                   При восстановлении сервер ненадолго выключается, а прежняя база остаётся рядом как
                   &lt;имя базы&gt;_before_restore до следующего восстановления.
@@ -884,8 +886,31 @@ defmodule BastionWeb.InstanceLive.Show do
                       <span :if={backup.status == "ok"} class="badge badge-success badge-sm">готов</span>
                       <span :if={backup.status == "pending"} class="badge badge-info badge-sm">идёт</span>
                       <span :if={backup.status == "error"} class="badge badge-error badge-sm">ошибка</span>
+                      <span
+                        :if={backup.verify_status == "ok"}
+                        class="badge badge-ghost badge-sm"
+                        title="pg_restore прочитал бэкап целиком, данные заказов на месте"
+                      >
+                        проверен
+                      </span>
+                      <span :if={backup.verify_status == "error"} class="badge badge-error badge-sm">
+                        не читается
+                      </span>
+                      <span
+                        :if={backup.offsite_at}
+                        class="badge badge-ghost badge-sm"
+                        title="Копия лежит во внешнем хранилище"
+                      >
+                        <.icon name="hero-cloud-arrow-up-micro" class="size-3" /> копия
+                      </span>
                       <span :if={backup.error} class="block text-xs text-error whitespace-pre-wrap">
                         {backup.error}
+                      </span>
+                      <span
+                        :if={backup.verify_error || backup.offsite_error}
+                        class="block text-xs text-error whitespace-pre-wrap"
+                      >
+                        {backup.verify_error || backup.offsite_error}
                       </span>
                     </td>
                     <td class="text-xs text-base-content/60">{backup.requested_by}</td>

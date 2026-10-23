@@ -1,5 +1,6 @@
 defmodule Bastion.BackupsTest do
   use BastionWeb.ConnCase, async: false
+  use Oban.Testing, repo: Bastion.Repo
 
   import Bastion.Fixtures
 
@@ -250,5 +251,73 @@ defmodule Bastion.BackupsTest do
     assert_receive {:agent_got, %{action: "update", args: args}}
     assert args == %{}
     assert Backups.list(instance.id) == []
+  end
+
+  @moduletag :tmp_dir
+
+  defp fake_pg_restore(dir, toc, status \\ 0) do
+    path = Path.join(dir, "pg_restore")
+
+    File.write!(path, """
+    #!/bin/sh
+    if [ "$1" = "--list" ]; then echo "#{toc}"; fi
+    exit #{status}
+    """)
+
+    File.chmod!(path, 0o755)
+    Application.put_env(:bastion, :pg_restore, path)
+    on_exit(fn -> Application.delete_env(:bastion, :pg_restore) end)
+  end
+
+  test "a stored backup is read by pg_restore and copied offsite", %{conn: conn, tmp_dir: dir} do
+    fake_pg_restore(dir, "215; 0 16390 TABLE DATA public orders delivest")
+
+    Application.put_env(:bastion, :offsite_storage,
+      url: "http://offsite.test",
+      bucket: "far",
+      access_key: "k",
+      secret_key: "s"
+    )
+
+    on_exit(fn -> Application.delete_env(:bastion, :offsite_storage) end)
+
+    instance = instance_fixture() |> bring_online()
+    {backup, args} = start_backup(instance)
+    conn |> upload(args) |> json_response(200)
+
+    assert_enqueued(worker: Bastion.Backups.CheckWorker, args: %{backup_id: backup.id})
+    assert :ok = perform_job(Bastion.Backups.CheckWorker, %{backup_id: backup.id})
+
+    backup = Repo.get!(Backup, backup.id)
+    assert backup.verify_status == "ok"
+    assert backup.offsite_at
+    assert_received {:s3, "PUT", "/far/" <> _key, "PGDMP-stored"}
+  end
+
+  test "a backup without the orders data is marked unreadable", %{conn: conn, tmp_dir: dir} do
+    fake_pg_restore(dir, "215; 0 16390 TABLE DATA public branches delivest")
+
+    instance = instance_fixture() |> bring_online()
+    {backup, args} = start_backup(instance)
+    conn |> upload(args) |> json_response(200)
+
+    assert :ok = Backups.check(backup.id)
+
+    backup = Repo.get!(Backup, backup.id)
+    assert backup.verify_status == "error"
+    assert backup.verify_error =~ "нет данных таблицы orders"
+    refute backup.offsite_at
+  end
+
+  test "a broken archive fails the check with the pg_restore output", %{conn: conn, tmp_dir: dir} do
+    fake_pg_restore(dir, "pg_restore: error: could not read input file", 1)
+
+    instance = instance_fixture() |> bring_online()
+    {backup, args} = start_backup(instance)
+    conn |> upload(args) |> json_response(200)
+
+    Backups.check(backup.id)
+    assert %{verify_status: "error", verify_error: error} = Repo.get!(Backup, backup.id)
+    assert error =~ "could not read input file"
   end
 end
