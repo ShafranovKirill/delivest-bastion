@@ -15,6 +15,10 @@ defmodule Bastion.Telegram do
   def send_message(text, params \\ %{}),
     do: call("sendMessage", Map.merge(%{chat_id: chat_id(), text: text}, params))
 
+  # Pooled connections to Telegram go stale while the bastion is idle and a request sent
+  # into one only times out, so a request is sent again over a fresh connection.
+  @retry [retry: :transient, max_retries: 2, retry_delay: 500, receive_timeout: 10_000]
+
   def call(method, params, opts \\ []) do
     case token() do
       nil ->
@@ -23,7 +27,7 @@ defmodule Bastion.Telegram do
       token ->
         case Req.post(
                "#{@api}/bot#{token}/#{method}",
-               [json: params, retry: false] ++ opts ++ req_options()
+               [json: params] ++ @retry ++ opts ++ req_options()
              ) do
           {:ok, %{status: 200, body: %{"ok" => true} = body}} -> {:ok, body["result"]}
           {:ok, %{body: %{"description" => description}}} -> {:error, description}

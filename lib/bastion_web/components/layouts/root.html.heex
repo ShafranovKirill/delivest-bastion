@@ -6,10 +6,11 @@
     <meta name="csrf-token" content={get_csrf_token()} />
     <meta name="theme-color" content="#4f46e5" />
     <meta name="apple-mobile-web-app-title" content="Бастион" />
-    <link rel="icon" href={~p"/favicon.ico"} sizes="48x48" />
+    <%!-- Plain paths: phx.digest renames these files and Plug.Static only serves the exact names --%>
+    <link rel="icon" href="/favicon.ico" sizes="48x48" />
     <link rel="icon" href={~p"/icons/icon.svg"} type="image/svg+xml" />
     <link rel="apple-touch-icon" href={~p"/icons/apple-touch-icon.png"} />
-    <link rel="manifest" href={~p"/manifest.webmanifest"} />
+    <link rel="manifest" href="/manifest.webmanifest" />
     <.live_title default="Бастион" suffix=" · Бастион" phx-no-format>{assigns[:page_title]}</.live_title>
     <link phx-track-static rel="stylesheet" href={~p"/assets/css/app.css"} />
     <script defer phx-track-static type="text/javascript" src={~p"/assets/js/app.js"}>

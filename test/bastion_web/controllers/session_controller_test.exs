@@ -84,4 +84,24 @@ defmodule BastionWeb.SessionControllerTest do
     assert html_response(conn, 200) =~ "chat not found"
     refute get_session(conn, :login_code_id)
   end
+
+  test "the code is sent again when a stale connection times out", %{conn: conn} do
+    test_pid = self()
+    Process.put(:attempts, 0)
+
+    Req.Test.stub(Bastion.Http, fn conn ->
+      if Process.get(:attempts) == 0 do
+        Process.put(:attempts, 1)
+        Req.Test.transport_error(conn, :timeout)
+      else
+        {:ok, body, conn} = Plug.Conn.read_body(conn)
+        send(test_pid, {:telegram, Jason.decode!(body)})
+        Req.Test.json(conn, %{"ok" => true, "result" => %{}})
+      end
+    end)
+
+    conn = post(conn, ~p"/login", %{"session" => %{"login" => "admin", "password" => "secret"}})
+    assert redirected_to(conn) == ~p"/login/code"
+    assert_received {:telegram, %{"text" => "🔐" <> _}}
+  end
 end

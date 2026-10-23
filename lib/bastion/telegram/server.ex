@@ -65,7 +65,10 @@ defmodule Bastion.Telegram.Server do
 
     task =
       Task.Supervisor.async_nolink(Bastion.TaskSupervisor, fn ->
-        Telegram.call("getUpdates", params, receive_timeout: (@poll_timeout + 10) * 1000)
+        Telegram.call("getUpdates", params,
+          retry: false,
+          receive_timeout: (@poll_timeout + 10) * 1000
+        )
       end)
 
     %{state | poll: task}
