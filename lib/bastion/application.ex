@@ -15,7 +15,8 @@ defmodule Bastion.Application do
         {Phoenix.PubSub, name: Bastion.PubSub},
         BastionWeb.Presence,
         {Oban, Application.fetch_env!(:bastion, Oban)},
-        {Task.Supervisor, name: Bastion.TaskSupervisor}
+        {Task.Supervisor, name: Bastion.TaskSupervisor},
+        Bastion.LoginCodes
       ] ++
         telegram() ++
         [

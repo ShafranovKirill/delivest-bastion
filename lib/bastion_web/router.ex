@@ -21,6 +21,8 @@ defmodule BastionWeb.Router do
 
     get "/login", SessionController, :new
     post "/login", SessionController, :create
+    get "/login/code", SessionController, :code
+    post "/login/code", SessionController, :verify
     delete "/logout", SessionController, :delete
   end
 

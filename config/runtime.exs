@@ -44,7 +44,8 @@ if config_env() != :test do
         admin_login: "ADMIN_LOGIN",
         admin_password: "ADMIN_PASSWORD",
         telegram_bot_token: "TELEGRAM_BOT_TOKEN",
-        telegram_chat_id: "TELEGRAM_CHAT_ID"
+        telegram_chat_id: "TELEGRAM_CHAT_ID",
+        telegram_login_chat_id: "TELEGRAM_LOGIN_CHAT_ID"
       ],
       value = System.get_env(env),
       value not in [nil, ""] do
