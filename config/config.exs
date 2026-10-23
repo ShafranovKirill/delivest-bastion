@@ -60,7 +60,7 @@ config :phoenix, :json_library, Jason
 config :bastion, Oban,
   engine: Oban.Engines.Basic,
   repo: Bastion.Repo,
-  queues: [checks: 2, backups: 1],
+  queues: [checks: 2, backups: 1, push: 2],
   plugins: [
     {Oban.Plugins.Pruner, max_age: 86_400},
     {Oban.Plugins.Cron,

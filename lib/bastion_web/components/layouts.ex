@@ -43,6 +43,19 @@ defmodule BastionWeb.Layouts do
         </.link>
       </div>
       <div class="flex-none flex items-center gap-2">
+        <button
+          :if={@current_admin}
+          id="push-toggle"
+          type="button"
+          class="btn btn-ghost btn-sm btn-square transition-colors"
+          phx-hook="PushToggle"
+          phx-update="ignore"
+          data-key={Bastion.Push.public_key()}
+          title="Включить уведомления на этом устройстве"
+        >
+          <span data-off><.icon name="hero-bell-slash" class="size-5" /></span>
+          <span data-on hidden><.icon name="hero-bell-alert" class="size-5" /></span>
+        </button>
         <.theme_toggle />
         <.link :if={@current_admin} href={~p"/logout"} method="delete" class="btn btn-ghost btn-sm">
           Выйти

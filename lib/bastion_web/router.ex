@@ -12,6 +12,12 @@ defmodule BastionWeb.Router do
     plug :put_secure_browser_headers
   end
 
+  pipeline :session_json do
+    plug :accepts, ["json"]
+    plug :fetch_session
+    plug :protect_from_forgery
+  end
+
   pipeline :admin do
     plug :require_admin
   end
@@ -29,6 +35,13 @@ defmodule BastionWeb.Router do
   scope "/agent", BastionWeb do
     put "/backups/:id", BackupController, :upload
     get "/backups/:id/file", BackupController, :file
+  end
+
+  scope "/push", BastionWeb do
+    pipe_through [:session_json, :admin]
+
+    post "/subscriptions", PushController, :create
+    delete "/subscriptions", PushController, :delete
   end
 
   scope "/", BastionWeb do

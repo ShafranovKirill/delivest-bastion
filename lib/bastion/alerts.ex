@@ -44,6 +44,8 @@ defmodule Bastion.Alerts do
   def notify(%Instance{} = instance, text), do: send_message(text, open_button(instance))
 
   def send_message(text, params \\ %{}) do
+    Bastion.Push.notify(text, push_url(params))
+
     if Telegram.configured?() do
       case Telegram.send_message(text, params) do
         {:ok, _message} ->
@@ -57,4 +59,14 @@ defmodule Bastion.Alerts do
       :skipped
     end
   end
+
+  # The "Открыть" button of an alert leads to the instance page in a push too.
+  defp push_url(%{reply_markup: %{inline_keyboard: rows}}) do
+    Enum.find_value(List.flatten(rows), "/", fn
+      %{callback_data: "i:" <> id} -> "/instances/" <> id
+      _ -> nil
+    end)
+  end
+
+  defp push_url(_params), do: "/"
 end

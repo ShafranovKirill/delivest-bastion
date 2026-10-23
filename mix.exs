@@ -21,7 +21,7 @@ defmodule Bastion.MixProject do
   def application do
     [
       mod: {Bastion.Application, []},
-      extra_applications: [:logger, :runtime_tools]
+      extra_applications: [:logger, :runtime_tools, :crypto, :public_key]
     ]
   end
 
