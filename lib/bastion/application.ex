@@ -16,7 +16,9 @@ defmodule Bastion.Application do
         BastionWeb.Presence,
         {Oban, Application.fetch_env!(:bastion, Oban)},
         {Task.Supervisor, name: Bastion.TaskSupervisor},
-        Bastion.LoginCodes
+        Bastion.LoginCodes,
+        Bastion.Images,
+        Bastion.Rollout
       ] ++
         telegram() ++
         [

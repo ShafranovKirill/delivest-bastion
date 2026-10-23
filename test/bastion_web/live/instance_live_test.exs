@@ -126,6 +126,27 @@ defmodule BastionWeb.InstanceLiveTest do
     assert has_element?(index, "#instance-#{instance.id}", "Нет заказов")
   end
 
+  test "the agent updates itself from the settings tab", %{conn: conn} do
+    instance = instance_fixture()
+    {:ok, _} = Instances.record_heartbeat(instance.id, healthy_status())
+    bring_online(instance)
+
+    {:ok, lv, _html} = live(log_in(conn), ~p"/instances/#{instance.id}?tab=settings")
+    lv |> element("#agent-update") |> render_click()
+    assert_receive {:agent_got, "agent_update", %{}}
+  end
+
+  test "the list offers to update the sites one by one", %{conn: conn} do
+    instance = instance_fixture()
+    {:ok, _} = Instances.record_heartbeat(instance.id, healthy_status())
+
+    {:ok, lv, _html} = live(log_in(conn), ~p"/")
+    assert has_element?(lv, "#rollout-start")
+
+    lv |> element("#rollout-start") |> render_click()
+    assert render(lv) =~ "Все сайты на связи уже обновлены"
+  end
+
   test "logs request picks a service and tail", %{conn: conn} do
     instance = instance_fixture()
     {:ok, _} = Instances.record_heartbeat(instance.id, healthy_status())

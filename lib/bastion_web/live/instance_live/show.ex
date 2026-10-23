@@ -4,7 +4,7 @@ defmodule BastionWeb.InstanceLive.Show do
   import BastionWeb.InstanceLive.Components
   import BastionWeb.InstanceLive.LoadChart
 
-  alias Bastion.{Backups, CrmAlerts, Downtime, Health, Instances, Metrics, SiteAlerts}
+  alias Bastion.{Backups, CrmAlerts, Downtime, Health, Images, Instances, Metrics, SiteAlerts}
   alias BastionWeb.Presence
 
   @tick :timer.seconds(15)
@@ -284,6 +284,12 @@ defmodule BastionWeb.InstanceLive.Show do
   end
 
   defp rollback(_instance), do: nil
+
+  defp agent_revision(%{status: %{"agent" => %{"revision" => revision}}})
+       when is_binary(revision),
+       do: String.slice(revision, 0, 7)
+
+  defp agent_revision(_instance), do: "—"
 
   defp app_stats?(%{status: %{} = status}),
     do: is_map(status["orders"]) or is_map(status["errors"]) or is_map(status["database"])
@@ -1023,6 +1029,43 @@ defmodule BastionWeb.InstanceLive.Show do
                 <.icon name="hero-check" class="size-4" /> Сохранить и применить
               </button>
             </.form>
+          </div>
+        </section>
+
+        <section id="agent" class="card bg-base-100 border border-base-300">
+          <div class="card-body p-4 gap-3">
+            <div class="flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <h2 class="font-bold">Агент</h2>
+                <p class="text-xs text-base-content/60">
+                  Версия {@instance.agent_version || "—"} · образ
+                  <span class="font-mono">{agent_revision(@instance)}</span>
+                  <span :if={Images.agent_outdated?(@instance)} class="badge badge-info badge-xs ml-1">
+                    есть новее
+                  </span>
+                </p>
+                <p class="text-xs text-base-content/60">
+                  Агент скачает свой новый образ и пересоздаст себя, заодно подхватит новый .env.
+                  Сайт при этом работает, бастион на несколько секунд потеряет связь с агентом.
+                </p>
+              </div>
+              <button
+                :if={"agent_update" in @instance.actions}
+                id="agent-update"
+                type="button"
+                class="btn btn-sm"
+                phx-click="command"
+                phx-value-action="agent_update"
+                disabled={!@instance.online || busy?(@commands)}
+                data-confirm="Обновить агента? Он перезапустится через несколько секунд."
+              >
+                <.icon name="hero-arrow-path" class="size-4" /> Обновить агента
+              </button>
+            </div>
+            <p :if={"agent_update" not in @instance.actions} class="text-sm text-warning">
+              Этот агент не умеет обновлять себя. Один раз обновите его на сервере:
+              <code class="font-mono text-xs">docker compose pull agent && docker compose up -d agent</code>
+            </p>
           </div>
         </section>
 
