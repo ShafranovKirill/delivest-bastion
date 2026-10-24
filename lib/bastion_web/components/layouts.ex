@@ -39,7 +39,7 @@ defmodule BastionWeb.Layouts do
     <header class="navbar border-b border-base-300 px-4 sm:px-6 lg:px-8">
       <div class="flex-1">
         <.link navigate={~p"/"} class="flex w-fit items-center gap-2 font-bold text-lg">
-          <.icon name="hero-server-stack" class="size-6" /> Бастион
+          <img src={~p"/icons/icon.svg"} alt="" class="size-7" /> Бастион
         </.link>
       </div>
       <div class="flex-none flex items-center gap-2">
