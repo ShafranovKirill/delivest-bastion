@@ -23,16 +23,21 @@ defmodule Bastion.Metrics.Alerts do
 
           cond do
             not Map.has_key?(alerts, key) and high?(values) ->
-              notify(
+              Alerts.notify(
                 instance,
-                "🔥 #{instance.name}: #{label} на #{round(hd(values))}% уже #{@minutes} минут"
+                "🔥 #{instance.name}: #{label} на #{round(hd(values))}% уже #{@minutes} минут",
+                open: key
               )
 
               Map.put(alerts, key, DateTime.to_iso8601(List.last(recent).at))
 
             Map.has_key?(alerts, key) and recovered?(samples, metric) ->
               value = samples |> hd() |> Map.get(metric) |> round()
-              notify(instance, "✅ #{instance.name}: #{name} снова в норме, #{value}%")
+
+              Alerts.notify(instance, "✅ #{instance.name}: #{name} снова в норме, #{value}%",
+                resolve: key
+              )
+
               Map.delete(alerts, key)
 
             true ->
@@ -63,11 +68,5 @@ defmodule Bastion.Metrics.Alerts do
   defp recovered?(samples, metric) do
     values = samples |> Enum.take(2) |> Enum.map(&Map.get(&1, metric))
     length(values) == 2 and Enum.all?(values, &(is_number(&1) and &1 < @recovered_below))
-  end
-
-  defp notify(instance, text) do
-    Alerts.send_message(text, %{
-      reply_markup: Bastion.Telegram.keyboard([[{"Открыть", "i:" <> instance.id}]])
-    })
   end
 end

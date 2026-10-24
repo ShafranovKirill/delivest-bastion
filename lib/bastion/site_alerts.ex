@@ -73,13 +73,17 @@ defmodule Bastion.SiteAlerts do
         notify(
           instance,
           "🛒 #{instance.name}: за последний час ни одного заказа, а обычно в это время около #{format(usual)}.\n" <>
-            "Проверьте, что сайт принимает заказы и оплату."
+            "Проверьте, что сайт принимает заказы и оплату.",
+          open: "orders"
         )
 
         Map.put(alerts, "orders", %{"since" => iso(now), "usual" => format(usual)})
 
       active? and count > 0 ->
-        notify(instance, "✅ #{instance.name}: заказы снова идут, за последний час #{count}")
+        notify(instance, "✅ #{instance.name}: заказы снова идут, за последний час #{count}",
+          resolve: "orders"
+        )
+
         Map.delete(alerts, "orders")
 
       true ->
@@ -100,11 +104,17 @@ defmodule Bastion.SiteAlerts do
             _ -> ""
           end
 
-        notify(instance, "🐞 #{instance.name}: #{count} ошибок в приложении за 5 минут" <> latest)
+        notify(instance, "🐞 #{instance.name}: #{count} ошибок в приложении за 5 минут" <> latest,
+          open: "errors"
+        )
+
         Map.put(alerts, "errors", %{"since" => iso(now), "count" => count})
 
       active? and count < @errors_recovered_below ->
-        notify(instance, "✅ #{instance.name}: ошибок стало меньше, #{count} за 5 минут")
+        notify(instance, "✅ #{instance.name}: ошибок стало меньше, #{count} за 5 минут",
+          resolve: "errors"
+        )
+
         Map.delete(alerts, "errors")
 
       true ->
@@ -138,13 +148,17 @@ defmodule Bastion.SiteAlerts do
         notify(
           instance,
           "💽 #{instance.name}: диск заполнен на #{percent}%, свободно #{gigabytes(disk["free_kb"] || total - used)}." <>
-            database
+            database,
+          open: "disk"
         )
 
         Map.put(alerts, "disk", %{"since" => iso(now), "percent" => percent})
 
       active? and percent < @disk_recovered_below ->
-        notify(instance, "✅ #{instance.name}: место на диске освободилось, занято #{percent}%")
+        notify(instance, "✅ #{instance.name}: место на диске освободилось, занято #{percent}%",
+          resolve: "disk"
+        )
+
         Map.delete(alerts, "disk")
 
       true ->
@@ -177,7 +191,8 @@ defmodule Bastion.SiteAlerts do
           notify(
             instance,
             "💥 #{instance.name}: контейнер #{service} упал и перезапустился (всего #{restarts} раз). " <>
-              "Посмотрите его логи."
+              "Посмотрите его логи.",
+            buttons: [[{"📜 Логи", "logs:" <> instance.id}]]
           )
         end
 
@@ -192,7 +207,7 @@ defmodule Bastion.SiteAlerts do
 
   defp restarts(_status), do: %{}
 
-  defp notify(instance, text), do: Alerts.notify(instance, text)
+  defp notify(instance, text, opts), do: Alerts.notify(instance, text, opts)
 
   defp since(%{"since" => at}), do: format_time(at)
   defp since(%{"at" => at}), do: format_time(at)

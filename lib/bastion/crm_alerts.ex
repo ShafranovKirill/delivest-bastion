@@ -1,5 +1,5 @@
 defmodule Bastion.CrmAlerts do
-  alias Bastion.{Alerts, Repo, Telegram}
+  alias Bastion.{Alerts, Repo}
   alias Bastion.Instances.Instance
 
   def problems(%Instance{status: %{"crm" => orders}} = instance) when is_list(orders),
@@ -37,7 +37,7 @@ defmodule Bastion.CrmAlerts do
       for {id, %{"status" => "failed"} = order} <- current,
           Map.get(instance.crm_alerts, id, %{})["status"] != "failed",
           id not in instance.crm_dismissed,
-          do: notify(instance, message(instance, order))
+          do: notify(instance, id, message(instance, order))
 
       alerts =
         Map.new(current, fn {id, order} ->
@@ -77,9 +77,9 @@ defmodule Bastion.CrmAlerts do
 
   def inserted_at(_order), do: nil
 
-  defp notify(instance, text) do
-    Alerts.send_message(text, %{
-      reply_markup: Telegram.keyboard([[{"Открыть", "i:" <> instance.id}]])
-    })
+  defp notify(instance, order_id, text) do
+    Alerts.notify(instance, text,
+      buttons: [[{"🙈 Скрыть заказ", "cx:#{instance.id}:#{order_id}"}]]
+    )
   end
 end
