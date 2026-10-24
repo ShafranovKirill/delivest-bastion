@@ -18,7 +18,8 @@ defmodule Bastion.Application do
         {Task.Supervisor, name: Bastion.TaskSupervisor},
         Bastion.LoginCodes,
         Bastion.Images,
-        Bastion.Rollout
+        Bastion.Rollout,
+        Bastion.Telegram.Cards
       ] ++
         telegram() ++
         [

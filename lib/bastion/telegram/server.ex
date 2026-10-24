@@ -48,7 +48,7 @@ defmodule Bastion.Telegram.Server do
   end
 
   def handle_info({:command_updated, command}, state) do
-    safely(fn -> Bot.command_finished(command) end)
+    safely(fn -> Bot.command_updated(command) end)
     {:noreply, state}
   end
 
