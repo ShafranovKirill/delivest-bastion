@@ -228,13 +228,25 @@ defmodule Bastion.Telegram.Screens do
   @doc "Buttons to the client site and the staff admin of the site."
   def links(%Instance{hosts: hosts}) do
     [
-      present(hosts["site"]) && {"🌐 Сайт", {:url, "https://#{hosts["site"]}"}},
-      present(hosts["api"]) && {"🛠 Админка", {:url, "https://#{hosts["api"]}/staff/dashboard"}}
+      link("🌐 Сайт", hosts["site"], ""),
+      link("🛠 Админка", hosts["api"], "/staff/dashboard")
     ]
     |> Enum.filter(& &1)
   end
 
-  defp present(host), do: is_binary(host) and host != ""
+  defp link(label, host, path) when is_binary(host) do
+    url = "https://#{host}#{path}"
+    if public_url?(url), do: {label, {:url, url}}
+  end
+
+  defp link(_label, _host, _path), do: nil
+
+  defp public_url?(url) do
+    case URI.new(url) do
+      {:ok, %URI{host: host}} when is_binary(host) -> String.contains?(host, ".")
+      _ -> false
+    end
+  end
 
   defp facts(instance, health) do
     uptime = Downtime.summary(instance)

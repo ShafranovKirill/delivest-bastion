@@ -7,6 +7,8 @@ defmodule Bastion.Telegram.Bot do
   alias Bastion.{Alerts, Backups, CrmAlerts, Instances, Telegram, Updates}
   alias Bastion.Telegram.{Cards, Screens}
 
+  require Logger
+
   @notify_actions ~w(update rollback agent_update start stop restart env_write restore)
   @commands [%{command: "sites", description: "Все сети"}]
 
@@ -252,14 +254,16 @@ defmodule Bastion.Telegram.Bot do
   end
 
   defp show(query, screen) do
-    answer(query)
-    edit(query, screen)
+    case edit(query, screen) do
+      {:error, reason} -> answer(query, "Telegram: #{reason}")
+      _ -> answer(query)
+    end
   end
 
   defp answer(query, text \\ nil) do
     params =
       if text,
-        do: %{callback_query_id: query["id"], text: text},
+        do: %{callback_query_id: query["id"], text: String.slice(text, 0, 200)},
         else: %{callback_query_id: query["id"]}
 
     Telegram.call("answerCallbackQuery", params)
@@ -278,8 +282,17 @@ defmodule Bastion.Telegram.Bot do
            link_preview_options: %{is_disabled: true}
          }) do
       {:error, "Bad Request: message is not modified" <> _} -> {:ok, :not_modified}
+      {:error, reason} -> log_failure("editMessageText", reason, text)
       result -> result
     end
+  end
+
+  defp log_failure(method, reason, text) do
+    Logger.warning(
+      "telegram #{method} failed: #{inspect(reason)} for #{inspect(String.slice(text, 0, 80))}"
+    )
+
+    {:error, reason}
   end
 
   defp edit_buttons(%{"message" => message}, buttons) do
@@ -291,16 +304,19 @@ defmodule Bastion.Telegram.Bot do
   end
 
   defp send_screen({text, buttons}, chat_id, params \\ %{}) do
-    Telegram.call(
-      "sendMessage",
-      Map.merge(params, %{
-        chat_id: chat_id,
-        text: text,
-        parse_mode: "HTML",
-        reply_markup: Telegram.keyboard(buttons),
-        link_preview_options: %{is_disabled: true}
-      })
-    )
+    case Telegram.call(
+           "sendMessage",
+           Map.merge(params, %{
+             chat_id: chat_id,
+             text: text,
+             parse_mode: "HTML",
+             reply_markup: Telegram.keyboard(buttons),
+             link_preview_options: %{is_disabled: true}
+           })
+         ) do
+      {:error, reason} -> log_failure("sendMessage", reason, text)
+      result -> result
+    end
   end
 
   defp requester(%{"username" => username}) when is_binary(username),

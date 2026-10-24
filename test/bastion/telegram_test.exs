@@ -120,6 +120,43 @@ defmodule Bastion.TelegramTest do
     assert_received {:telegram, "sendMessage", %{"text" => "Не нашёл «nothing»." <> _}}
   end
 
+  test "the card leaves out links to hosts telegram would reject" do
+    instance =
+      healthy(%{
+        "name" => "Pizza",
+        "hosts" => %{"api" => "https://api.example.com", "site" => "localhost"}
+      })
+
+    press("i:" <> instance.id)
+    assert_received {:telegram, "editMessageText", card}
+    refute Enum.any?(buttons(card), fn {text, _} -> text in ["🌐 Сайт", "🛠 Админка"] end)
+  end
+
+  test "a screen telegram rejects tells why instead of doing nothing" do
+    instance = healthy(%{"name" => "Pizza"})
+    test_pid = self()
+
+    Req.Test.stub(Bastion.Http, fn conn ->
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      send(test_pid, {:telegram, List.last(conn.path_info), Jason.decode!(body)})
+
+      case List.last(conn.path_info) do
+        "editMessageText" ->
+          conn
+          |> Plug.Conn.put_status(400)
+          |> Req.Test.json(%{"ok" => false, "description" => "Bad Request: BUTTON_URL_INVALID"})
+
+        _ ->
+          Req.Test.json(conn, %{"ok" => true, "result" => true})
+      end
+    end)
+
+    press("i:" <> instance.id)
+
+    assert_received {:telegram, "answerCallbackQuery",
+                     %{"text" => "Telegram: Bad Request: BUTTON_URL_INVALID"}}
+  end
+
   test "a restart from the card shows its progress and result in the card" do
     instance = healthy(%{"name" => "Pizza"})
     bring_online(instance)
