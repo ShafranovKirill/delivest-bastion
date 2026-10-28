@@ -53,6 +53,48 @@ defmodule Bastion.InstancesTest do
     assert id == command.id
   end
 
+  defp command(instance, status, minutes_ago, action \\ "update") do
+    Repo.insert!(%Bastion.Instances.Command{
+      instance_id: instance.id,
+      action: action,
+      status: status,
+      inserted_at: DateTime.add(DateTime.utc_now(:second), -minutes_ago * 60)
+    })
+  end
+
+  test "a heartbeat without the command fails the command the agent lost" do
+    instance = instance_fixture()
+    lost = command(instance, "running", 2)
+    current = command(instance, "running", 2, "backup")
+    fresh = command(instance, "sent", 0, "logs")
+
+    Instances.drop_lost_commands(instance.id, %{
+      "running" => %{"id" => current.id, "action" => "backup"}
+    })
+
+    assert %{status: "error", output: output, finished_at: %DateTime{}} = Repo.reload!(lost)
+    assert output =~ "перезапустился"
+    assert Repo.reload!(current).status == "running"
+    assert Repo.reload!(fresh).status == "sent"
+
+    Instances.drop_lost_commands(instance.id, %{"disk" => %{}})
+    assert Repo.reload!(current).status == "running"
+  end
+
+  test "a command without a result for 10 minutes fails" do
+    instance = instance_fixture()
+    stale = command(instance, "running", 11)
+    recent = command(instance, "running", 5)
+    done = command(instance, "ok", 30)
+
+    Instances.expire_commands()
+
+    assert %{status: "error", output: output} = Repo.reload!(stale)
+    assert output =~ "10 минут"
+    assert Repo.reload!(recent).status == "running"
+    assert Repo.reload!(done).status == "ok"
+  end
+
   test "the .env never lands in the database" do
     instance = instance_fixture()
     Bastion.Instances.subscribe()

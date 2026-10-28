@@ -41,6 +41,7 @@ defmodule BastionWeb.InstanceChannel do
   def handle_in("heartbeat", status, socket) when is_map(status) do
     previous = Instances.get_instance(socket.assigns.instance_id)
     Instances.record_heartbeat(socket.assigns.instance_id, status)
+    Instances.drop_lost_commands(socket.assigns.instance_id, status)
     if previous, do: SiteAlerts.check(previous, status)
     CrmAlerts.check(socket.assigns.instance_id, status["crm"])
 
