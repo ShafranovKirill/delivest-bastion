@@ -195,13 +195,14 @@ defmodule BastionWeb.InstanceLive.Index do
               <td><.check check={instance.external["api"]} /></td>
               <td><.check check={instance.external["site"]} /></td>
               <td class="font-mono text-xs">
-                {revision(instance, "server") || "—"}
+                <% {current, available} = Images.versions(instance, "server") %>
+                {current || "—"}
                 <span
                   :if={Images.outdated(instance) != []}
                   class="badge badge-info badge-xs ml-1"
                   title={"Есть новые образы: " <> Enum.join(Images.outdated(instance), ", ")}
                 >
-                  новее
+                  → {available || "новее"}
                 </span>
                 <span
                   :if={Images.agent_outdated?(instance)}

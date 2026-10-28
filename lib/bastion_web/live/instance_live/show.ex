@@ -285,6 +285,9 @@ defmodule BastionWeb.InstanceLive.Show do
 
   defp rollback(_instance), do: nil
 
+  defp agent_revision(%{status: %{"agent" => %{"version" => version}}}) when is_binary(version),
+    do: version
+
   defp agent_revision(%{status: %{"agent" => %{"revision" => revision}}})
        when is_binary(revision),
        do: String.slice(revision, 0, 7)
@@ -474,7 +477,7 @@ defmodule BastionWeb.InstanceLive.Show do
                     </td>
                     <td class="text-xs text-base-content/60">{container["status"]}</td>
                     <td class="font-mono text-xs">
-                      {String.slice(container["revision"] || "", 0, 7)}
+                      {container["version"] || String.slice(container["revision"] || "", 0, 7)}
                     </td>
                     <td
                       class={[

@@ -287,7 +287,14 @@ defmodule Bastion.Telegram.Screens do
 
   defp container(%{"service" => service, "state" => state} = container) do
     icon = if state == "running", do: "✅", else: "❌"
-    revision = if container["revision"], do: " #{String.slice(container["revision"], 0, 7)}"
+
+    revision =
+      cond do
+        container["version"] -> " v#{container["version"]}"
+        container["revision"] -> " #{String.slice(container["revision"], 0, 7)}"
+        true -> nil
+      end
+
     "#{icon} #{escape(service)} — #{escape(container["status"] || state)}#{revision}"
   end
 

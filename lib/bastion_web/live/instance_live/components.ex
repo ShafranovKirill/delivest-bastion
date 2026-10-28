@@ -62,18 +62,6 @@ defmodule BastionWeb.InstanceLive.Components do
   def datetime(nil), do: "—"
   def datetime(%DateTime{} = at), do: Calendar.strftime(at, "%d.%m.%Y %H:%M:%S UTC")
 
-  def revision(%{status: %{"containers" => containers}}, service) do
-    Enum.find_value(containers, fn
-      %{"service" => ^service, "revision" => revision} when is_binary(revision) ->
-        String.slice(revision, 0, 7)
-
-      _ ->
-        nil
-    end)
-  end
-
-  def revision(_instance, _service), do: nil
-
   def disk_percent(%{status: %{"disk" => %{"used_kb" => used, "total_kb" => total}}})
       when total > 0,
       do: round(used / total * 100)
