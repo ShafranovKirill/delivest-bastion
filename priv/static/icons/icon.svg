@@ -1,4 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="116" fill="#48010c"/>
-  <path fill="#fff" fill-rule="evenodd" d="M120 112h44v40h32v-40h44v40h32v-40h44v40h32v-40h44v96l-24 24v168h24v28H120v-28h24V232l-24-24zM222 400v-66a34 34 0 0 1 68 0v66z"/>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><title>Бастион</title><rect width="512" height="512" rx="116" fill="#48010c"/><path fill="#fff" fill-rule="evenodd" d="M132 136h48v40h52v-40h48v40h52v-40h48v92l-24 24v124l-100 60-100-60V252l-24-24V136zm92 116v104h45c37 0 55-12 55-31 0-13-8-22-21-26 10-4 16-12 16-23 0-16-15-24-43-24h-52zm30 22h19c12 0 17 4 17 10s-5 10-17 10h-19v-20zm0 42h22c13 0 19 3 19 10s-6 10-19 10h-22v-20z"/></svg>
