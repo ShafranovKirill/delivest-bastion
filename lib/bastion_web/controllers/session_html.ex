@@ -5,9 +5,7 @@ defmodule BastionWeb.SessionHTML do
     ~H"""
     <Layouts.app flash={@flash}>
       <div class="mx-auto max-w-sm py-16">
-        <h1 class="mb-6 flex items-center justify-center gap-3 text-2xl font-bold">
-          <img src={~p"/icons/icon.svg"} alt="" class="size-10" />Бастион
-        </h1>
+        <h1 class="text-2xl font-bold mb-6">Бастион</h1>
         <.form for={@form} id="login-form" action={~p"/login"} class="space-y-4">
           <.input field={@form[:login]} label="Логин" autocomplete="username" required />
           <.input
