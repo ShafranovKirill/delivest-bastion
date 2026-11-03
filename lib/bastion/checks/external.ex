@@ -5,25 +5,46 @@ defmodule Bastion.Checks.External do
     hosts
     |> Map.take(@checked)
     |> Enum.reject(fn {_kind, host} -> host in [nil, ""] end)
-    |> Map.new(fn {kind, host} -> {kind, check(host)} end)
+    |> Map.new(fn {kind, host} -> {kind, check(host, kind)} end)
   end
 
-  def check(host) do
+  def check(host), do: check(host, "site")
+
+  def check(host, kind) do
     started = System.monotonic_time(:millisecond)
+    path = if kind == "api", do: "/ready", else: "/"
 
     http =
       case Req.get(
-             "https://#{host}/",
+             "https://#{host}#{path}",
              [retry: false, redirect: false, receive_timeout: 10_000] ++ req_options()
            ) do
-        {:ok, %{status: status}} -> %{"ok" => status < 500, "status" => status}
-        {:error, error} -> %{"ok" => false, "error" => Exception.message(error)}
+        {:ok, %{status: 200, body: body}} ->
+          if ready?(kind, body),
+            do: %{"ok" => true, "status" => 200},
+            else: %{"ok" => false, "status" => 200, "error" => "приложение не готово"}
+
+        {:ok, %{status: status}} ->
+          %{"ok" => false, "status" => status}
+
+        {:error, error} ->
+          %{"ok" => false, "error" => Exception.message(error)}
       end
 
     http
     |> Map.put("ms", System.monotonic_time(:millisecond) - started)
     |> Map.put("cert_expires_at", cert_expires_at(host))
   end
+
+  # An answer is not readiness: the API has to confirm its status, and the site
+  # has to return the application document instead of an error or maintenance page.
+  defp ready?("api", body) when is_map(body), do: body["status"] == "ok"
+
+  defp ready?("api", body) when is_binary(body),
+    do: match?({:ok, %{"status" => "ok"}}, Jason.decode(body))
+
+  defp ready?("site", body) when is_binary(body), do: String.contains?(body, ~s(id="app"))
+  defp ready?(_kind, _body), do: false
 
   def cert_expires_at(host) do
     if Application.get_env(:bastion, :check_certs, true) do

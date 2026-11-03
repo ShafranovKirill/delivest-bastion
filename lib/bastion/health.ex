@@ -91,7 +91,7 @@ defmodule Bastion.Health do
   defp label("site"), do: "сайт"
   defp label(kind), do: kind
 
-  defp reason(%{"status" => status}), do: "HTTP #{status}"
   defp reason(%{"error" => error}), do: error
+  defp reason(%{"status" => status}), do: "HTTP #{status}"
   defp reason(_check), do: "ошибка"
 end

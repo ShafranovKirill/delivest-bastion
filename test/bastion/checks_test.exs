@@ -15,22 +15,46 @@ defmodule Bastion.ChecksTest do
 
   defp stub(fun), do: Req.Test.stub(Bastion.Http, fun)
 
+  defp app(conn) do
+    case conn.host do
+      "api.example.com" -> Req.Test.json(conn, %{"status" => "ok", "version" => "1.0.0"})
+      _host -> Plug.Conn.send_resp(conn, 200, ~s(<div id="app"></div>))
+    end
+  end
+
   test "external checks request every public host" do
     stub(fn conn ->
       case conn.host do
-        "api.example.com" -> Plug.Conn.send_resp(conn, 200, "ok")
-        "site.example.com" -> Plug.Conn.send_resp(conn, 503, "down")
+        "api.example.com" -> Req.Test.json(conn, %{"status" => "ok", "version" => "1.0.0"})
+        "site.example.com" -> Plug.Conn.send_resp(conn, 200, ~s(<div id="app"></div>))
+        "down.example.com" -> Plug.Conn.send_resp(conn, 503, "down")
       end
     end)
 
     assert %{
              "api" => %{"ok" => true, "status" => 200},
-             "site" => %{"ok" => false, "status" => 503}
+             "site" => %{"ok" => true, "status" => 200}
            } =
              External.run(%{
                "api" => "api.example.com",
                "site" => "site.example.com",
                "s3" => "s3.example.com"
+             })
+
+    assert %{"ok" => false, "status" => 503} =
+             External.run(%{"api" => "down.example.com"})["api"]
+  end
+
+  test "a 200 answer that is not a ready app fails the check" do
+    stub(fn conn -> Plug.Conn.send_resp(conn, 200, "<html>maintenance</html>") end)
+
+    assert %{
+             "api" => %{"ok" => false, "status" => 200, "error" => "приложение не готово"},
+             "site" => %{"ok" => false, "status" => 200, "error" => "приложение не готово"}
+           } =
+             External.run(%{
+               "api" => "api.example.com",
+               "site" => "site.example.com"
              })
   end
 
@@ -49,7 +73,7 @@ defmodule Bastion.ChecksTest do
         Plug.Conn.send_resp(conn, 502, "")
 
       conn ->
-        Plug.Conn.send_resp(conn, 200, "ok")
+        app(conn)
     end)
 
     instance = instance_fixture(%{info: %{"name" => "Pizza"}})
@@ -82,7 +106,7 @@ defmodule Bastion.ChecksTest do
         Req.Test.json(conn, %{"ok" => true})
 
       conn ->
-        Plug.Conn.send_resp(conn, 200, "ok")
+        app(conn)
     end)
 
     assert :ok = perform_job()
@@ -152,7 +176,7 @@ defmodule Bastion.ChecksTest do
     Worker.check(Instances.get_instance(instance.id), DateTime.add(now, 30))
     assert [%{health: "ok"}] = Instances.list_instances()
 
-    stub(&Plug.Conn.send_resp(&1, 200, "ok"))
+    stub(&app/1)
     Worker.check(Instances.get_instance(instance.id), DateTime.add(now, 60))
     assert [%{health: "ok", down_since: nil}] = Instances.list_instances()
     assert Bastion.Downtime.list_incidents(instance.id) == []
