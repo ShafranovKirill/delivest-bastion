@@ -92,6 +92,16 @@ defmodule BastionWeb.InstanceLiveTest do
     assert_receive {:agent_got, "rollback", %{}}
   end
 
+  test "an undated rollback does not break the instance page", %{conn: conn} do
+    instance = instance_fixture()
+    status = Map.put(healthy_status(), "rollback", %{"at" => nil, "previous" => %{}})
+    {:ok, _} = Instances.record_heartbeat(instance.id, status)
+    bring_online(instance)
+
+    {:ok, lv, _html} = live(log_in(conn), ~p"/instances/#{instance.id}")
+    assert has_element?(lv, "#rollback")
+  end
+
   test "orders, errors, the database and site alerts are shown", %{conn: conn} do
     instance = instance_fixture()
 
