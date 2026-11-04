@@ -157,6 +157,22 @@ defmodule Bastion.TelegramTest do
                      %{"text" => "Telegram: Bad Request: BUTTON_URL_INVALID"}}
   end
 
+  test "the card of an online site that can roll back offers the rollback" do
+    instance = healthy(%{"name" => "Pizza"})
+
+    {:ok, _} =
+      Instances.record_heartbeat(
+        instance.id,
+        Map.put(healthy_status(), "rollback", %{"revision" => "abc1234"})
+      )
+
+    bring_online(instance)
+
+    press("i:" <> instance.id)
+    assert_received {:telegram, "editMessageText", card}
+    assert {"⏪ Откатить", "a:rollback:" <> instance.id} in buttons(card)
+  end
+
   test "a restart from the card shows its progress and result in the card" do
     instance = healthy(%{"name" => "Pizza"})
     bring_online(instance)

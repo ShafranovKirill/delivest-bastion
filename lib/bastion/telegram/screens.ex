@@ -199,7 +199,7 @@ defmodule Bastion.Telegram.Screens do
       end
 
     main =
-      if rollback?(instance) and not running,
+      if rollback?(instance) and is_nil(running),
         do: main ++ [{"⏪ Откатить", "a:rollback:" <> id}],
         else: main
 

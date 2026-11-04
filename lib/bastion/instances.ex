@@ -153,6 +153,50 @@ defmodule Bastion.Instances do
     |> tap(&track_planned_stop/1)
   end
 
+  def drop_lost_commands(instance_id, %{"running" => running}) do
+    since = DateTime.add(now(), -lost_grace_seconds())
+    running_id = running && running["id"]
+
+    Command
+    |> where([c], c.instance_id == ^instance_id and c.status in ["sent", "running"])
+    |> where([c], c.inserted_at < ^since)
+    |> then(&if(running_id, do: where(&1, [c], c.id != ^running_id), else: &1))
+    |> Repo.all()
+    |> Enum.each(&abandon(&1, "агент не выполняет эту команду: он перезапустился и потерял её"))
+  end
+
+  def drop_lost_commands(_instance_id, _status), do: :ok
+
+  def expire_commands do
+    since = DateTime.add(now(), -command_timeout_seconds())
+
+    Command
+    |> where([c], c.status in ["sent", "running"] and c.inserted_at < ^since)
+    |> Repo.all()
+    |> Enum.each(
+      &abandon(&1, "нет результата от агента #{div(command_timeout_seconds(), 60)} минут")
+    )
+  end
+
+  defp abandon(%Command{} = command, reason) do
+    with {:ok, command} <-
+           command
+           |> Ecto.Changeset.change(
+             status: "error",
+             output: Enum.join(Enum.reject([command.output, reason], &is_nil/1), "\n"),
+             finished_at: now()
+           )
+           |> Repo.update()
+           |> broadcast(:command_updated) do
+      Bastion.Backups.command_finished(command)
+    end
+  end
+
+  defp lost_grace_seconds, do: Application.get_env(:bastion, :lost_command_grace_seconds, 60)
+
+  defp command_timeout_seconds,
+    do: Application.get_env(:bastion, :command_timeout_seconds, 10 * 60)
+
   def busy?(instance_id) do
     since = DateTime.add(now(), -@busy_window_seconds)
     settling_since = DateTime.add(now(), -settle_seconds())
