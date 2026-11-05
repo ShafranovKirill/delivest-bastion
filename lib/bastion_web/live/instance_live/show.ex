@@ -4,15 +4,28 @@ defmodule BastionWeb.InstanceLive.Show do
   import BastionWeb.InstanceLive.Components
   import BastionWeb.InstanceLive.LoadChart
 
-  alias Bastion.{Backups, CrmAlerts, Downtime, Health, Images, Instances, Metrics, SiteAlerts}
+  alias Bastion.{
+    Backups,
+    CrmAlerts,
+    Downtime,
+    Health,
+    Images,
+    Instances,
+    Maintenance,
+    Metrics,
+    SiteAlerts
+  }
+
+  alias BastionWeb.InstanceLive.Links
   alias BastionWeb.Presence
 
   @tick :timer.seconds(15)
   @tabs [
-    {"state", "Состояние"},
+    {"state", "Обзор"},
     {"errors", "Ошибки"},
     {"logs", "Логи"},
     {"backups", "Бэкапы"},
+    {"history", "История"},
     {"settings", "Настройки"}
   ]
   @max_dump_size 5 * 1024 * 1024 * 1024
@@ -38,6 +51,8 @@ defmodule BastionWeb.InstanceLive.Show do
            env_form: to_form(%{"content" => ""}),
            env_request: nil,
            env_loaded?: false,
+           maintenance_form: to_form(%{"minutes" => "30"}),
+           maintenance_open?: false,
            metrics_period: :day,
            tab: "state"
          )
@@ -137,6 +152,44 @@ defmodule BastionWeb.InstanceLive.Show do
     {:noreply, load_backups(socket)}
   end
 
+  def handle_event("maintenance_toggle", _params, socket),
+    do: {:noreply, assign(socket, maintenance_open?: !socket.assigns.maintenance_open?)}
+
+  def handle_event("maintenance_start", %{"minutes" => value}, socket) do
+    minutes =
+      case Integer.parse(value) do
+        {number, ""} -> number
+        _ -> nil
+      end
+
+    socket =
+      case Maintenance.start(socket.assigns.instance, minutes) do
+        {:ok, instance} ->
+          socket
+          |> assign_instance(instance)
+          |> assign(maintenance_open?: false)
+          |> put_flash(:info, "Обслуживание включено")
+
+        {:error, _reason} ->
+          put_flash(socket, :error, "Не удалось включить обслуживание")
+      end
+
+    {:noreply, socket}
+  end
+
+  def handle_event("maintenance_finish", _params, socket) do
+    socket =
+      case Maintenance.finish(socket.assigns.instance) do
+        {:ok, instance} ->
+          socket |> assign_instance(instance) |> put_flash(:info, "Обслуживание завершено")
+
+        {:error, _reason} ->
+          put_flash(socket, :error, "Не удалось завершить обслуживание")
+      end
+
+    {:noreply, socket}
+  end
+
   def handle_event("restore", %{"backup_id" => backup_id}, socket) do
     socket =
       case Backups.get(backup_id) do
@@ -234,7 +287,9 @@ defmodule BastionWeb.InstanceLive.Show do
       instance: instance,
       health: Health.evaluate(instance),
       uptime: Downtime.summary(instance),
-      incidents: Downtime.list_incidents(instance.id)
+      incidents: Downtime.list_incidents(instance.id),
+      operations: Instances.last_successful_operations(instance.id),
+      maintenance_windows: Maintenance.windows(instance)
     )
   end
 
@@ -275,6 +330,13 @@ defmodule BastionWeb.InstanceLive.Show do
 
   defp containers(%{status: %{"containers" => containers}}), do: containers
   defp containers(_instance), do: []
+
+  defp start_needed?(%{stopped_at: stopped_at} = instance) do
+    not is_nil(stopped_at) or
+      Enum.any?(containers(instance), fn container ->
+        container["service"] in ["server", "client"] and container["state"] != "running"
+      end)
+  end
 
   defp services(instance),
     do: instance |> containers() |> Enum.map(& &1["service"]) |> Enum.filter(&is_binary/1)
@@ -359,38 +421,39 @@ defmodule BastionWeb.InstanceLive.Show do
   defp upload_error(:too_many_files), do: "можно только один файл"
   defp upload_error(error), do: to_string(error)
 
+  defp operation_time(nil), do: nil
+
+  defp operation_time(command),
+    do: command.finished_at || command.started_at || command.inserted_at
+
+  defp operation_label(nil), do: "Нет записей в Bastion"
+  defp operation_label(command), do: datetime(operation_time(command))
+
   @impl true
   def render(assigns) do
     ~H"""
     <Layouts.app flash={@flash} current_admin={@current_admin}>
-      <.link navigate={~p"/"} class="btn btn-ghost btn-sm -ml-2">
-        <.icon name="hero-arrow-left" class="size-4" /> Все экземпляры
+      <.link
+        navigate={~p"/"}
+        class="inline-flex items-center gap-1 text-sm text-base-content/60 hover:text-base-content"
+      >
+        <.icon name="hero-arrow-left" class="size-4" /> Все франшизы
       </.link>
 
-      <div class="flex flex-wrap items-start justify-between gap-4">
+      <div class="flex flex-wrap items-start justify-between gap-5">
         <div class="space-y-1">
           <div class="flex items-center gap-3">
-            <.online_dot online={@instance.online} />
             <h1 class="text-2xl font-bold">{@instance.name}</h1>
             <.health_badge level={@health.level} />
           </div>
-          <div class="text-sm text-base-content/60 flex flex-wrap gap-x-4">
-            <a
-              :for={{kind, host} <- Enum.sort(@instance.hosts)}
-              href={"https://#{host}"}
-              target="_blank"
-              class="link link-hover"
-            >
-              {kind}: {host}
-            </a>
-          </div>
           <div class="text-xs text-base-content/60">
-            Последний контакт: {ago(@instance.last_seen_at)} · агент {@instance.agent_version || "—"}
+            Последний контакт: {ago(@instance.last_seen_at)}
           </div>
         </div>
 
-        <div id="instance-actions" class="flex flex-wrap gap-2">
+        <div id="instance-actions" class="flex flex-wrap items-center gap-2">
           <button
+            id="instance-update"
             type="button"
             class="btn btn-primary btn-sm"
             phx-click="command"
@@ -401,28 +464,51 @@ defmodule BastionWeb.InstanceLive.Show do
             <.icon name="hero-arrow-path" class="size-4" /> Обновить
           </button>
           <button
-            :if={rollback(@instance)}
-            id="rollback"
+            id="instance-backup"
             type="button"
             class="btn btn-sm"
-            phx-click="command"
-            phx-value-action="rollback"
-            disabled={!@instance.online || busy?(@commands)}
-            data-confirm={rollback_confirmation(rollback(@instance))}
+            phx-click="backup"
+            disabled={!@instance.online || busy?(@commands) || !backups_supported?(@instance)}
           >
-            <.icon name="hero-arrow-uturn-left" class="size-4" /> Откатить
+            <.icon name="hero-circle-stack" class="size-4" /> Сделать бэкап
           </button>
           <button
+            :if={!Maintenance.active?(@instance)}
+            id="maintenance-open"
             type="button"
             class="btn btn-sm"
-            phx-click="command"
-            phx-value-action="restart"
-            disabled={!@instance.online || busy?(@commands)}
-            data-confirm="Перезапустить сайт?"
+            phx-click="maintenance_toggle"
+            aria-expanded={@maintenance_open?}
+            aria-controls="maintenance-form"
+          >Обслуживание</button>
+          <.form
+            :if={@maintenance_open? && !Maintenance.active?(@instance)}
+            for={@maintenance_form}
+            id="maintenance-form"
+            phx-submit="maintenance_start"
+            class="flex flex-wrap items-center gap-2"
+            data-confirm="Включить режим обслуживания? Простои в это время не будут учитываться, но сервис продолжит работать."
           >
-            Перезапустить
-          </button>
+            <p class="w-full text-xs text-base-content/60">
+              Сайты продолжат работать. Плановый период исключается из расчёта доступности и завершится автоматически.
+            </p>
+            <.input
+              field={@maintenance_form[:minutes]}
+              type="select"
+              label="Длительность обслуживания"
+              options={[
+                {"15 минут", "15"},
+                {"30 минут", "30"},
+                {"60 минут", "60"},
+                {"120 минут", "120"}
+              ]}
+              class="select select-sm"
+            />
+            <button id="maintenance-start" type="submit" class="btn btn-sm">Включить на выбранное время</button>
+          </.form>
           <button
+            :if={start_needed?(@instance)}
+            id="instance-start"
             type="button"
             class="btn btn-sm"
             phx-click="command"
@@ -431,17 +517,22 @@ defmodule BastionWeb.InstanceLive.Show do
           >
             Включить
           </button>
-          <button
-            type="button"
-            class="btn btn-sm btn-error btn-outline"
-            phx-click="command"
-            phx-value-action="stop"
-            disabled={!@instance.online || busy?(@commands)}
-            data-confirm="Выключить сайт? Агент останется на связи."
-          >
-            Выключить
-          </button>
         </div>
+      </div>
+
+      <div
+        :if={Maintenance.active?(@instance)}
+        id="maintenance-active"
+        class="rounded-xl border border-sky-300 bg-sky-50 p-4 text-sm text-sky-950 flex flex-wrap items-center justify-between gap-3"
+      >
+        <span>Обслуживание до {datetime(@instance.maintenance_until)}. Сервис продолжает работать, простои не учитываются.</span>
+        <button
+          id="maintenance-finish"
+          type="button"
+          class="btn btn-sm"
+          phx-click="maintenance_finish"
+          data-confirm="Завершить обслуживание сейчас?"
+        >Завершить обслуживание</button>
       </div>
 
       <div :if={@instance.stopped_at} id="instance-stopped" class="alert alert-info">
@@ -450,6 +541,59 @@ defmodule BastionWeb.InstanceLive.Show do
           Сайт выключен по плану {datetime(@instance.stopped_at)}. Пока его не включат,
           недоступность не считается ошибкой и уведомления не приходят.
         </span>
+      </div>
+
+      <div id="instance-endpoints" class="grid gap-4 md:grid-cols-2">
+        <section
+          :for={kind <- ["api", "site"]}
+          id={if(kind == "api", do: "server-card", else: "client-card")}
+          class="rounded-xl border border-base-300 bg-base-100 p-5 shadow-sm"
+        >
+          <div class="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 class="text-lg font-semibold">{if kind == "api", do: "Server", else: "Client"}</h2>
+              <p class="text-xs text-base-content/60">
+                {if kind == "api", do: "Админка", else: "Приложение"}
+              </p>
+              <p class="text-sm text-base-content/60 break-all">
+                {Links.display(@instance.hosts[kind])}
+              </p>
+            </div>
+            <.open_link
+              id={if(kind == "api", do: "detail-server-open", else: "detail-client-open")}
+              host={@instance.hosts[kind]}
+              kind={if(kind == "api", do: "server", else: "client")}
+              instance_name={@instance.name}
+            />
+          </div>
+          <div class="mt-4 grid gap-2 text-sm sm:grid-cols-2">
+            <div>
+              <span class="text-base-content/60">Доступность снаружи</span><div>
+                <.check check={@instance.external[kind]} />
+              </div>
+            </div>
+            <div>
+              <span class="text-base-content/60">Сертификат</span><div>
+                <% days = cert_days((@instance.external[kind] || %{})["cert_expires_at"]) %>
+                <span :if={days}>{days} дн. до окончания</span><span
+                  :if={!days}
+                  class="text-base-content/50"
+                >Нет данных</span>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div id="recent-operations" class="grid gap-2 text-xs sm:grid-cols-2">
+        <div class="rounded-lg border border-base-300 bg-base-100 px-3 py-2">
+          <div class="text-base-content/60">Последнее обновление через Bastion</div>
+          <div class="mt-0.5 font-medium">{operation_label(@operations.update)}</div>
+        </div>
+        <div class="rounded-lg border border-base-300 bg-base-100 px-3 py-2">
+          <div class="text-base-content/60">Последнее восстановление бэкапа через Bastion</div>
+          <div class="mt-0.5 font-medium">{operation_label(@operations.restore)}</div>
+        </div>
       </div>
 
       <div role="tablist" id="instance-tabs" class="tabs tabs-box w-fit flex-wrap">
@@ -461,84 +605,26 @@ defmodule BastionWeb.InstanceLive.Show do
           class={["tab gap-2", @tab == tab && "tab-active"]}
         >
           {label}
-          <span
-            :if={tab == "errors" && errors_count(@instance, @health) > 0}
-            class="badge badge-error badge-sm"
-          >
-            {errors_count(@instance, @health)}
-          </span>
         </.link>
       </div>
 
       <div :if={@tab == "state"} id="tab-state-panel" class="space-y-4">
-        <div class="grid gap-4 md:grid-cols-2">
-          <section class="card bg-base-100 border border-base-300">
-            <div class="card-body p-4">
-              <h2 class="font-bold">Контейнеры</h2>
-              <table id="containers" class="table table-sm">
-                <tbody>
-                  <tr :for={container <- containers(@instance)}>
-                    <td class="font-semibold">{container["service"]}</td>
-                    <td class={(container["state"] == "running" && "text-success") || "text-error"}>
-                      {container["state"]}
-                    </td>
-                    <td class="text-xs text-base-content/60">{container["status"]}</td>
-                    <td class="font-mono text-xs">
-                      {container["version"] || String.slice(container["revision"] || "", 0, 7)}
-                    </td>
-                    <td
-                      class={[
-                        "text-xs tabular-nums whitespace-nowrap",
-                        (container["restarts"] || 0) > 0 && "text-warning"
-                      ]}
-                      title="Сколько раз docker перезапускал контейнер после падения"
-                    >
-                      <span :if={is_integer(container["restarts"])}>
-                        ↻ {container["restarts"]}
-                      </span>
-                    </td>
-                  </tr>
-                  <tr :if={containers(@instance) == []}>
-                    <td class="text-base-content/60">Нет данных</td>
-                  </tr>
-                </tbody>
-              </table>
+        <section id="uptime" class="card bg-base-100 border border-base-300">
+          <div class="card-body p-4 gap-3">
+            <h2 class="font-bold">Доступность</h2>
+            <div class="grid grid-cols-3 gap-2">
+              <div :for={period <- Downtime.periods()} class="rounded-box bg-base-200 p-3">
+                <div class="text-xs text-base-content/60">{Downtime.format_period(period)}</div>
+                <div class={["text-xl font-bold tabular-nums", uptime_class(@uptime[period].uptime)]}>
+                  {format_uptime(@uptime[period].uptime)}
+                </div>
+                <div class="text-xs text-base-content/60">
+                  простой {Downtime.format_duration(@uptime[period].down_seconds)}
+                </div>
+              </div>
             </div>
-          </section>
-
-          <section class="card bg-base-100 border border-base-300">
-            <div class="card-body p-4">
-              <h2 class="font-bold">Проверки</h2>
-              <table id="checks" class="table table-sm">
-                <thead>
-                  <tr>
-                    <th></th>
-                    <th>Изнутри</th>
-                    <th>Снаружи</th>
-                    <th>Сертификат</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr :for={kind <- ["api", "site"]}>
-                    <td class="font-semibold">{if kind == "api", do: "API", else: "Сайт"}</td>
-                    <td><.check check={(@instance.status || %{})["checks"][kind]} /></td>
-                    <td><.check check={@instance.external[kind]} /></td>
-                    <td>
-                      <% days = cert_days(@instance.external[kind]["cert_expires_at"]) %>
-                      <span :if={days} class={days < 14 && "text-warning"}>{days} дн.</span>
-                      <span :if={!days} class="text-base-content/40">—</span>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-              <p class="text-xs text-base-content/60">
-                Диск: {(disk_percent(@instance) && "#{disk_percent(@instance)}% занято") || "—"} ·
-                проверено снаружи {ago(@instance.checked_at)}
-              </p>
-            </div>
-          </section>
-        </div>
-
+          </div>
+        </section>
         <section
           :if={app_stats?(@instance)}
           id="app-stats"
@@ -546,7 +632,7 @@ defmodule BastionWeb.InstanceLive.Show do
         >
           <div class="card-body p-4 gap-3">
             <h2 class="font-bold">Приложение</h2>
-            <div class="grid grid-cols-3 gap-2">
+            <div class="grid gap-2 sm:grid-cols-2">
               <div class="rounded-box bg-base-200 p-3">
                 <div class="text-xs text-base-content/60">Заказы за час</div>
                 <div class="text-xl font-bold tabular-nums">
@@ -554,18 +640,6 @@ defmodule BastionWeb.InstanceLive.Show do
                 </div>
                 <div class="text-xs text-base-content/60">
                   обычно {get_in(@instance.status, ["orders", "usual"]) || "—"}
-                </div>
-              </div>
-              <div class="rounded-box bg-base-200 p-3">
-                <div class="text-xs text-base-content/60">Ошибки за 5 минут</div>
-                <div class={[
-                  "text-xl font-bold tabular-nums",
-                  (get_in(@instance.status, ["errors", "last_5m"]) || 0) > 0 && "text-warning"
-                ]}>
-                  {get_in(@instance.status, ["errors", "last_5m"]) || "—"}
-                </div>
-                <div class="text-xs text-base-content/60">
-                  за час {get_in(@instance.status, ["errors", "last_hour"]) || "—"}
                 </div>
               </div>
               <div class="rounded-box bg-base-200 p-3">
@@ -578,27 +652,18 @@ defmodule BastionWeb.InstanceLive.Show do
                 </div>
               </div>
             </div>
-            <ul
-              :if={latest_errors(@instance) != []}
-              id="latest-errors"
-              class="space-y-1 text-xs"
-            >
-              <li
-                :for={error <- latest_errors(@instance)}
-                class="rounded-box bg-error/5 border border-error/20 px-3 py-2 break-words"
-              >
-                <span class="text-base-content/60">{error_time(error["inserted_at"])}</span>
-                <span :if={error["source"]} class="font-semibold">{error["source"]}</span>
-                {error["message"]}
-              </li>
-            </ul>
           </div>
         </section>
 
         <section id="load" class="card bg-base-100 border border-base-300">
           <div class="card-body p-4 gap-4">
             <div class="flex flex-wrap items-center justify-between gap-2">
-              <h2 class="font-bold">Нагрузка на сервер</h2>
+              <div>
+                <h2 class="font-bold">Физический сервер</h2>
+                <p class="text-xs text-base-content/60">
+                  CPU и RAM всего хоста, включая остальные сервисы
+                </p>
+              </div>
               <div role="tablist" class="join">
                 <button
                   :for={period <- Metrics.periods()}
@@ -615,14 +680,14 @@ defmodule BastionWeb.InstanceLive.Show do
 
             <div :if={@load} id="load-now" class="grid grid-cols-3 gap-2">
               <div class="rounded-box bg-base-200 p-3">
-                <div class="text-xs text-base-content/60">Процессор</div>
+                <div class="text-xs text-base-content/60">CPU хоста</div>
                 <div class="text-xl font-bold tabular-nums">
                   {(@load.cpu && percent(@load.cpu)) || "—"}
                 </div>
                 <div :if={@load.cpus} class="text-xs text-base-content/60">{@load.cpus} ядер</div>
               </div>
               <div class="rounded-box bg-base-200 p-3">
-                <div class="text-xs text-base-content/60">Память</div>
+                <div class="text-xs text-base-content/60">RAM хоста</div>
                 <div class="text-xl font-bold tabular-nums">
                   {(@load.memory && percent(@load.memory)) || "—"}
                 </div>
@@ -662,25 +727,107 @@ defmodule BastionWeb.InstanceLive.Show do
           </div>
         </section>
 
-        <section id="uptime" class="card bg-base-100 border border-base-300">
-          <div class="card-body p-4 gap-3">
-            <h2 class="font-bold">Доступность</h2>
-            <div class="grid grid-cols-3 gap-2">
-              <div :for={period <- Downtime.periods()} class="rounded-box bg-base-200 p-3">
-                <div class="text-xs text-base-content/60">{Downtime.format_period(period)}</div>
-                <div class={["text-xl font-bold tabular-nums", uptime_class(@uptime[period].uptime)]}>
-                  {format_uptime(@uptime[period].uptime)}
-                </div>
-                <div class="text-xs text-base-content/60">
-                  простой {Downtime.format_duration(@uptime[period].down_seconds)}
-                </div>
+        <details id="technical-details" class="rounded-xl border border-base-300 bg-base-100 p-4">
+          <summary class="cursor-pointer font-semibold">Технические подробности</summary>
+          <p class="mt-2 mb-4 text-xs text-base-content/60">
+            Версия агента: {@instance.agent_version || "—"} · образ {agent_revision(@instance)}
+          </p>
+          <div class="grid gap-4 md:grid-cols-2">
+            <section class="card bg-base-100 border border-base-300">
+              <div class="card-body p-4">
+                <h2 class="font-bold">Контейнеры</h2>
+                <table id="containers" class="table table-sm">
+                  <tbody>
+                    <tr :for={container <- containers(@instance)}>
+                      <td class="font-semibold">{container["service"]}</td>
+                      <td class={(container["state"] == "running" && "text-success") || "text-error"}>
+                        {container["state"]}
+                      </td>
+                      <td class="text-xs text-base-content/60">{container["status"]}</td>
+                      <td class="font-mono text-xs">
+                        {container["version"] || String.slice(container["revision"] || "", 0, 7)}
+                      </td>
+                      <td
+                        class={[
+                          "text-xs tabular-nums whitespace-nowrap",
+                          (container["restarts"] || 0) > 0 && "text-warning"
+                        ]}
+                        title="Сколько раз docker перезапускал контейнер после падения"
+                      >
+                        <span :if={is_integer(container["restarts"])}>
+                          ↻ {container["restarts"]}
+                        </span>
+                      </td>
+                    </tr>
+                    <tr :if={containers(@instance) == []}>
+                      <td class="text-base-content/60">Нет данных</td>
+                    </tr>
+                  </tbody>
+                </table>
               </div>
-            </div>
+            </section>
+
+            <section class="card bg-base-100 border border-base-300">
+              <div class="card-body p-4">
+                <h2 class="font-bold">Проверки</h2>
+                <table id="checks" class="table table-sm">
+                  <thead>
+                    <tr>
+                      <th></th>
+                      <th>Изнутри</th>
+                      <th>Снаружи</th>
+                      <th>Сертификат</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr :for={kind <- ["api", "site"]}>
+                      <td class="font-semibold">{if kind == "api", do: "Server", else: "Client"}</td>
+                      <td><.check check={(@instance.status || %{})["checks"][kind]} /></td>
+                      <td><.check check={@instance.external[kind]} /></td>
+                      <td>
+                        <% days = cert_days((@instance.external[kind] || %{})["cert_expires_at"]) %>
+                        <span :if={days} class={days < 14 && "text-warning"}>{days} дн.</span>
+                        <span :if={!days} class="text-base-content/40">—</span>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+                <p class="text-xs text-base-content/60">
+                  Диск: {(disk_percent(@instance) && "#{disk_percent(@instance)}% занято") || "—"} ·
+                  проверено снаружи {ago(@instance.checked_at)}
+                </p>
+              </div>
+            </section>
           </div>
-        </section>
+        </details>
       </div>
 
       <div :if={@tab == "errors"} id="tab-errors-panel" class="space-y-4">
+        <div
+          :if={errors_count(@instance, @health) > 0}
+          id="errors-summary"
+          class="rounded-xl border border-base-300 bg-base-100 p-4 text-sm"
+        >
+          Ошибки и предупреждения
+          <span class="badge badge-error badge-sm ml-2">{errors_count(@instance, @health)}</span>
+        </div>
+        <section
+          :if={latest_errors(@instance) != []}
+          id="latest-errors"
+          class="rounded-xl border border-base-300 bg-base-100 p-4"
+        >
+          <h2 class="font-semibold mb-3">Последние ошибки приложения</h2>
+          <ul class="space-y-2 text-xs">
+            <li
+              :for={error <- latest_errors(@instance)}
+              class="rounded-lg border border-error/20 bg-error/5 px-3 py-2 break-words"
+            >
+              <span class="text-base-content/60">{error_time(error["inserted_at"])}</span>
+              <span :if={error["source"]} class="font-semibold">{error["source"]}</span>
+              {error["message"]}
+            </li>
+          </ul>
+        </section>
         <p
           :if={errors_count(@instance, @health) == 0 && @incidents == []}
           class="text-sm text-base-content/60"
@@ -1001,6 +1148,45 @@ defmodule BastionWeb.InstanceLive.Show do
         </section>
       </div>
 
+      <div :if={@tab == "history"} id="tab-history-panel" class="space-y-4">
+        <section class="rounded-xl border border-base-300 bg-base-100 p-4 space-y-3">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <h2 class="font-semibold">Последние операции</h2>
+            <button
+              :if={rollback(@instance)}
+              id="rollback"
+              type="button"
+              class="btn btn-sm btn-outline"
+              phx-click="command"
+              phx-value-action="rollback"
+              disabled={!@instance.online || busy?(@commands)}
+              data-confirm={rollback_confirmation(rollback(@instance))}
+            >
+              <.icon name="hero-arrow-uturn-left" class="size-4" /> Откатить обновление
+            </button>
+          </div>
+          <p class="text-sm">Обновление через Bastion: {operation_label(@operations.update)}</p>
+          <p class="text-sm">
+            Восстановление бэкапа через Bastion: {operation_label(@operations.restore)}
+          </p>
+        </section>
+        <section
+          id="maintenance-history"
+          class="rounded-xl border border-base-300 bg-base-100 p-4 space-y-3"
+        >
+          <h2 class="font-semibold">Окна обслуживания</h2>
+          <p :if={@maintenance_windows == []} class="text-sm text-base-content/60">Пока не было</p>
+          <div
+            :for={window <- @maintenance_windows}
+            id={"maintenance-window-#{window.id}"}
+            class="border-t border-base-200 pt-2 text-sm"
+          >
+            {datetime(window.started_at)} — {datetime(window.ended_at || window.scheduled_end_at)}
+            <span :if={is_nil(window.ended_at) && Maintenance.active?(@instance)} class="text-sky-700">· идёт</span>
+          </div>
+        </section>
+      </div>
+
       <div :if={@tab == "settings"} id="tab-settings-panel" class="space-y-4">
         <section id="env" class="card bg-base-100 border border-base-300">
           <div class="card-body p-4 gap-3">
@@ -1104,7 +1290,34 @@ defmodule BastionWeb.InstanceLive.Show do
           </div>
         </section>
 
-        <div class="pt-4 border-t border-base-300">
+        <section
+          id="instance-management"
+          class="rounded-xl border border-base-300 bg-base-100 p-4 space-y-3"
+        >
+          <h2 class="font-semibold">Управление</h2>
+          <button
+            id="instance-restart"
+            type="button"
+            class="btn btn-sm"
+            phx-click="command"
+            phx-value-action="restart"
+            disabled={!@instance.online || busy?(@commands)}
+            data-confirm="Перезапустить сайт?"
+          >Перезапустить</button>
+        </section>
+        <div id="danger-zone" class="mt-6 rounded-xl border border-error/30 bg-error/5 p-4 space-y-3">
+          <h2 class="font-semibold">Опасные действия</h2>
+          <button
+            id="instance-stop"
+            type="button"
+            class="btn btn-sm btn-error btn-outline"
+            phx-click="command"
+            phx-value-action="stop"
+            disabled={!@instance.online || busy?(@commands)}
+            data-confirm="Выключить сайт? Агент останется на связи."
+          >
+            Выключить сайт
+          </button>
           <button
             id="delete-instance"
             type="button"

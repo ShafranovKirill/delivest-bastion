@@ -1,12 +1,15 @@
 defmodule BastionWeb.InstanceLive.Components do
   use BastionWeb, :html
 
+  alias BastionWeb.InstanceLive.Links
+
   @levels %{
     ok: {"badge-success", "Работает"},
     warning: {"badge-warning", "Предупреждения"},
     down: {"badge-error", "Ошибки"},
-    offline: {"badge-neutral", "Не на связи"},
+    offline: {"badge-neutral", "Нет свежих данных"},
     stopped: {"badge-info", "Выключен"},
+    maintenance: {"badge-info", "Обслуживание"},
     unknown: {"badge-ghost", "Нет данных"}
   }
 
@@ -18,6 +21,36 @@ defmodule BastionWeb.InstanceLive.Components do
 
     ~H"""
     <span class={["badge whitespace-nowrap", @class]}>{@label}</span>
+    """
+  end
+
+  attr :id, :string, required: true
+  attr :host, :any, required: true
+  attr :kind, :string, required: true
+  attr :instance_name, :string, required: true
+
+  def open_link(assigns) do
+    url =
+      if assigns.kind == "server",
+        do: Links.server_url(assigns.host),
+        else: Links.client_url(assigns.host)
+
+    label = if assigns.kind == "server", do: "сервер", else: "клиент"
+    assigns = assign(assigns, url: url, label: label)
+
+    ~H"""
+    <a
+      :if={@url}
+      id={@id}
+      href={@url}
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label={"Открыть #{@label} #{@instance_name} в новой вкладке"}
+      class="inline-flex min-h-9 items-center justify-center rounded-lg bg-emerald-700 px-3 text-sm font-semibold text-white transition-colors hover:bg-emerald-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700"
+    >
+      Открыть <.icon name="hero-arrow-up-right" class="ml-1.5 size-4" />
+    </a>
+    <span :if={!@url} id={@id} class="text-sm text-base-content/50">Не настроен</span>
     """
   end
 

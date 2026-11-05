@@ -3,7 +3,7 @@ defmodule BastionWeb.InstanceLive.Index do
 
   import BastionWeb.InstanceLive.Components
 
-  alias Bastion.{Downtime, Health, Images, Instances, Rollout}
+  alias Bastion.{Health, Images, Instances, Rollout}
   alias BastionWeb.Presence
 
   @tick :timer.seconds(15)
@@ -16,7 +16,7 @@ defmodule BastionWeb.InstanceLive.Index do
       :timer.send_interval(@tick, :tick)
     end
 
-    {:ok, socket |> assign(page_title: "Экземпляры", rollout: Rollout.state()) |> load()}
+    {:ok, socket |> assign(page_title: "Франшизы", rollout: Rollout.state()) |> load()}
   end
 
   @impl true
@@ -62,15 +62,20 @@ defmodule BastionWeb.InstanceLive.Index do
   defp load(socket) do
     instances = Instances.list_instances()
     health = Map.new(instances, &{&1.id, Health.evaluate(&1)})
-    uptime = Map.new(instances, &{&1.id, Downtime.summary(&1)})
+    instances = Enum.sort_by(instances, &health_rank(health[&1.id].level))
 
-    assign(socket,
-      instances: instances,
-      health: health,
-      uptime: uptime,
-      outdated: Enum.count(instances, &(Images.outdated(&1) != []))
-    )
+    socket
+    |> assign(instance_count: length(instances), health: health)
+    |> stream(:instances, instances, reset: true, dom_id: &"instance-#{&1.id}")
   end
+
+  defp health_rank(:down), do: 0
+  defp health_rank(:warning), do: 1
+  defp health_rank(:offline), do: 2
+  defp health_rank(:unknown), do: 3
+  defp health_rank(:stopped), do: 4
+  defp health_rank(:maintenance), do: 4
+  defp health_rank(:ok), do: 5
 
   @impl true
   def render(assigns) do
@@ -78,13 +83,12 @@ defmodule BastionWeb.InstanceLive.Index do
     <Layouts.app flash={@flash} current_admin={@current_admin}>
       <div class="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 class="text-2xl font-bold">Экземпляры</h1>
+          <h1 class="text-2xl font-bold">Франшизы</h1>
           <p class="text-sm text-base-content/60">
-            {length(@instances)} всего · {Enum.count(@instances, & &1.online)} на связи
-            <span :if={@outdated > 0}> · {@outdated} можно обновить</span>
+            Всего {@instance_count}
           </p>
         </div>
-        <div :if={@instances != []} class="flex flex-wrap gap-2">
+        <div :if={@instance_count > 0} class="flex flex-wrap gap-2">
           <button
             id="check-images"
             type="button"
@@ -137,86 +141,62 @@ defmodule BastionWeb.InstanceLive.Index do
         </div>
       </div>
 
-      <div :if={@instances == []} id="instances-empty" class="py-16 text-center text-base-content/60">
-        Пока ни один агент не подключился. Укажите в .env экземпляра BASTION_URL и BASTION_TOKEN.
+      <div
+        :if={@instance_count == 0}
+        id="instances-empty"
+        class="py-16 text-center text-base-content/60"
+      >
+        Пока ни одна франшиза не подключена. Укажите в .env её агента BASTION_URL и BASTION_TOKEN.
       </div>
 
-      <div :if={@instances != []} class="overflow-x-auto rounded-box border border-base-300">
-        <table id="instances" class="table">
-          <thead>
+      <div
+        :if={@instance_count > 0}
+        class="rounded-xl border border-base-300 bg-base-100"
+      >
+        <table id="instances" class="table block w-full sm:table">
+          <thead class="hidden sm:table-header-group">
             <tr>
-              <th>Экземпляр</th>
+              <th>Франшиза</th>
               <th>Состояние</th>
-              <th>API</th>
-              <th>Сайт</th>
-              <th>Версия</th>
-              <th>Аптайм 7 дн</th>
-              <th>Диск</th>
-              <th>Связь</th>
+              <th>Server</th>
+              <th>Client</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody id="instance-rows" phx-update="stream" class="block sm:table-row-group">
             <tr
-              :for={instance <- @instances}
-              id={"instance-#{instance.id}"}
-              class="hover:bg-base-200 cursor-pointer"
-              phx-click={JS.navigate(~p"/instances/#{instance.id}")}
+              :for={{id, instance} <- @streams.instances}
+              id={id}
+              class="grid grid-cols-2 gap-x-3 gap-y-3 border-b border-base-300 p-4 last:border-b-0 hover:bg-base-200/50 sm:table-row sm:border-0 sm:p-0"
             >
-              <td>
-                <div class="flex items-center gap-2">
-                  <.online_dot online={instance.online} />
-                  <span class="font-semibold">{instance.name}</span>
-                </div>
-                <div class="text-xs text-base-content/60">{instance.hosts["site"]}</div>
+              <td class="col-span-2 min-w-0 p-0 sm:table-cell sm:p-3">
+                <.link
+                  navigate={~p"/instances/#{instance.id}"}
+                  class="block break-words font-semibold leading-snug hover:underline focus-visible:underline sm:inline"
+                >
+                  {instance.name}
+                </.link>
               </td>
-              <td>
+              <td class="col-span-2 p-0 sm:table-cell sm:p-3">
                 <.health_badge level={@health[instance.id].level} />
-                <span
-                  :for={key <- instance.site_alerts |> Map.keys() |> Enum.sort()}
-                  class="badge badge-error badge-sm ml-1 whitespace-nowrap"
-                >
-                  {Bastion.SiteAlerts.label(key)}
-                </span>
-                <span
-                  :if={Bastion.CrmAlerts.problems(instance) != []}
-                  class="badge badge-error badge-sm ml-1"
-                  title="Заказы не дошли до CRM"
-                >
-                  CRM: {length(Bastion.CrmAlerts.problems(instance))}
-                </span>
-                <div
-                  :for={problem <- Enum.take(@health[instance.id].problems, 2)}
-                  class="text-xs text-base-content/60 max-w-64 truncate"
-                  title={problem}
-                >
-                  {problem}
-                </div>
               </td>
-              <td><.check check={instance.external["api"]} /></td>
-              <td><.check check={instance.external["site"]} /></td>
-              <td class="font-mono text-xs">
-                <% {current, available} = Images.versions(instance, "server") %>
-                {current || "—"}
-                <span
-                  :if={Images.outdated(instance) != []}
-                  class="badge badge-info badge-xs ml-1"
-                  title={"Есть новые образы: " <> Enum.join(Images.outdated(instance), ", ")}
-                >
-                  → {available || "новее"}
-                </span>
-                <span
-                  :if={Images.agent_outdated?(instance)}
-                  class="badge badge-ghost badge-xs ml-1"
-                  title="Агент отстаёт от последнего образа"
-                >
-                  агент
-                </span>
+              <td class="min-w-0 border-t border-base-200 p-0 pt-3 sm:table-cell sm:border-0 sm:p-3">
+                <div class="mb-2 text-xs font-medium text-base-content/60 sm:hidden">Server</div>
+                <.open_link
+                  id={"server-open-#{instance.id}"}
+                  host={instance.hosts["api"]}
+                  kind="server"
+                  instance_name={instance.name}
+                />
               </td>
-              <td class={["tabular-nums", uptime_class(@uptime[instance.id].week.uptime)]}>
-                {format_uptime(@uptime[instance.id].week.uptime)}
+              <td class="min-w-0 border-t border-base-200 p-0 pt-3 sm:table-cell sm:border-0 sm:p-3">
+                <div class="mb-2 text-xs font-medium text-base-content/60 sm:hidden">Client</div>
+                <.open_link
+                  id={"client-open-#{instance.id}"}
+                  host={instance.hosts["site"]}
+                  kind="client"
+                  instance_name={instance.name}
+                />
               </td>
-              <td>{(disk_percent(instance) && "#{disk_percent(instance)}%") || "—"}</td>
-              <td class="text-xs whitespace-nowrap">{ago(instance.last_seen_at)}</td>
             </tr>
           </tbody>
         </table>
