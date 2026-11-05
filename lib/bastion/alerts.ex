@@ -25,6 +25,9 @@ defmodule Bastion.Alerts do
         downtime \\ :none
       ) do
     cond do
+      level == :maintenance ->
+        :skipped
+
       previous in @silent and level == :ok ->
         :skipped
 
@@ -51,6 +54,7 @@ defmodule Bastion.Alerts do
         :down -> "🔴 #{name}: сайт работает с ошибками"
         :offline -> "⚫ #{name}: агент не на связи"
         :stopped -> "⏸ #{name}: выключен по плану"
+        :maintenance -> "🛠 #{name}: обслуживание"
         :unknown -> "❔ #{name}: нет данных"
       end
 

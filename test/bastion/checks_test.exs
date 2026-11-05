@@ -4,7 +4,7 @@ defmodule Bastion.ChecksTest do
   import Bastion.Fixtures
 
   alias Bastion.Checks.{External, Worker}
-  alias Bastion.Instances
+  alias Bastion.{Instances, Maintenance}
 
   setup do
     on_exit(fn ->
@@ -172,6 +172,10 @@ defmodule Bastion.ChecksTest do
     {:ok, _} = Instances.update_checks(Instances.get_instance(instance.id), %{}, :ok)
     now = DateTime.utc_now(:second)
 
+    instance
+    |> Ecto.Changeset.change(last_seen_at: DateTime.add(now, 180))
+    |> Repo.update!()
+
     Worker.check(Instances.get_instance(instance.id), now)
     Worker.check(Instances.get_instance(instance.id), DateTime.add(now, 30))
     assert [%{health: "ok"}] = Instances.list_instances()
@@ -186,6 +190,45 @@ defmodule Bastion.ChecksTest do
     Worker.check(Instances.get_instance(instance.id), DateTime.add(now, 180))
     assert [%{health: "down"}] = Instances.list_instances()
     assert [_incident] = Bastion.Downtime.list_incidents(instance.id)
+  end
+
+  test "maintenance checks retain evidence without opening downtime" do
+    stub(&Plug.Conn.send_resp(&1, 502, ""))
+    instance = instance_fixture()
+    {:ok, _} = Instances.record_heartbeat(instance.id, healthy_status())
+    now = DateTime.utc_now(:second)
+    {:ok, maintained} = Maintenance.start(instance, 15, now)
+
+    checked = Worker.check(maintained, now)
+    assert checked.health == "maintenance"
+    assert checked.down_since == nil
+    assert checked.external["api"]["status"] == 502
+    assert Bastion.Downtime.list_incidents(instance.id) == []
+
+    instance
+    |> Ecto.Changeset.change(last_seen_at: DateTime.add(now, 901))
+    |> Repo.update!()
+
+    current = Instances.get_instance(instance.id)
+    expired = Worker.check(current, DateTime.add(now, 901))
+    assert expired.down_since == DateTime.add(now, 901)
+    assert Bastion.Downtime.list_incidents(instance.id) == []
+  end
+
+  test "a check reads maintenance started during the external request" do
+    instance = instance_fixture()
+    {:ok, _} = Instances.record_heartbeat(instance.id, healthy_status())
+    now = DateTime.utc_now(:second)
+
+    stub(fn conn ->
+      {:ok, _} = Maintenance.start(instance, 15, now)
+      Plug.Conn.send_resp(conn, 502, "")
+    end)
+
+    checked = Worker.check(Instances.get_instance(instance.id), now)
+    assert checked.health == "maintenance"
+    assert checked.down_since == nil
+    assert Bastion.Downtime.list_incidents(instance.id) == []
   end
 
   test "the site gets time to start after a restart" do

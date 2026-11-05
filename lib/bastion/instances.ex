@@ -221,6 +221,30 @@ defmodule Bastion.Instances do
     |> Repo.all()
   end
 
+  def last_successful_operations(instance_id) do
+    commands =
+      Command
+      |> where([c], c.instance_id == ^instance_id and c.status == "ok")
+      |> where([c], c.action in ["update", "restore"])
+      |> distinct([c], c.action)
+      |> order_by(
+        [c],
+        asc: c.action,
+        desc: fragment("COALESCE(?, ?, ?)", c.finished_at, c.started_at, c.inserted_at),
+        desc: c.id
+      )
+      |> Repo.all()
+
+    %{
+      update: Enum.find(commands, &(&1.action == "update")),
+      restore: Enum.find(commands, &(&1.action == "restore"))
+    }
+  end
+
+  def broadcast_instance(%Instance{} = instance) do
+    broadcast({:ok, instance})
+  end
+
   defp update_command(instance_id, command_id, changes) do
     with {:ok, command_id} <- Ecto.UUID.cast(command_id),
          %Command{} = command <- Repo.get_by(Command, id: command_id, instance_id: instance_id) do

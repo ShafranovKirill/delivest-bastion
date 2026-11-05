@@ -16,6 +16,7 @@ defmodule Bastion.Instances.Instance do
     field :checked_at, :utc_datetime
     field :health, :string, default: "unknown"
     field :stopped_at, :utc_datetime
+    field :maintenance_until, :utc_datetime
     field :down_since, :utc_datetime
     field :load_alerts, :map, default: %{}
     field :crm_alerts, :map, default: %{}
@@ -26,6 +27,7 @@ defmodule Bastion.Instances.Instance do
 
     has_many :commands, Bastion.Instances.Command
     has_many :incidents, Bastion.Downtime.Incident
+    has_many :maintenance_windows, Bastion.Maintenance.Window
 
     timestamps(type: :utc_datetime)
   end

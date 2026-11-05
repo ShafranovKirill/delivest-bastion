@@ -53,6 +53,22 @@ defmodule Bastion.HealthTest do
              )
   end
 
+  test "maintenance takes precedence over stale agent and failed checks until expiry" do
+    status = %{"error" => "unavailable"}
+    until = DateTime.add(@now, 60)
+
+    under_maintenance =
+      instance(%{
+        maintenance_until: until,
+        online: false,
+        last_seen_at: ~U[2026-10-21 11:50:00Z],
+        status: status
+      })
+
+    assert %{level: :maintenance, problems: []} = Health.evaluate(under_maintenance, @now)
+    assert %{level: :offline} = Health.evaluate(under_maintenance, until)
+  end
+
   test "stopped containers and failed checks are errors" do
     status =
       Bastion.Fixtures.healthy_status()

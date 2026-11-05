@@ -3,6 +3,7 @@ defmodule Bastion.Downtime do
 
   alias Bastion.Downtime.Incident
   alias Bastion.Instances.Instance
+  alias Bastion.Maintenance
   alias Bastion.Repo
 
   @down_levels [:down, :offline]
@@ -64,12 +65,34 @@ defmodule Bastion.Downtime do
       |> where([i], is_nil(i.ended_at) or i.ended_at > ^month_ago)
       |> Repo.all()
 
+    maintenance = Maintenance.intervals(instance.id, month_ago, now)
+
     Map.new(@periods, fn {period, seconds} ->
       from = Enum.max([DateTime.add(now, -seconds), instance.inserted_at], DateTime)
-      total = max(DateTime.diff(now, from), 1)
-      down = incidents |> Enum.map(&overlap(&1, from, now)) |> Enum.sum()
 
-      {period, %{down_seconds: down, uptime: Float.round(100 * (1 - down / total), 2)}}
+      planned =
+        Enum.reduce(maintenance, 0, fn interval, acc ->
+          acc + interval_overlap(interval, from, now)
+        end)
+
+      total = max(DateTime.diff(now, from) - planned, 0)
+
+      down =
+        Enum.reduce(incidents, 0, fn incident, acc ->
+          incident_seconds = overlap(incident, from, now)
+          incident_from = Enum.max([incident.started_at, from], DateTime)
+          incident_to = Enum.min([incident.ended_at || now, now], DateTime)
+
+          excluded =
+            Enum.reduce(maintenance, 0, fn interval, sum ->
+              sum + interval_overlap(interval, incident_from, incident_to)
+            end)
+
+          acc + max(incident_seconds - excluded, 0)
+        end)
+
+      uptime = if total == 0, do: 100.0, else: Float.round(100 * (1 - down / total), 2)
+      {period, %{down_seconds: down, uptime: uptime}}
     end)
   end
 
@@ -97,6 +120,12 @@ defmodule Bastion.Downtime do
   defp overlap(%Incident{started_at: started, ended_at: ended}, from, to) do
     started = Enum.max([started, from], DateTime)
     ended = Enum.min([ended || to, to], DateTime)
+    max(DateTime.diff(ended, started), 0)
+  end
+
+  defp interval_overlap({started, ended}, from, to) do
+    started = Enum.max([started, from], DateTime)
+    ended = Enum.min([ended, to], DateTime)
     max(DateTime.diff(ended, started), 0)
   end
 

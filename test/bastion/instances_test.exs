@@ -124,4 +124,57 @@ defmodule Bastion.InstancesTest do
     assert Instances.list_instances() == []
     assert Repo.aggregate(Bastion.Instances.Command, :count) == 0
   end
+
+  test "last successful operations use finished time beyond the command list limit" do
+    instance = instance_fixture()
+
+    older =
+      Repo.insert!(%Bastion.Instances.Command{
+        instance_id: instance.id,
+        action: "update",
+        status: "ok",
+        finished_at: ~U[2026-10-20 10:00:00Z]
+      })
+
+    newer =
+      Repo.insert!(%Bastion.Instances.Command{
+        instance_id: instance.id,
+        action: "update",
+        status: "ok",
+        finished_at: ~U[2026-10-21 10:00:00Z]
+      })
+
+    legacy =
+      Repo.insert!(%Bastion.Instances.Command{
+        instance_id: instance.id,
+        action: "update",
+        status: "ok",
+        started_at: ~U[2026-10-22 10:00:00Z]
+      })
+
+    restore =
+      Repo.insert!(%Bastion.Instances.Command{
+        instance_id: instance.id,
+        action: "restore",
+        status: "ok",
+        finished_at: ~U[2026-10-21 11:00:00Z]
+      })
+
+    for _ <- 1..25 do
+      Repo.insert!(%Bastion.Instances.Command{
+        instance_id: instance.id,
+        action: "update",
+        status: "error",
+        finished_at: ~U[2026-10-22 10:00:00Z]
+      })
+    end
+
+    assert %{update: %{id: update_id}, restore: %{id: restore_id}} =
+             Instances.last_successful_operations(instance.id)
+
+    assert update_id == legacy.id
+    assert restore_id == restore.id
+    refute update_id == older.id
+    refute update_id == newer.id
+  end
 end

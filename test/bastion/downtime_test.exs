@@ -3,7 +3,7 @@ defmodule Bastion.DowntimeTest do
 
   import Bastion.Fixtures
 
-  alias Bastion.Downtime
+  alias Bastion.{Downtime, Maintenance}
 
   @now ~U[2026-10-21 12:00:00Z]
 
@@ -72,6 +72,32 @@ defmodule Bastion.DowntimeTest do
     })
 
     assert %{down_seconds: 720, uptime: 90.0} = Downtime.summary(instance, @now).month
+  end
+
+  test "planned maintenance removes overlapping time from downtime and denominator" do
+    instance = instance(~U[2026-10-21 10:00:00Z])
+
+    Repo.insert!(%Downtime.Incident{
+      instance_id: instance.id,
+      level: "down",
+      started_at: ~U[2026-10-21 10:30:00Z],
+      ended_at: ~U[2026-10-21 11:30:00Z]
+    })
+
+    {:ok, _} = Maintenance.start(instance, 60, ~U[2026-10-21 11:00:00Z])
+
+    for period <- Downtime.periods() do
+      summary = Downtime.summary(instance, @now)[period]
+      assert summary.down_seconds == 1800
+      assert summary.uptime == 50.0
+    end
+  end
+
+  test "a period wholly covered by maintenance reports full uptime" do
+    instance = instance(@now)
+    {:ok, _} = Maintenance.start(instance, 120, @now)
+    summary = Downtime.summary(instance, DateTime.add(@now, 3600))
+    assert summary.day == %{down_seconds: 0, uptime: 100.0}
   end
 
   test "durations read naturally" do

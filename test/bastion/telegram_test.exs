@@ -3,8 +3,9 @@ defmodule Bastion.TelegramTest do
 
   import Bastion.Fixtures
 
-  alias Bastion.{Alerts, Instances}
+  alias Bastion.{Alerts, Instances, Maintenance}
   alias Bastion.Telegram.Bot
+  alias Bastion.Telegram.Screens
   alias BastionWeb.Presence
 
   @chat 42
@@ -118,6 +119,25 @@ defmodule Bastion.TelegramTest do
 
     Bot.handle_update(message("nothing"))
     assert_received {:telegram, "sendMessage", %{"text" => "Не нашёл «nothing»." <> _}}
+  end
+
+  test "planned maintenance renders in list and card without an alert" do
+    instance = healthy(%{"name" => "Pizza"})
+    {:ok, maintained} = Maintenance.start(instance, 30)
+
+    {list, _buttons} = Screens.instances([maintained])
+    {card, _buttons} = Screens.instance(maintained)
+
+    assert list =~ "🛠 <b>Pizza</b> — обслуживание"
+    assert card =~ "🛠 <b>Pizza</b> — обслуживание"
+
+    assert Alerts.message(maintained, %{level: :maintenance, problems: []}) ==
+             "🛠 Pizza: обслуживание"
+
+    assert :skipped =
+             Alerts.health_changed(maintained, "down", %{level: :maintenance, problems: []})
+
+    refute_received {:telegram, _, _}
   end
 
   test "the card leaves out links to hosts telegram would reject" do

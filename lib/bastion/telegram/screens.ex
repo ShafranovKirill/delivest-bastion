@@ -12,10 +12,11 @@ defmodule Bastion.Telegram.Screens do
     down: {"🔴", "ошибки"},
     offline: {"⚫", "агент не на связи"},
     stopped: {"⏸", "выключен по плану"},
+    maintenance: {"🛠", "обслуживание"},
     unknown: {"❔", "нет данных"}
   }
 
-  @order [:down, :offline, :warning, :unknown, :stopped, :ok]
+  @order [:down, :offline, :warning, :unknown, :maintenance, :stopped, :ok]
 
   @confirm %{
     "rollback" => "Вернуть образы, которые работали до обновления",

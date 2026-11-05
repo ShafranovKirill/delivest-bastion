@@ -1,7 +1,7 @@
 defmodule Bastion.Checks.Worker do
   use Oban.Worker, queue: :checks, max_attempts: 1
 
-  alias Bastion.{Alerts, Downtime, Health, Instances}
+  alias Bastion.{Alerts, Downtime, Health, Instances, Maintenance}
   alias Bastion.Checks.External
 
   @impl Oban.Worker
@@ -13,12 +13,22 @@ defmodule Bastion.Checks.Worker do
 
   def check(instance, now \\ DateTime.utc_now(:second)) do
     external = External.run(instance.hosts)
+    instance = Instances.get_instance(instance.id) || instance
 
+    if Maintenance.active?(instance, now) do
+      {:ok, updated} = Instances.update_checks(instance, external, :maintenance)
+      updated
+    else
+      check_unplanned(instance, external, now)
+    end
+  end
+
+  defp check_unplanned(instance, external, now) do
     if Instances.busy?(instance.id) do
       {:ok, updated} = Instances.update_checks(instance, external, instance.health)
       updated
     else
-      health = Health.evaluate(%{instance | external: external})
+      health = Health.evaluate(%{instance | external: external, maintenance_until: nil}, now)
       down_since = if health.level == :down, do: instance.down_since || now
 
       if confirmed?(health, instance.down_since, now),

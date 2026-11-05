@@ -1,4 +1,5 @@
 defmodule Bastion.Health do
+  alias Bastion.Maintenance
   alias Bastion.Instances.Instance
 
   @disk_warning 0.9
@@ -6,6 +7,9 @@ defmodule Bastion.Health do
 
   def evaluate(%Instance{} = instance, now \\ DateTime.utc_now()) do
     cond do
+      Maintenance.active?(instance, now) ->
+        %{level: :maintenance, problems: []}
+
       is_nil(instance.last_seen_at) ->
         %{level: :unknown, problems: []}
 
