@@ -1,7 +1,8 @@
 defmodule Bastion.Images do
   @moduledoc """
-  Finds the git revision of the newest image in GitHub Container Registry for every image
-  the sites run, so the bastion can tell which sites and agents are behind.
+  Finds the git revision and the release version of the newest image in GitHub Container
+  Registry for every image the sites run, so the bastion can tell which sites and agents are
+  behind and which version they can update to.
   """
 
   use GenServer
@@ -36,7 +37,37 @@ defmodule Bastion.Images do
 
   def latest(_ref), do: nil
 
-  def put(ref, revision), do: :ets.insert(@table, {normalize(ref), revision})
+  def latest_version(ref) when is_binary(ref) do
+    case :ets.whereis(@table) != :undefined and :ets.lookup(@table, {:version, normalize(ref)}) do
+      [{_key, version}] -> version
+      _ -> nil
+    end
+  end
+
+  def latest_version(_ref), do: nil
+
+  def put(ref, revision, version \\ nil) do
+    :ets.insert(@table, [{normalize(ref), revision}, {{:version, normalize(ref)}, version}])
+  end
+
+  @doc "The version a site runs and the newer one in the registry, when there is one."
+  def versions(%{status: %{"containers" => containers}} = instance, service)
+      when is_list(containers) do
+    case Enum.find(containers, &(&1["service"] == service)) do
+      nil ->
+        {nil, nil}
+
+      container ->
+        current = container["version"] || short(container["revision"])
+        available = if service in outdated(instance), do: latest_version(container["image"])
+        {current, available}
+    end
+  end
+
+  def versions(_instance, _service), do: {nil, nil}
+
+  defp short(revision) when is_binary(revision), do: String.slice(revision, 0, 7)
+  defp short(_revision), do: nil
 
   @doc "Services of the site whose image has a newer revision in the registry."
   def outdated(%{status: %{"containers" => containers}}) when is_list(containers) do
@@ -100,10 +131,10 @@ defmodule Bastion.Images do
     |> Enum.flat_map(&images/1)
     |> Enum.uniq()
     |> Enum.filter(&String.starts_with?(&1, @registry <> "/"))
-    |> Task.async_stream(&{&1, fetch_revision(&1)}, timeout: 60_000, on_timeout: :kill_task)
+    |> Task.async_stream(&{&1, fetch_image(&1)}, timeout: 60_000, on_timeout: :kill_task)
     |> Enum.each(fn
-      {:ok, {ref, {:ok, revision}}} ->
-        put(ref, revision)
+      {:ok, {ref, {:ok, %{revision: revision, version: version}}}} ->
+        put(ref, revision, version)
 
       {:ok, {ref, {:error, reason}}} ->
         Logger.warning("cannot read the newest revision of #{ref}: #{reason}")
@@ -129,6 +160,10 @@ defmodule Bastion.Images do
   defp images(_instance), do: []
 
   def fetch_revision(ref) do
+    with {:ok, %{revision: revision}} <- fetch_image(ref), do: {:ok, revision}
+  end
+
+  def fetch_image(ref) do
     {repo, tag} = parse(ref)
 
     with {:ok, token} <- token(repo),
@@ -136,15 +171,26 @@ defmodule Bastion.Images do
          {:ok, manifest} <- platform_manifest(manifest, repo, token),
          %{"config" => %{"digest" => digest}} <- manifest,
          {:ok, config} <- get_json("/v2/#{repo}/blobs/#{digest}", token) do
-      case get_in(config, ["config", "Labels", "org.opencontainers.image.revision"]) do
-        revision when is_binary(revision) and revision != "" -> {:ok, revision}
-        _ -> {:error, "the image has no revision label"}
+      labels = get_in(config, ["config", "Labels"]) || %{}
+
+      case labels["org.opencontainers.image.revision"] do
+        revision when is_binary(revision) and revision != "" ->
+          {:ok, %{revision: revision, version: release_version(labels)}}
+
+        _ ->
+          {:error, "the image has no revision label"}
       end
     else
       {:error, reason} -> {:error, reason}
       _ -> {:error, "unexpected manifest"}
     end
   end
+
+  defp release_version(%{"org.opencontainers.image.version" => version}) do
+    if Regex.match?(~r/^\d+\.\d+\.\d+/, version), do: version
+  end
+
+  defp release_version(_labels), do: nil
 
   def parse(ref) do
     path = ref |> normalize() |> String.replace_prefix(@registry <> "/", "")

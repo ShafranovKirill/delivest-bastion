@@ -253,12 +253,14 @@ defmodule BastionWeb.InstanceLive.Show do
     )
   end
 
-  defp since_label(iso) do
+  defp since_label(iso) when is_binary(iso) do
     case DateTime.from_iso8601(iso) do
       {:ok, at, _offset} -> datetime(at)
       _ -> iso
     end
   end
+
+  defp since_label(_), do: nil
 
   defp gigabytes(kb), do: :erlang.float_to_binary(kb / 1_048_576, decimals: 1) <> " ГБ"
 
@@ -284,6 +286,9 @@ defmodule BastionWeb.InstanceLive.Show do
   end
 
   defp rollback(_instance), do: nil
+
+  defp agent_revision(%{status: %{"agent" => %{"version" => version}}}) when is_binary(version),
+    do: version
 
   defp agent_revision(%{status: %{"agent" => %{"revision" => revision}}})
        when is_binary(revision),
@@ -334,7 +339,12 @@ defmodule BastionWeb.InstanceLive.Show do
   defp site_alert_icon("disk"), do: "hero-circle-stack"
   defp site_alert_icon(_key), do: "hero-exclamation-triangle"
 
-  defp rollback_label(%{"at" => at}), do: since_label(at)
+  defp rollback_confirmation(rollback) do
+    at = since_label(rollback["at"])
+    when_updated = if at, do: " #{at}", else: ""
+
+    "Вернуть образы и код, которые работали до обновления#{when_updated}? База останется как есть."
+  end
 
   defp busy?(commands), do: Enum.any?(commands, &(&1.status in ["sent", "running"]))
 
@@ -398,7 +408,7 @@ defmodule BastionWeb.InstanceLive.Show do
             phx-click="command"
             phx-value-action="rollback"
             disabled={!@instance.online || busy?(@commands)}
-            data-confirm={"Вернуть образы и код, которые работали до обновления #{rollback_label(rollback(@instance))}? База останется как есть."}
+            data-confirm={rollback_confirmation(rollback(@instance))}
           >
             <.icon name="hero-arrow-uturn-left" class="size-4" /> Откатить
           </button>
@@ -474,7 +484,7 @@ defmodule BastionWeb.InstanceLive.Show do
                     </td>
                     <td class="text-xs text-base-content/60">{container["status"]}</td>
                     <td class="font-mono text-xs">
-                      {String.slice(container["revision"] || "", 0, 7)}
+                      {container["version"] || String.slice(container["revision"] || "", 0, 7)}
                     </td>
                     <td
                       class={[

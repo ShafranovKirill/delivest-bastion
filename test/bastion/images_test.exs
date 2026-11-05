@@ -31,13 +31,45 @@ defmodule Bastion.ImagesTest do
             %{"config" => %{"digest" => "sha256:cfg"}}
 
           "/v2/owner/delivest-server/blobs/sha256:cfg" ->
-            %{"config" => %{"Labels" => %{"org.opencontainers.image.revision" => "abc999"}}}
+            %{
+              "config" => %{
+                "Labels" => %{
+                  "org.opencontainers.image.revision" => "abc999",
+                  "org.opencontainers.image.version" => "1.4.0"
+                }
+              }
+            }
         end
 
       Plug.Conn.send_resp(conn, 200, Jason.encode!(body))
     end)
 
     assert {:ok, "abc999"} = Images.fetch_revision("ghcr.io/Owner/delivest-server:latest")
+
+    assert {:ok, %{revision: "abc999", version: "1.4.0"}} =
+             Images.fetch_image("ghcr.io/Owner/delivest-server:latest")
+  end
+
+  test "a site shows its version and the newer one" do
+    Images.put("ghcr.io/test/versions-server:latest", "new", "1.4.0")
+
+    instance = %{
+      status: %{
+        "containers" => [
+          %{
+            "service" => "server",
+            "image" => "ghcr.io/test/versions-server:latest",
+            "revision" => "old",
+            "version" => "1.3.2"
+          }
+        ]
+      }
+    }
+
+    assert Images.versions(instance, "server") == {"1.3.2", "1.4.0"}
+
+    up_to_date = put_in(instance, [:status, "containers", Access.at(0), "revision"], "new")
+    assert Images.versions(up_to_date, "server") == {"1.3.2", nil}
   end
 
   test "registry errors are reported" do
