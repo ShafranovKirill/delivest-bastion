@@ -80,12 +80,19 @@ defmodule Bastion.Images do
 
   # Unknown when the registry was not asked yet or the image is not from it.
   def up_to_date?(%{status: %{"containers" => containers}} = instance) when is_list(containers) do
-    known? =
-      Enum.any?(containers, fn container ->
-        is_binary(container["revision"]) and is_binary(latest(container["image"]))
-      end)
+    app_containers = Enum.filter(containers, &(&1["service"] in ["server", "client"]))
 
-    if known?, do: outdated(instance) == [], else: :unknown
+    known? =
+      app_containers != [] and
+        Enum.all?(app_containers, fn container ->
+          is_binary(container["revision"]) and is_binary(latest(container["image"]))
+        end)
+
+    cond do
+      outdated(instance) != [] -> false
+      known? -> true
+      true -> :unknown
+    end
   end
 
   def up_to_date?(_instance), do: :unknown
@@ -132,15 +139,20 @@ defmodule Bastion.Images do
     |> Enum.uniq()
     |> Enum.filter(&String.starts_with?(&1, @registry <> "/"))
     |> Task.async_stream(&{&1, fetch_image(&1)}, timeout: 60_000, on_timeout: :kill_task)
-    |> Enum.each(fn
-      {:ok, {ref, {:ok, %{revision: revision, version: version}}}} ->
+    |> Enum.reduce(%{checked: 0, errors: 0}, fn
+      {:ok, {ref, {:ok, %{revision: revision, version: version}}}}, result ->
         put(ref, revision, version)
+        %{result | checked: result.checked + 1}
 
-      {:ok, {ref, {:error, reason}}} ->
+      {:ok, {ref, {:error, reason}}}, result ->
+        :ets.delete(@table, normalize(ref))
+        :ets.delete(@table, {:version, normalize(ref)})
         Logger.warning("cannot read the newest revision of #{ref}: #{reason}")
+        %{result | errors: result.errors + 1}
 
-      {:exit, reason} ->
+      {:exit, reason}, result ->
         Logger.warning("registry check failed: #{inspect(reason)}")
+        %{result | errors: result.errors + 1}
     end)
   end
 

@@ -55,19 +55,19 @@ defmodule BastionWeb.InstanceLiveTest do
     assert html =~ "Pizza North"
     refute has_element?(lv, "#update-all")
     assert has_element?(lv, "h1", "Франшизы")
-    assert has_element?(lv, "#instances thead th", "Server")
-    assert has_element?(lv, "#instances thead th", "Client")
-
-    assert has_element?(
-             lv,
-             "#instances tbody[phx-update='stream'] #instance-#{instance.id} > td:nth-child(3)",
-             "Server"
-           )
+    assert has_element?(lv, "#instances thead th", "Админка")
+    assert has_element?(lv, "#instances thead th", "Сайт")
 
     assert has_element?(
              lv,
              "#instances tbody[phx-update='stream'] #instance-#{instance.id} > td:nth-child(4)",
-             "Client"
+             "Админка"
+           )
+
+    assert has_element?(
+             lv,
+             "#instances tbody[phx-update='stream'] #instance-#{instance.id} > td:nth-child(5)",
+             "Сайт"
            )
 
     assert has_element?(lv, "#instance-#{instance.id} > td:first-child a", "Pizza North")
@@ -82,7 +82,8 @@ defmodule BastionWeb.InstanceLiveTest do
     refute has_element?(lv, "#instances thead th", "Аптайм 7 дн")
 
     {:ok, _} = Instances.record_heartbeat(instance.id, healthy_status())
-    assert has_element?(lv, "#instance-#{instance.id}", "Работает")
+    refute has_element?(lv, "#problem-#{instance.id}")
+    refute has_element?(lv, "#instances thead th", "Состояние")
   end
 
   test "opens validated server and client URLs and mutes unsafe hosts", %{conn: conn} do
@@ -144,7 +145,7 @@ defmodule BastionWeb.InstanceLiveTest do
 
     {:ok, list, _} = live(log_in(conn), ~p"/")
     assert has_element?(list, "#instances tbody tr:first-child[id='instance-#{broken.id}']")
-    assert has_element?(list, "#server-open-#{broken.id}[class*='bg-emerald-700']")
+    assert has_element?(list, "#problem-#{broken.id}", "Ошибки")
     refute has_element?(list, "#instance-#{broken.id}", "secret failure")
   end
 
@@ -302,21 +303,8 @@ defmodule BastionWeb.InstanceLiveTest do
     {:ok, lv, _} = live(log_in(conn), ~p"/instances/#{instance.id}")
     timestamp = Calendar.strftime(now, "%d.%m.%Y %H:%M:%S UTC")
 
-    assert has_element?(
-             lv,
-             "#recent-operations > div:first-child",
-             "Последнее обновление через Bastion"
-           )
-
-    assert has_element?(lv, "#recent-operations > div:first-child", timestamp)
-
-    assert has_element?(
-             lv,
-             "#recent-operations > div:nth-child(2)",
-             "Последнее восстановление бэкапа через Bastion"
-           )
-
-    assert has_element?(lv, "#recent-operations > div:nth-child(2)", timestamp)
+    refute has_element?(lv, "#recent-operations")
+    assert has_element?(lv, "#instance-tools:not([open])")
 
     lv |> element("#tab-history") |> render_click()
 
@@ -327,15 +315,17 @@ defmodule BastionWeb.InstanceLiveTest do
            )
   end
 
-  test "the list offers to update the sites one by one", %{conn: conn} do
-    instance = instance_fixture()
-    {:ok, _} = Instances.record_heartbeat(instance.id, healthy_status())
-
+  test "the list keeps actions inside each franchise and shows a completed image check", %{
+    conn: conn
+  } do
+    instance_fixture()
     {:ok, lv, _html} = live(log_in(conn), ~p"/")
-    assert has_element?(lv, "#rollout-start")
-
-    lv |> element("#rollout-start") |> render_click()
-    assert render(lv) =~ "Все сайты на связи уже обновлены"
+    refute has_element?(lv, "#rollout-start")
+    refute has_element?(lv, "#instances thead th", "Действия")
+    lv |> element("#check-images") |> render_click()
+    render_async(lv)
+    assert has_element?(lv, "#image-check-result", "Проверено образов: 0. Ошибок: 0.")
+    refute has_element?(lv, "#check-images[disabled]")
   end
 
   test "logs request picks a service and tail", %{conn: conn} do
@@ -501,5 +491,107 @@ defmodule BastionWeb.InstanceLiveTest do
 
     {:ok, list, _html} = live(log_in(conn), ~p"/")
     refute has_element?(list, "#instance-#{instance.id}", "CRM:")
+  end
+
+  test "client details and encrypted credentials persist without exposing the password", %{
+    conn: conn
+  } do
+    instance = instance_fixture()
+    {:ok, lv, _} = live(log_in(conn), ~p"/instances/#{instance.id}")
+    assert has_element?(lv, "#instance-tools:not([open])")
+    refute has_element?(lv, "#instance-actions #instance-backup")
+    refute has_element?(lv, "#instance-actions #maintenance-open")
+    lv |> element("#edit-client") |> render_click()
+    due_on = Date.add(Bastion.PaymentReminderWorker.today(), 5)
+
+    lv
+    |> form("#client-form",
+      client: %{
+        contact_phone: "+7 900 123-45-67",
+        social_links: "https://t.me/client",
+        payment_due_on: Date.to_iso8601(due_on),
+        admin_login: "owner",
+        admin_password: "private-pass-123"
+      }
+    )
+    |> render_submit()
+
+    assert has_element?(lv, "#client-contact", "+7 900 123-45-67")
+    assert has_element?(lv, "#client-contact a[href='https://t.me/client']")
+    assert has_element?(lv, "#saved-password", "••••••••")
+    refute has_element?(lv, "#admin-credentials", "private-pass-123")
+    stored = Instances.get_instance(instance.id)
+    assert stored.admin_password_encrypted != "private-pass-123"
+    assert stored.admin_password == nil
+
+    assert {:ok, "private-pass-123"} =
+             Bastion.Credentials.decrypt(stored.admin_password_encrypted)
+
+    lv |> element("#toggle-password") |> render_click()
+    assert has_element?(lv, "#saved-password", "private-pass-123")
+    lv |> element("#toggle-password") |> render_click()
+    refute has_element?(lv, "#saved-password", "private-pass-123")
+    lv |> element("#edit-client") |> render_click()
+
+    lv
+    |> form("#client-form", client: %{contact_phone: "+7 900 999-99-99", admin_password: ""})
+    |> render_submit()
+
+    assert Instances.get_instance(instance.id).admin_password_encrypted ==
+             stored.admin_password_encrypted
+
+    {:ok, list, _} = live(log_in(build_conn()), ~p"/")
+
+    assert has_element?(
+             list,
+             "#subscription-#{instance.id}",
+             Calendar.strftime(due_on, "%d.%m.%Y")
+           )
+
+    assert has_element?(list, "#subscription-#{instance.id}", "Осталось 5 дн.")
+  end
+
+  test "invalid contacts and dates cannot replace saved client data", %{conn: conn} do
+    instance = instance_fixture()
+    {:ok, lv, _} = live(log_in(conn), ~p"/instances/#{instance.id}")
+    lv |> element("#edit-client") |> render_click()
+
+    lv
+    |> form("#client-form",
+      client: %{
+        social_links: "javascript:alert(1)",
+        payment_due_on: "bad-date",
+        admin_password: "do-not-echo"
+      }
+    )
+    |> render_submit()
+
+    assert has_element?(lv, "#client-form")
+    refute has_element?(lv, "#client-form input[value='do-not-echo']")
+    assert Instances.get_instance(instance.id).social_links == nil
+    assert Instances.get_instance(instance.id).admin_password_encrypted == nil
+  end
+
+  test "versions show the installed release and available update in the list", %{conn: conn} do
+    instance = instance_fixture()
+    image = "ghcr.io/test/ui-version:latest"
+    Bastion.Images.put(image, "new", "2.0.0")
+
+    status =
+      put_in(healthy_status(), ["containers"], [
+        %{
+          "service" => "server",
+          "state" => "running",
+          "revision" => "old",
+          "image" => image,
+          "version" => "1.0.0"
+        }
+      ])
+
+    Instances.record_heartbeat(instance.id, status)
+    {:ok, lv, _} = live(log_in(conn), ~p"/")
+    assert has_element?(lv, "#version-#{instance.id}", "1.0.0")
+    assert has_element?(lv, "#version-#{instance.id}", "2.0.0")
+    assert has_element?(lv, "#version-#{instance.id}", "Есть обновление")
   end
 end

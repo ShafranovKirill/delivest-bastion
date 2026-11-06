@@ -67,6 +67,7 @@ config :bastion, Oban,
      crontab: [
        {"* * * * *", Bastion.Checks.Worker},
        {"* * * * *", Bastion.Instances.ExpireWorker},
+       {"*/5 * * * *", Bastion.PaymentReminderWorker},
        {"0 0 * * *", Bastion.Backups.Worker},
        {"30 0 * * *", Bastion.Metrics.PruneWorker}
      ]}

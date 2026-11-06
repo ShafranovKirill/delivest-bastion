@@ -60,6 +60,28 @@ defmodule Bastion.Instances do
     end
   end
 
+  def update_client(%Instance{} = instance, attrs) do
+    changeset = Instance.client_changeset(instance, attrs)
+
+    changeset =
+      case Ecto.Changeset.get_change(changeset, :admin_password) do
+        password when is_binary(password) and password != "" ->
+          Ecto.Changeset.put_change(
+            changeset,
+            :admin_password_encrypted,
+            Bastion.Credentials.encrypt(password)
+          )
+
+        _ ->
+          changeset
+      end
+
+    changeset
+    |> Ecto.Changeset.delete_change(:admin_password)
+    |> Repo.update()
+    |> broadcast()
+  end
+
   def register(id, info) do
     attrs = %{
       name: info["name"] || "#{id}",

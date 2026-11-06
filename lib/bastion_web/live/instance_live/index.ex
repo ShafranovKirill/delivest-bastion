@@ -16,7 +16,15 @@ defmodule BastionWeb.InstanceLive.Index do
       :timer.send_interval(@tick, :tick)
     end
 
-    {:ok, socket |> assign(page_title: "Франшизы", rollout: Rollout.state()) |> load()}
+    {:ok,
+     socket
+     |> assign(
+       page_title: "Франшизы",
+       rollout: Rollout.state(),
+       checking_images?: false,
+       image_result: nil
+     )
+     |> load()}
   end
 
   @impl true
@@ -42,8 +50,28 @@ defmodule BastionWeb.InstanceLive.Index do
   end
 
   def handle_event("check_images", _params, socket) do
-    Images.refresh()
-    {:noreply, put_flash(socket, :info, "Проверяю новые образы в реестре")}
+    if socket.assigns.checking_images? do
+      {:noreply, socket}
+    else
+      {:noreply,
+       socket
+       |> assign(checking_images?: true, image_result: nil)
+       |> start_async(:check_images, fn -> Images.check() end)}
+    end
+  end
+
+  @impl true
+  def handle_async(:check_images, {:ok, result}, socket) do
+    message = "Проверено образов: #{result.checked}. Ошибок: #{result.errors}."
+    {:noreply, socket |> assign(checking_images?: false, image_result: message) |> load()}
+  end
+
+  def handle_async(:check_images, {:exit, _reason}, socket) do
+    {:noreply,
+     assign(socket,
+       checking_images?: false,
+       image_result: "Не удалось проверить обновления. Попробуйте ещё раз."
+     )}
   end
 
   @impl true
@@ -94,30 +122,23 @@ defmodule BastionWeb.InstanceLive.Index do
             type="button"
             class="btn btn-ghost btn-sm"
             phx-click="check_images"
+            disabled={@checking_images?}
           >
-            <.icon name="hero-magnifying-glass" class="size-4" /> Проверить образы
-          </button>
-          <button
-            :if={!Rollout.running?(@rollout)}
-            id="rollout-start"
-            type="button"
-            class="btn btn-primary btn-sm"
-            phx-click="rollout"
-            data-confirm="Обновить по очереди все сайты на связи, у которых есть новые образы? Каждый сначала сделает бэкап, следующий начнётся только когда предыдущий снова заработает, а первая ошибка остановит остальные."
-          >
-            <.icon name="hero-queue-list" class="size-4" /> Обновить по очереди
-          </button>
-          <button
-            :if={Rollout.running?(@rollout)}
-            id="rollout-cancel"
-            type="button"
-            class="btn btn-sm btn-error btn-outline"
-            phx-click="rollout_cancel"
-          >
-            Остановить очередь
+            <.icon name="hero-magnifying-glass" class="size-4" /> {if @checking_images?,
+              do: "Проверяем…",
+              else: "Проверить обновления"}
           </button>
         </div>
       </div>
+
+      <p
+        :if={@image_result}
+        id="image-check-result"
+        role="status"
+        class="text-sm text-base-content/60"
+      >
+        {@image_result}
+      </p>
 
       <div
         :if={@rollout.status != :idle}
@@ -153,34 +174,46 @@ defmodule BastionWeb.InstanceLive.Index do
         :if={@instance_count > 0}
         class="rounded-xl border border-base-300 bg-base-100"
       >
-        <table id="instances" class="table block w-full sm:table">
+        <table id="instances" class="block w-full border-collapse text-left sm:table">
           <thead class="hidden sm:table-header-group">
             <tr>
-              <th>Франшиза</th>
-              <th>Состояние</th>
-              <th>Server</th>
-              <th>Client</th>
+              <th class="px-5 py-3 text-xs font-medium text-base-content/50">Франшиза</th>
+              <th class="px-5 py-3 text-xs font-medium text-base-content/50">Подписка</th>
+              <th class="px-5 py-3 text-xs font-medium text-base-content/50">Версия сайта</th>
+              <th class="px-5 py-3 text-xs font-medium text-base-content/50">Админка</th>
+              <th class="px-5 py-3 text-xs font-medium text-base-content/50">Сайт</th>
             </tr>
           </thead>
           <tbody id="instance-rows" phx-update="stream" class="block sm:table-row-group">
             <tr
               :for={{id, instance} <- @streams.instances}
               id={id}
-              class="grid grid-cols-2 gap-x-3 gap-y-3 border-b border-base-300 p-4 last:border-b-0 hover:bg-base-200/50 sm:table-row sm:border-0 sm:p-0"
+              class="grid grid-cols-2 gap-x-3 gap-y-3 border-b border-base-300 p-4 last:border-b-0 transition-colors hover:bg-base-200/50 sm:table-row sm:p-0"
             >
-              <td class="col-span-2 min-w-0 p-0 sm:table-cell sm:p-3">
+              <td class="col-span-2 min-w-0 p-0 sm:table-cell sm:px-5 sm:py-4">
                 <.link
                   navigate={~p"/instances/#{instance.id}"}
                   class="block break-words font-semibold leading-snug hover:underline focus-visible:underline sm:inline"
                 >
                   {instance.name}
                 </.link>
+                <div
+                  :if={@health[instance.id].level != :ok}
+                  id={"problem-#{instance.id}"}
+                  class="mt-1 text-xs"
+                >
+                  <.health_badge level={@health[instance.id].level} />
+                </div>
               </td>
-              <td class="col-span-2 p-0 sm:table-cell sm:p-3">
-                <.health_badge level={@health[instance.id].level} />
+              <td class="p-0 sm:table-cell sm:px-5 sm:py-4" id={"subscription-#{instance.id}"}>
+                <div class="mb-1 text-xs text-base-content/50 sm:hidden">Подписка</div>
+                <.payment_date date={instance.payment_due_on} />
               </td>
-              <td class="min-w-0 border-t border-base-200 p-0 pt-3 sm:table-cell sm:border-0 sm:p-3">
-                <div class="mb-2 text-xs font-medium text-base-content/60 sm:hidden">Server</div>
+              <td class="p-0 sm:table-cell sm:px-5 sm:py-4" id={"version-#{instance.id}"}>
+                <div class="mb-1 text-xs text-base-content/50 sm:hidden">Версия сайта</div>
+                <.site_version instance={instance} />
+              </td>
+              <td class="min-w-0 border-t border-base-200 p-0 pt-3 sm:table-cell sm:border-0 sm:px-5 sm:py-4">
                 <.open_link
                   id={"server-open-#{instance.id}"}
                   host={instance.hosts["api"]}
@@ -188,8 +221,7 @@ defmodule BastionWeb.InstanceLive.Index do
                   instance_name={instance.name}
                 />
               </td>
-              <td class="min-w-0 border-t border-base-200 p-0 pt-3 sm:table-cell sm:border-0 sm:p-3">
-                <div class="mb-2 text-xs font-medium text-base-content/60 sm:hidden">Client</div>
+              <td class="min-w-0 border-t border-base-200 p-0 pt-3 sm:table-cell sm:border-0 sm:px-5 sm:py-4">
                 <.open_link
                   id={"client-open-#{instance.id}"}
                   host={instance.hosts["site"]}

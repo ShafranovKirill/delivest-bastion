@@ -46,11 +46,76 @@ defmodule BastionWeb.InstanceLive.Components do
       target="_blank"
       rel="noopener noreferrer"
       aria-label={"Открыть #{@label} #{@instance_name} в новой вкладке"}
-      class="inline-flex min-h-9 items-center justify-center rounded-lg bg-emerald-700 px-3 text-sm font-semibold text-white transition-colors hover:bg-emerald-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700"
+      class="inline-flex min-h-9 items-center gap-1 text-sm font-medium text-base-content/70 transition-colors hover:text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
     >
-      Открыть <.icon name="hero-arrow-up-right" class="ml-1.5 size-4" />
+      {if @kind == "server", do: "Админка", else: "Сайт"}
+      <.icon name="hero-arrow-up-right" class="ml-1.5 size-4" />
     </a>
     <span :if={!@url} id={@id} class="text-sm text-base-content/50">Не настроен</span>
+    """
+  end
+
+  attr :date, :any, required: true
+
+  def payment_date(assigns) do
+    assigns =
+      assign(
+        assigns,
+        :days,
+        assigns.date && Date.diff(assigns.date, Bastion.PaymentReminderWorker.today())
+      )
+
+    ~H"""
+    <div :if={@date} class="space-y-0.5 tabular-nums">
+      <div class="text-sm font-medium">До {Calendar.strftime(@date, "%d.%m.%Y")}</div>
+      <div class={["text-xs", if(@days <= 0, do: "text-error", else: "text-base-content/50")]}>
+        <%= cond do %>
+          <% @days == 0 -> %>
+            Оплата сегодня
+          <% @days < 0 -> %>
+            Просрочено: {abs(@days)} дн.
+          <% true -> %>
+            Осталось {@days} дн.
+        <% end %>
+      </div>
+    </div>
+    <span :if={!@date} class="text-sm text-base-content/40">Дата не указана</span>
+    """
+  end
+
+  attr :instance, :any, required: true
+
+  def site_version(assigns) do
+    services =
+      for service <- ["server", "client"],
+          {current, available} = Bastion.Images.versions(assigns.instance, service),
+          current != nil,
+          do: %{name: service, current: current, available: available}
+
+    assigns =
+      assign(assigns, services: services, state: Bastion.Images.up_to_date?(assigns.instance))
+
+    ~H"""
+    <div class="space-y-1 text-xs tabular-nums">
+      <div :for={service <- @services}>
+        <span :if={length(@services) > 1} class="text-base-content/50">{if service.name == "server",
+          do: "Сервер",
+          else: "Клиент"} · </span>
+        <span class="font-medium">{service.current}</span>
+        <span :if={service.available} class="text-primary"> → {service.available}</span>
+      </div>
+      <span :if={@services == []} class="text-base-content/40">Версия неизвестна</span>
+      <div class="text-base-content/50">
+        <%= case @state do %>
+          <% true -> %>
+            Актуальна
+          <% false -> %>
+            <span class="text-primary">Есть обновление</span>
+          <% :unknown -> %>
+            Нет результата проверки
+        <% end %>
+      </div>
+    </div>
     """
   end
 
