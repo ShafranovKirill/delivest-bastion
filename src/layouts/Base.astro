@@ -1,12 +1,12 @@
 ---
 import '../styles/global.css';
 
-const title = 'Delivest: собственная доставка для кафе и ресторанов';
-const description = 'Платформа онлайн-заказов для кафе и ресторанов: клиентское веб-приложение под вашим брендом, бонусы и акции для повторных заказов, интеграции с ресторанными системами и курьерской доставкой.';
+const title = 'Delivest — сайт доставки для ресторанной сети';
+const description = 'Сайт доставки под вашим брендом для всей сети. У каждой точки свои меню, цены и условия доставки. По заказу разработаем персональное мобильное приложение.';
 const site = 'https://delivest.shafranov.tech';
 ---
 <!doctype html>
-<html lang="ru" data-theme="dark">
+<html lang="ru" data-theme="light">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -16,16 +16,9 @@ const site = 'https://delivest.shafranov.tech';
   <meta property="og:description" content={description}>
   <meta property="og:image" content={`${site}/brand/og-image.png`}>
   <meta property="og:url" content={site}>
-  <meta name="theme-color" content="#15080A">
+  <meta name="theme-color" content="#FFF8F0">
   <link rel="icon" href="/brand/favicon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/brand/apple-touch-icon.png">
-  <script is:inline>
-    try {
-      const saved = localStorage.getItem('theme');
-      if (saved === 'light' || saved === 'dark') document.documentElement.dataset.theme = saved;
-    } catch (e) {}
-    document.querySelector('meta[name="theme-color"]').content = document.documentElement.dataset.theme === 'light' ? '#F7F2F1' : '#15080A';
-  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&family=Lora:ital,wght@1,500&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
@@ -33,20 +26,6 @@ const site = 'https://delivest.shafranov.tech';
 <body id="top">
   <slot />
   <script>
-    const root = document.documentElement;
-    const meta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')!;
-    const syncMeta = () => { meta.content = getComputedStyle(root).getPropertyValue('--paper').trim(); };
-    syncMeta();
-
-    document.querySelectorAll('[data-theme-toggle]').forEach(btn => btn.addEventListener('click', () => {
-      const apply = () => {
-        root.dataset.theme = root.dataset.theme === 'dark' ? 'light' : 'dark';
-        try { localStorage.setItem('theme', root.dataset.theme); } catch (e) {}
-        syncMeta();
-      };
-      apply();
-    }));
-
     const io = new IntersectionObserver(entries => entries.forEach(e => {
       if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); }
     }), { rootMargin: '0px 0px -8% 0px' });

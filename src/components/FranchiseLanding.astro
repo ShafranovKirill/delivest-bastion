@@ -1,0 +1,1371 @@
+---
+import logo from "../assets/brand/logo-horizontal.svg?raw";
+import Faq from "./Faq.astro";
+import Integrations from "./Integrations.astro";
+const demo = "https://delivest-client.shafranov.tech/kovrov";
+const mark = logo
+  .replaceAll(' fill="#48010c"', "")
+  .replace(
+    ' width="1518" height="352"',
+    ' class="logo-full" role="img" aria-label="Delivest"',
+  );
+---
+
+<div class="franchise" data-guest-theme="light">
+  <section class="hero" aria-labelledby="hero-title">
+    <div class="wrap hero-inner">
+      <div class="hero-copy">
+        <span class="eyebrow pale">Delivest · для ресторанных сетей</span>
+        <h1 id="hero-title">
+          Сайт и мобильное<br />приложение <em>для вашей сети.</em>
+        </h1>
+        <p>
+          Принимайте онлайн-заказы под своим брендом. Для каждой точки настройте
+          меню и зону доставки. Персональное мобильное приложение — по запросу.
+        </p>
+        <div class="actions">
+          <button class="pill gold" type="button" data-lead="pricing">
+            Обсудить подключение <span>↗</span>
+          </button>
+          <a class="under pale-link" href={demo} target="_blank" rel="noopener">
+            Посмотреть демо-сайт ↗
+          </a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section intro" id="app" aria-labelledby="intro-title">
+    <div class="wrap">
+      <div class="section-top">
+        <span class="eyebrow">Сайт ресторана</span>
+      </div>
+      <div class="intro-grid">
+        <div class="copy">
+          <h2 id="intro-title">Ваше меню<br /><em>под вашим брендом.</em></h2>
+          <p class="lead">
+            Меню, фотографии, акции и оформление складываются в узнаваемое
+            пространство вашего бренда. Гость может заказать с телефона или
+            компьютера.
+          </p>
+          <p>
+            Ссылка на ваш сайт работает в соцсетях, рекламе, на упаковке и в
+            самом ресторане. По ней человек попадает сразу к вам.
+          </p>
+          <a class="under" href={demo} target="_blank" rel="noopener">
+            Посмотреть живой пример ↗
+          </a>
+        </div>
+        <div class="intro-visual">
+          <button
+            class="desktop shot"
+            type="button"
+            data-enlarge="desktop"
+            aria-label="Увеличить снимок сайта гостя на компьютере"
+          >
+            <img
+              class="light"
+              src="/franchise/desktop-light.webp"
+              alt="Сайт ресторана на компьютере, светлая тема"
+              width="1049"
+              height="651"
+              loading="lazy"
+            />
+            <img
+              class="dark"
+              src="/franchise/desktop-dark.webp"
+              alt="Сайт ресторана на компьютере, тёмная тема"
+              width="1049"
+              height="651"
+              loading="lazy"
+            />
+            <span>Увеличить ↗</span>
+          </button>
+          <button
+            class="intro-phone shot"
+            type="button"
+            data-enlarge="mobile-menu"
+            aria-label="Увеличить меню на телефоне"
+          >
+            <img
+              src="/franchise/mobile-menu.webp"
+              alt="Мобильное меню ресторана с акциями, категориями и ценами на бургеры"
+              width="369"
+              height="806"
+              loading="lazy"
+            />
+          </button>
+        </div>
+      </div>
+      <div class="app-line">
+        <div>
+          <span class="eyebrow">В кармане у гостя</span>
+          <h3>Приложение под вашим брендом — по запросу.</h3>
+        </div>
+        <div class="app-platforms">
+          <p>Разработаем приложение для вашей сети и поможем выбрать магазины для публикации.</p>
+          <ul aria-label="Магазины приложений">
+            <li><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24"><path fill="currentColor" d="m8.809 14.92l6.11-11.037c.084-.152.168-.302.244-.459c.069-.142.127-.285.165-.44c.08-.326.058-.666-.066-.977a1.5 1.5 0 0 0-.62-.735a1.42 1.42 0 0 0-.922-.193c-.32.043-.613.194-.844.43c-.11.11-.2.235-.283.368c-.092.146-.175.298-.259.45l-.386.697l-.387-.698c-.084-.151-.167-.303-.259-.449a2.2 2.2 0 0 0-.283-.369a1.45 1.45 0 0 0-.844-.429a1.42 1.42 0 0 0-.921.193a1.5 1.5 0 0 0-.62.735a1.6 1.6 0 0 0-.066.977c.038.155.096.298.164.44c.076.157.16.307.244.459l1.248 2.254l-4.862 8.782H2.03c-.168 0-.336 0-.503.01c-.152.009-.3.028-.448.071c-.31.09-.582.28-.778.548A1.58 1.58 0 0 0 .3 17.404c.197.268.468.457.779.548c.148.043.296.062.448.071c.167.01.335.01.503.01h13.097a2 2 0 0 0 .1-.27c.415-1.416-.616-2.844-2.035-2.844zm-5.696 3.622l-.792 1.5c-.082.156-.165.31-.239.471a2.4 2.4 0 0 0-.16.452a1.7 1.7 0 0 0 .064 1.003c.121.318.334.583.607.755s.589.242.901.197c.314-.044.6-.198.826-.44c.108-.115.196-.242.278-.378c.09-.15.171-.306.253-.462L6 19.464c-.09-.15-.947-1.47-2.887-.922m20.586-3.006a1.47 1.47 0 0 0-.779-.54a2 2 0 0 0-.448-.071c-.168-.01-.335-.01-.503-.01h-3.321L14.258 7.1a4.06 4.06 0 0 0-1.076 2.198a4.64 4.64 0 0 0 .546 3l5.274 9.393c.084.15.167.3.259.444c.084.13.174.253.283.364c.231.232.524.38.845.423s.643-.024.922-.19a1.5 1.5 0 0 0 .621-.726c.125-.307.146-.642.066-.964a2.2 2.2 0 0 0-.165-.434c-.075-.155-.16-.303-.244-.453l-1.216-2.166h1.596c.168 0 .335 0 .503-.009c.152-.009.3-.028.448-.07a1.47 1.47 0 0 0 .78-.541a1.54 1.54 0 0 0 .3-.916a1.54 1.54 0 0 0-.3-.916"/></svg><span>App Store</span></li>
+            <li><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24"><path fill="currentColor" d="m22.018 13.298l-3.919 2.218l-3.515-3.493l3.543-3.521l3.891 2.202a1.49 1.49 0 0 1 0 2.594M1.337.924a1.5 1.5 0 0 0-.112.568v21.017c0 .217.045.419.124.6l11.155-11.087zm12.207 10.065l3.258-3.238L3.45.195a1.47 1.47 0 0 0-.946-.179zm0 2.067l-11 10.933c.298.036.612-.016.906-.183l13.324-7.54z"/></svg><span>Google Play</span></li>
+            <li><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 48 48"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" d="m8.574 14.79l10.488 2.574c2.51.653 2.997 2.292 2.958 4.227l.039 17.484c-.039 2.054-1.558 2.998-3.535 2.459L8.036 38.998c-1.909-.458-2.46-1.427-2.536-3.612l.077-17.369c.127-2.586 1.303-3.481 2.996-3.228Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" d="m15.767 16.555l.106-3.649c-.106-1.553 1.18-2.588 2.651-2.305l10.988 2.651c2.01.36 2.613 1.382 2.651 3.343l.192 18.33c.005 1.65-.565 2.97-2.497 2.497l-7.8-1.64"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" d="m25.879 12.375l-.017-3.196c.017-2.424 1.346-3.146 3.035-2.767l10.22 2.421c1.973.553 3.448 1.524 3.38 3.804V30.66c0 1.152-.837 2.994-3.764 2.46l-6.41-1.172"/></svg><span>RuStore</span></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section guest" aria-labelledby="guest-title">
+    <div class="wrap guest-grid">
+      <div class="copy">
+        <span class="eyebrow">Глазами гостя</span>
+        <h2 id="guest-title">
+          Заказ начинается<br />
+          <em>с желания.</em>
+        </h2>
+        <p class="lead">
+          Понятное меню, детали блюда и корзина ведут гостя к оформлению заказа.
+          Покажите свой ресторан в светлом или тёмном оформлении.
+        </p>
+        <div
+          class="theme-switch"
+          role="group"
+          aria-label="Оформление примера сайта гостя"
+        >
+          <button type="button" data-guest-theme="light" aria-pressed="true">
+            Светлое
+          </button>
+          <button type="button" data-guest-theme="dark" aria-pressed="false">
+            Тёмное
+          </button>
+        </div>
+      </div>
+      <div class="guest-stage" data-screen-theme="light">
+        <button
+          class="phone product"
+          type="button"
+          data-enlarge="product"
+          aria-label="Увеличить карточку блюда"
+        >
+          <img
+            class="light"
+            src="/franchise/product-light.webp"
+            alt="Карточка блюда, светлая тема"
+            width="330"
+            height="718"
+            loading="lazy"
+          />
+          <img
+            class="dark"
+            src="/franchise/product-dark.webp"
+            alt="Карточка блюда, тёмная тема"
+            width="330"
+            height="718"
+            loading="lazy"
+          />
+        </button>
+        <button
+          class="phone checkout"
+          type="button"
+          data-enlarge="checkout"
+          aria-label="Увеличить оформление заказа"
+        >
+          <img
+            class="light"
+            src="/franchise/checkout-light.webp"
+            alt="Оформление заказа, светлая тема"
+            width="374"
+            height="718"
+            loading="lazy"
+          />
+          <img
+            class="dark"
+            src="/franchise/checkout-dark.webp"
+            alt="Оформление заказа, тёмная тема"
+            width="374"
+            height="718"
+            loading="lazy"
+          />
+        </button>
+        <span>Меню → блюдо → заказ</span>
+      </div>
+    </div>
+  </section>
+
+  <section
+    class="photo-split launch"
+    id="launch"
+    aria-labelledby="launch-title"
+  >
+    <div class="photo">
+      <img
+        src="/franchise/launch.webp"
+        alt="Команда ресторана готовится к работе"
+        width="1536"
+        height="1024"
+        loading="lazy"
+      />
+    </div>
+    <div class="photo-copy">
+      <span class="eyebrow pale">Для сети филиалов</span>
+      <h2 id="launch-title">
+        Одна сеть.<br /><em>Свои условия у каждой точки.</em>
+      </h2>
+      <p>
+        Управляйте несколькими филиалами в одной системе. У каждой точки могут
+        быть своё меню, цены, часы работы и зоны доставки.
+      </p>
+      <button class="pill cream" type="button" data-lead="pricing">
+        Обсудить подключение <span>↗</span>
+      </button>
+    </div>
+  </section>
+
+  <section
+    class="section operations"
+    id="operations"
+    aria-labelledby="operations-title"
+  >
+    <div class="wrap">
+      <div class="section-top">
+        <span class="eyebrow">После нажатия «Заказать»</span>
+      </div>
+      <div class="section-heading">
+        <h2 id="operations-title">От оформления<br /><em>до выдачи.</em></h2>
+        <p>
+          Пока гость ждёт заказ, команда видит, что происходит на каждом этапе.
+          Delivest связывает оформление, кухню и доставку.
+        </p>
+      </div>
+      <div class="card-grid">
+        <article class="process-card">
+          <span class="eyebrow">Оформление заказа</span>
+          <h3>Заказ без лишних шагов.</h3>
+          <p>
+            Гость выбирает способ получения и видит детали до подтверждения.
+          </p>
+          <button
+            class="shot checkout-shot"
+            type="button"
+            data-enlarge="checkout"
+            aria-label="Увеличить экран оформления заказа"
+          >
+            <img
+              class="light"
+              src="/franchise/checkout-light.webp"
+              alt="Экран оформления заказа"
+              width="374"
+              height="718"
+              loading="lazy"
+            />
+            <img
+              class="dark"
+              src="/franchise/checkout-dark.webp"
+              alt="Экран оформления заказа в тёмной теме"
+              width="374"
+              height="718"
+              loading="lazy"
+            />
+          </button>
+        </article>
+        <article class="process-card kitchen-card">
+          <span class="eyebrow">Кухня и самовывоз</span>
+          <h3>Команда видит задачу.</h3>
+          <p>
+            Новые заказы и их статус доступны сотрудникам. Повар отмечает, когда
+            заказ можно выдавать.
+          </p>
+          <button
+            class="shot kitchen-shot"
+            type="button"
+            data-enlarge="kitchen"
+            aria-label="Увеличить экран кухни"
+          >
+            <img
+              class="light"
+              src="/franchise/kitchen-light.webp"
+              alt="Экран заказов кухни"
+              width="556"
+              height="317"
+              loading="lazy"
+            />
+            <img
+              class="dark"
+              src="/franchise/kitchen-dark.webp"
+              alt="Экран заказов кухни в тёмной теме"
+              width="556"
+              height="317"
+              loading="lazy"
+            />
+          </button>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="photo-split delivery" aria-labelledby="delivery-title">
+    <div class="photo">
+      <img
+        src="/franchise/delivery.webp"
+        alt="Сотрудник передаёт коробки курьеру"
+        width="1536"
+        height="1024"
+        loading="lazy"
+      />
+    </div>
+    <div class="photo-copy">
+      <span class="eyebrow pale">Доставка — продолжение впечатления</span>
+      <h2 id="delivery-title">
+        До двери.<br />
+        <em>В вашем ритме.</em>
+      </h2>
+      <p>
+        Заказы, кухня и курьеры работают в общем процессе. Гость получает
+        любимое блюдо, а вы сохраняете контроль над собственным каналом
+        доставки.
+      </p>
+    </div>
+  </section>
+
+  <Integrations />
+
+  <section class="section growth" id="growth" aria-labelledby="growth-title">
+    <div class="wrap">
+      <div class="section-top">
+        <span class="eyebrow">Повторные заказы</span>
+      </div>
+      <div class="section-heading">
+        <h2 id="growth-title">
+          Первый заказ —<br />
+          <em>начало истории.</em>
+        </h2>
+        <p>
+          Бонусные звёзды, промокоды и подарки дают повод вернуться. История
+          заказов и статистика помогают увидеть, что работает, и выбрать
+          следующее предложение.
+        </p>
+      </div>
+      <div class="growth-grid">
+        <article class="growth-card">
+          <span class="eyebrow">Для гостя</span>
+          <h3>Повторить прошлый заказ.</h3>
+          <p>Предложения, бонусы и прошлые заказы остаются под рукой.</p>
+          <button
+            class="shot orders-shot"
+            type="button"
+            data-enlarge="orders"
+            aria-label="Увеличить экран заказов гостя"
+          >
+            <img
+              class="light"
+              src="/franchise/orders-light.webp"
+              alt="История заказов гостя"
+              width="329"
+              height="684"
+              loading="lazy"
+            />
+            <img
+              class="dark"
+              src="/franchise/orders-dark.webp"
+              alt="История заказов гостя в тёмной теме"
+              width="329"
+              height="684"
+              loading="lazy"
+            />
+          </button>
+        </article>
+        <article class="growth-card analytics">
+          <span class="eyebrow">Для бизнеса</span>
+          <h3>Как прошла неделя в филиале?</h3>
+          <p>
+            Выручка, количество заказов и средний чек за выбранный период.
+            График показывает, в какие часы у точки больше гостей.
+          </p>
+          <button
+            class="shot stats-shot"
+            type="button"
+            data-enlarge="stats"
+            aria-label="Увеличить экран статистики"
+          >
+            <img
+              src="/franchise/stats-light.webp"
+              alt="Панель статистики заказов"
+              width="1560"
+              height="824"
+              loading="lazy"
+            />
+          </button>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <Faq />
+
+  <section class="closing" id="contacts" aria-labelledby="closing-title">
+    <div class="closing-photo">
+      <img
+        src="/franchise/dinner.webp"
+        alt="Пицца из доставки на домашнем столе"
+        width="1122"
+        height="1402"
+        loading="lazy"
+      />
+    </div>
+    <div class="closing-copy">
+      <div class="closing-top">
+        <span class="eyebrow pale">Давайте знакомиться</span>
+        <span class="flourish" aria-hidden="true"> ✳ </span>
+      </div>
+      <h2 id="closing-title">Покажем Delivest<br /><em>для вашей сети.</em></h2>
+      <p>
+        Покажем Delivest в деле, обсудим ваш формат, точки и нужные подключения.
+        Решение о запуске — после знакомства с продуктом.
+      </p>
+      <div class="actions">
+        <button class="pill gold" type="button" data-lead="pricing">
+          Обсудить подключение <span>↗</span>
+        </button>
+        <a class="under pale-link" href={demo} target="_blank" rel="noopener">
+          Сайт глазами гостя ↗
+        </a>
+      </div>
+      <div class="contact-links">
+        <a href="tel:+79255355278">+7 925 535-52-78</a>
+        <a href="https://t.me/shafranov_ex" target="_blank" rel="noopener">
+          Telegram ↗
+        </a>
+        <a href="https://vk.ru/shafranov_kirill" target="_blank" rel="noopener">
+          ВКонтакте ↗
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <div class="wrap">
+      <span class="footer-logo" set:html={mark} />
+      <span> © 2026 Delivest </span>
+      <a href="#top">Наверх ↑</a>
+    </div>
+  </footer>
+  <dialog class="image-dialog" aria-label="Увеличенный экран Delivest">
+    <button class="image-close" type="button" aria-label="Закрыть"> × </button>
+    <img alt="" />
+  </dialog>
+</div>
+
+<script>
+  const landing = document.querySelector<HTMLElement>(".franchise");
+  const guest = document.querySelector<HTMLElement>(".guest");
+  if (landing && guest) {
+    const syncChapter = () => {
+      const {top, bottom} = guest.getBoundingClientRect();
+      const focusLine = innerHeight * 0.68;
+      landing.classList.toggle("reading-guest", top <= focusLine && bottom > 0);
+    };
+    let pending = false;
+    const scheduleChapter = () => {
+      if (pending) return;
+      pending = true;
+      requestAnimationFrame(() => { syncChapter(); pending = false; });
+    };
+    syncChapter();
+    window.addEventListener("scroll", scheduleChapter, { passive: true });
+    window.addEventListener("resize", scheduleChapter);
+    window.addEventListener("pageshow", scheduleChapter);
+  }
+
+  const guestStage = document.querySelector<HTMLElement>(".guest-stage");
+  const franchise = document.querySelector<HTMLElement>(".franchise");
+  const guestButtons = document.querySelectorAll<HTMLButtonElement>(
+    "button[data-guest-theme]",
+  );
+  guestButtons.forEach((button) =>
+    button.addEventListener("click", () => {
+      if (guestStage)
+        guestStage.dataset.screenTheme = button.dataset.guestTheme;
+      if (franchise) franchise.dataset.guestTheme = button.dataset.guestTheme;
+      guestButtons.forEach((item) =>
+        item.setAttribute("aria-pressed", String(item === button)),
+      );
+    }),
+  );
+  const dialog = document.querySelector<HTMLDialogElement>(".image-dialog");
+  const dialogImage = dialog?.querySelector("img");
+  const labels: Record<string, string> = {
+    desktop: "Сайт гостя",
+    "mobile-menu": "Меню на телефоне",
+    product: "Карточка блюда",
+    checkout: "Оформление заказа",
+    kitchen: "Экран кухни",
+    orders: "История заказов",
+    stats: "Статистика заказов",
+  };
+  document
+    .querySelectorAll<HTMLButtonElement>("[data-enlarge]")
+    .forEach((button) =>
+      button.addEventListener("click", () => {
+        if (!dialog || !dialogImage) return;
+        const name = button.dataset.enlarge!;
+        const image = Array.from(button.querySelectorAll("img")).find(
+          (item) => item.getClientRects().length > 0,
+        );
+        if (!image) return;
+        dialogImage.src = image.currentSrc || image.src;
+        dialogImage.alt = labels[name];
+        dialog.showModal();
+      }),
+    );
+  dialog
+    ?.querySelector(".image-close")
+    ?.addEventListener("click", () => dialog.close());
+  dialog?.addEventListener("click", (event) => {
+    if (event.target === dialog) dialog.close();
+  });
+  const flourish = document.querySelector(".flourish");
+  if (flourish && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    const video = document.createElement("video");
+    video.src = "/franchise/logo.webm";
+    video.muted = true;
+    video.playsInline = true;
+    video.preload = "none";
+    video.setAttribute("aria-hidden", "true");
+    video.className = "closing-video";
+    flourish.replaceWith(video);
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          video.play().catch(() => {});
+          observer.disconnect();
+        }
+      },
+      { threshold: 0.45 },
+    );
+    observer.observe(video);
+  }
+</script>
+
+<style>
+  .franchise {
+    overflow-x: clip;
+    --cream: #f5eee8;
+    --wine: #48010c;
+    --deep: #24050b;
+    --white: #fffaf5;
+    background: var(--cream);
+    color: var(--deep);
+  }
+  .franchise :global(.wrap) {
+    max-width: 1360px;
+    padding-inline: clamp(20px, 5vw, 80px);
+  }
+  .franchise section {
+    padding: 0;
+  }
+  .eyebrow {
+    display: inline-block;
+    color: #8e4851;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    line-height: 1.4;
+  }
+  .eyebrow.pale {
+    color: #f2c3b9;
+  }
+  .franchise h1,
+  .franchise h2,
+  .franchise h3 {
+    letter-spacing: -0.055em;
+  }
+  .franchise h2 {
+    font-size: clamp(40px, 5.2vw, 76px);
+    line-height: 1.04;
+    margin: 16px 0 26px;
+    color: inherit;
+  }
+  .franchise h2 em,
+  .franchise h1 em {
+    color: #9e1c36;
+  }
+  .franchise p {
+    line-height: 1.62;
+  }
+  .section {
+    padding: clamp(80px, 10vw, 138px) 0 !important;
+  }
+  .section-top {
+    display: flex;
+    justify-content: space-between;
+    gap: 24px;
+    align-items: baseline;
+    padding-bottom: 20px;
+    border-bottom: 1px solid #b9a8a2;
+  }
+  .section-top > span:last-child {
+    color: #806c68;
+    font-size: 13px;
+  }
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 34px;
+    min-height: 56px;
+    padding: 14px 22px;
+    border-radius: 4px;
+    border: 1px solid transparent;
+    cursor: pointer;
+    text-decoration: none;
+    font:
+      700 15px/1.3 Onest,
+      sans-serif;
+    transition:
+      transform 0.2s,
+      background 0.2s;
+  }
+  .pill:hover {
+    transform: translateY(-3px);
+  }
+  .pill span {
+    font-size: 20px;
+    font-weight: 400;
+    line-height: 1;
+  }
+  .pill.gold {
+    color: #28080d;
+    background: #efc07a;
+  }
+  .pill.gold:hover {
+    background: #ffe0a0;
+  }
+  .pill.cream {
+    background: var(--cream);
+    color: var(--wine);
+  }
+  .under {
+    display: inline-flex;
+    gap: 15px;
+    align-items: center;
+    border: 0;
+    border-bottom: 1px solid currentColor;
+    padding: 0 0 8px;
+    background: transparent;
+    color: var(--wine);
+    cursor: pointer;
+    text-decoration: none;
+    font-weight: 700;
+    font-size: 15px;
+  }
+  .under.pale-link {
+    color: var(--white);
+  }
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 24px;
+  }
+  .hero {
+    min-height: calc(100dvh - var(--header-row-height) - 1px);
+    position: relative;
+    display: flex;
+    color: var(--white);
+    background: #321418 url("/franchise/hero.webp") center/cover no-repeat;
+  }
+  .hero:before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background:
+      linear-gradient(90deg, #170408e0 0%, #1e060aaa 35%, #1e060a2a 73%),
+      linear-gradient(0deg, #19050980, transparent 28%);
+  }
+  .hero-inner {
+    position: relative;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding-block: clamp(32px, 5vw, 72px);
+  }
+  .hero-copy {
+    max-width: 840px;
+  }
+  .hero h1 {
+    font-size: clamp(52px, 5.2vw, 84px);
+    line-height: 0.97;
+    color: var(--white);
+    margin: 24px 0 30px;
+  }
+  .hero h1 em {
+    color: #f1bd82;
+  }
+  .hero p {
+    max-width: 525px;
+    font-size: clamp(18px, 1.55vw, 22px);
+    line-height: 1.55;
+    margin: 0 0 31px;
+    color: #f6e9e2;
+  }
+  .hero-foot {
+    display: flex;
+    justify-content: space-between;
+    gap: 20px;
+    border-top: 1px solid #ffffff73;
+    padding-top: 16px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: #f4e5df;
+  }
+  .intro {
+    padding-bottom: 0 !important;
+  }
+  .intro-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 0.78fr) minmax(0, 1.22fr);
+    gap: clamp(30px, 6vw, 90px);
+    align-items: center;
+    padding: 60px 0 86px;
+  }
+  .intro-visual {
+    position: relative;
+    min-width: 0;
+    padding: 0 7% 6% 0;
+  }
+  .copy {
+    max-width: 520px;
+  }
+  .copy p {
+    margin: 0 0 19px;
+    color: #654c4b;
+    font-size: 16px;
+  }
+  .copy p.lead {
+    color: var(--deep);
+    font-size: 19px;
+  }
+  .copy .under {
+    margin-top: 14px;
+  }
+  .shot {
+    display: block;
+    border: 0;
+    padding: 0;
+    cursor: zoom-in;
+    background: transparent;
+    color: inherit;
+  }
+  .shot img {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+  .shot .dark {
+    display: none;
+  }
+  .franchise[data-guest-theme="dark"] .shot .light {
+    display: none;
+  }
+  .franchise[data-guest-theme="dark"] .shot .dark {
+    display: block;
+  }
+  .desktop {
+    position: relative;
+    width: 100%;
+    border: 10px solid #312027;
+    border-radius: 13px;
+    box-shadow:
+      25px 25px 0 #d8c6bf,
+      0 25px 55px #2b111424;
+    overflow: hidden;
+  }
+  .intro-phone {
+    position: absolute;
+    width: 25%;
+    right: 0;
+    bottom: 0;
+    padding: 6px 4px;
+    border: 1px solid #51343b;
+    border-radius: 12% / 6%;
+    background: #210e12;
+    box-shadow: 0 20px 38px #2b111455;
+    overflow: hidden;
+    transform: rotate(4deg);
+    transition: transform 0.2s;
+  }
+  .intro-phone img {
+    border-radius: 8% / 4%;
+  }
+  .intro-phone:hover {
+    transform: rotate(2deg) translateY(-4px);
+  }
+  .desktop > span {
+    position: absolute;
+    bottom: 14px;
+    right: 14px;
+    padding: 7px 10px;
+    background: #fffaf4;
+    color: #2d0a10;
+    font-size: 12px;
+    font-weight: 700;
+    border-radius: 3px;
+  }
+  .app-line {
+    display: grid;
+    grid-template-columns: 1fr 1fr auto;
+    align-items: center;
+    gap: 40px;
+    padding: 27px 0 34px;
+    border-top: 1px solid #b9a8a2;
+  }
+  .app-line h3 {
+    font-size: clamp(24px, 2.5vw, 34px);
+    margin: 8px 0 0;
+  }
+  .app-line p {
+    color: #654c4b;
+    max-width: 390px;
+    margin: 0;
+  }
+  .app-line b {
+    font-size: 36px;
+    color: #9e1c36;
+    font-weight: 400;
+  }
+  .guest {
+    background: #e8dcd5;
+    overflow: hidden;
+  }
+  .guest-grid {
+    min-height: 690px;
+    display: grid;
+    grid-template-columns: 0.9fr 1.1fr;
+    align-items: center;
+    gap: 40px;
+  }
+  .guest .copy {
+    padding: 95px 0;
+  }
+  .theme-switch {
+    display: inline-flex;
+    border: 1px solid #9b7d79;
+    padding: 4px;
+    gap: 3px;
+    margin: 23px 0 27px;
+    border-radius: 100px;
+  }
+  .theme-switch button {
+    border: 0;
+    border-radius: 100px;
+    background: transparent;
+    padding: 8px 18px;
+    color: #594244;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 700;
+  }
+  .theme-switch button[aria-pressed="true"] {
+    background: var(--wine);
+    color: white;
+  }
+  .guest-stage {
+    position: relative;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    min-height: 650px;
+    padding-top: 52px;
+    isolation: isolate;
+  }
+  .guest-stage:before,
+  .guest-stage:after {
+    content: "";
+    position: absolute;
+    aspect-ratio: 1;
+    border: 1px solid #bca7a1;
+    border-radius: 50%;
+    z-index: -1;
+  }
+  .guest-stage:before {
+    width: min(52vw, 570px);
+    top: 7%;
+    left: 10%;
+  }
+  .guest-stage:after {
+    width: min(35vw, 370px);
+    top: 22%;
+    left: 25%;
+  }
+  .phone {
+    padding: 8px;
+    border-radius: 26px;
+    border: 0;
+    background: #210e12;
+    cursor: zoom-in;
+    box-shadow: 0 24px 48px #32111538;
+    overflow: hidden;
+  }
+  .phone img {
+    border-radius: 19px;
+    width: 100%;
+  }
+  .product {
+    width: min(36vw, 288px);
+    transform: translate(38px, -38px) rotate(-7deg);
+  }
+  .checkout {
+    width: min(34vw, 260px);
+    transform: translate(-12px, 28px) rotate(7deg);
+  }
+  .guest-stage[data-screen-theme="light"] .dark,
+  .guest-stage[data-screen-theme="dark"] .light {
+    display: none;
+  }
+  .guest-stage[data-screen-theme="dark"] .dark {
+    display: block;
+  }
+  .guest-stage > span {
+    position: absolute;
+    right: 4%;
+    top: 8%;
+    color: #886b67;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    font-size: 11px;
+  }
+  .photo-split {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    min-height: 600px;
+    background: var(--wine);
+    color: var(--white);
+  }
+  .photo {
+    overflow: hidden;
+  }
+  .photo img,
+  .closing-photo img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .photo-copy {
+    align-self: center;
+    padding: clamp(50px, 7vw, 110px);
+    max-width: 700px;
+  }
+  .photo-split h2 em,
+  .closing h2 em {
+    color: #f0ba89;
+  }
+  .photo-split p {
+    max-width: 510px;
+    font-size: 18px;
+    color: #f1dcd9;
+    margin: 0 0 31px;
+  }
+  .delivery {
+    grid-template-columns: 1.15fr 0.85fr;
+    min-height: 520px;
+    background: #260d12;
+  }
+  .section-heading {
+    display: flex;
+    justify-content: space-between;
+    align-items: end;
+    gap: 50px;
+    margin: 45px 0 43px;
+  }
+  .section-heading h2 {
+    margin: 0;
+  }
+  .section-heading p {
+    width: 360px;
+    flex: none;
+    margin: 0 0 6px;
+    color: #654c4b;
+    font-size: 17px;
+  }
+  .card-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+  }
+  .process-card {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    min-height: 530px;
+    padding: 32px 32px 0;
+    background: #e9ded7;
+  }
+  .kitchen-card {
+    background: #ded0c8;
+  }
+  .process-card h3,
+  .growth-card h3 {
+    font-size: clamp(26px, 2.5vw, 36px);
+    margin: 35px 0 9px;
+  }
+  .process-card p,
+  .growth-card p {
+    margin: 0;
+    max-width: 360px;
+    color: #654c4b;
+    font-size: 15px;
+  }
+  .checkout-shot {
+    width: min(260px, 100%);
+    align-self: center;
+    margin: 25px 0 30px;
+    border: 8px solid #2b161b;
+    border-radius: 26px;
+    overflow: hidden;
+    box-shadow: 12px 15px 30px #2d0b1529;
+  }
+  .kitchen-shot {
+    width: 95%;
+    align-self: center;
+    margin-top: auto;
+    margin-bottom: 40px;
+    border: 7px solid #2b161b;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 12px 15px 30px #2d0b1529;
+  }
+  .growth-grid {
+    display: grid;
+    grid-template-columns: 0.78fr 1.22fr;
+    gap: 20px;
+  }
+  .growth-card {
+    min-height: 500px;
+    overflow: hidden;
+    background: #e8dcd5;
+    padding: 30px 30px 0;
+  }
+  .growth-card:first-child {
+    padding-bottom: 30px;
+  }
+  .growth-card.analytics {
+    background: #d9c8c0;
+  }
+  .growth-card h3 {
+    margin-top: 25px;
+  }
+  .orders-shot {
+    width: 230px;
+    margin: 30px auto 0;
+    border: 8px solid #2b161b;
+    border-radius: 25px;
+    overflow: hidden;
+  }
+  .stats-shot {
+    width: 100%;
+    margin: 53px 0 0;
+    border: 8px solid #2b161b;
+    border-radius: 11px;
+    overflow: hidden;
+    box-shadow: 10px 0 30px #2d0b151e;
+  }
+  .analytics .stats-shot {
+    margin-bottom: 30px;
+  }
+  .closing {
+    display: grid;
+    grid-template-columns: 0.82fr 1.18fr;
+    background: var(--wine);
+    color: var(--white);
+  }
+  .closing > * {
+    min-width: 0;
+  }
+  .closing-photo {
+    min-height: 690px;
+    overflow: hidden;
+  }
+  .closing-copy {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: clamp(45px, 7vw, 110px);
+  }
+  .closing-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .flourish {
+    font-size: 28px;
+    color: #e3a971;
+  }
+  .closing h2 {
+    font-size: clamp(50px, 5.8vw, 86px);
+  }
+  .closing p {
+    max-width: 500px;
+    margin: 0 0 30px;
+    color: #f1dcd9;
+    font-size: 18px;
+  }
+  .contact-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px 30px;
+    margin-top: 70px;
+    padding-top: 22px;
+    border-top: 1px solid #ffffff5a;
+    font-size: 13px;
+  }
+  .contact-links a {
+    text-decoration: none;
+  }
+  .contact-links a:first-child {
+    font-weight: 700;
+  }
+  footer {
+    padding: 30px 0;
+    background: #26070d;
+    color: #f6e8e4;
+  }
+  footer .wrap {
+    display: flex;
+    align-items: center;
+    gap: 35px;
+    font-size: 12px;
+  }
+  .footer-logo {
+    margin-right: auto;
+  }
+  footer :global(.logo-full) {
+    width: 130px;
+    height: auto;
+    fill: currentColor;
+  }
+  footer a {
+    text-decoration: none;
+  }
+  .image-dialog {
+    max-width: min(94vw, 1440px);
+    max-height: 94vh;
+    padding: 20px;
+    border: 0;
+    border-radius: 9px;
+    background: #1e0e12;
+    box-shadow: 0 25px 90px #0008;
+  }
+  .image-dialog::backdrop {
+    background: #170408dc;
+    backdrop-filter: blur(4px);
+  }
+  .image-dialog img {
+    display: block;
+    max-width: 100%;
+    max-height: calc(94vh - 40px);
+    width: auto;
+    height: auto;
+    margin: auto;
+    object-fit: contain;
+  }
+  .image-close {
+    position: absolute;
+    right: 8px;
+    top: 5px;
+    z-index: 1;
+    width: 34px;
+    height: 34px;
+    border: 0;
+    border-radius: 50%;
+    background: #fffaf5;
+    color: #230a10;
+    cursor: pointer;
+    font-size: 26px;
+    line-height: 1;
+  }
+  @media (max-width: 900px) {
+    .intro-grid,
+    .guest-grid {
+      grid-template-columns: 1fr;
+    }
+    .intro-grid {
+      padding-bottom: 65px;
+    }
+    .copy {
+      max-width: 650px;
+    }
+    .guest-grid {
+      gap: 0;
+    }
+    .guest .copy {
+      padding: 70px 0 0;
+    }
+    .guest-stage {
+      min-height: 550px;
+    }
+    .product {
+      width: 270px;
+    }
+    .checkout {
+      width: 245px;
+    }
+    .photo-copy,
+    .closing-copy {
+      padding: 55px 40px;
+    }
+    .section-heading {
+      align-items: start;
+      flex-direction: column;
+      gap: 20px;
+    }
+    .section-heading p {
+      width: auto;
+      max-width: 580px;
+    }
+    .process-card {
+      min-height: 490px;
+    }
+  }
+  @media (max-width: 650px) {
+    .hero {
+      background-position: 58% center;
+    }
+    .hero:before {
+      background:
+        linear-gradient(90deg, #1b050adb 0%, #280a0caa 53%, #280a0c3c 100%),
+        linear-gradient(0deg, #19070bc9, transparent 35%);
+    }
+    .hero-inner {
+      padding-block: 32px;
+    }
+    .hero h1 {
+      font-size: clamp(52px, 13vw, 76px);
+    }
+    .hero p {
+      font-size: 17px;
+    }
+    .hero-foot span:last-child {
+      max-width: 175px;
+      text-align: right;
+    }
+    .section-top > span:last-child {
+      display: none;
+    }
+    .intro {
+      padding-top: 76px !important;
+    }
+    .intro-grid {
+      gap: 36px;
+      padding: 34px 0 55px;
+    }
+    .desktop {
+      border-width: 5px;
+      box-shadow: 10px 10px 0 #d8c6bf;
+    }
+    .app-line {
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+    }
+    .app-line p {
+      grid-column: 1/-1;
+      grid-row: 2;
+    }
+    .app-line b {
+      grid-column: 2;
+      grid-row: 1;
+    }
+    .guest-stage {
+      min-height: 450px;
+      padding: 40px 0 0;
+    }
+    .product {
+      width: min(47vw, 230px);
+      transform: translate(20px, -18px) rotate(-7deg);
+    }
+    .checkout {
+      width: min(43vw, 210px);
+      transform: translate(-5px, 18px) rotate(7deg);
+    }
+    .guest-stage > span {
+      display: none;
+    }
+    .photo-split,
+    .closing {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .photo {
+      height: 320px;
+    }
+    .photo-copy,
+    .closing-copy {
+      padding: 55px 24px 65px;
+    }
+    .card-grid,
+    .growth-grid {
+      grid-template-columns: 1fr;
+    }
+    .section {
+      padding: 76px 0 !important;
+    }
+    .intro {
+      padding-bottom: 0 !important;
+    }
+    .section-heading {
+      margin: 30px 0;
+    }
+    .process-card {
+      min-height: 490px;
+    }
+    .growth-card {
+      min-height: 430px;
+    }
+    .growth-card.analytics {
+      min-height: 350px;
+    }
+    .stats-shot {
+      margin-top: 35px;
+    }
+    .closing-photo {
+      min-height: 0;
+      height: 360px;
+    }
+    .closing h2 {
+      font-size: clamp(38px, 10.5vw, 70px);
+      overflow-wrap: anywhere;
+    }
+    .contact-links {
+      margin-top: 55px;
+    }
+    footer .wrap {
+      flex-wrap: wrap;
+      gap: 14px;
+    }
+    .footer-logo {
+      width: 100%;
+    }
+  }
+
+  .app-line { grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); }
+  .app-platforms ul { display: flex; flex-wrap: wrap; gap: 8px; padding: 0; margin: 16px 0 0; list-style: none; }
+  .app-platforms li { display: inline-flex; align-items: center; gap: 8px; background: #291419; color: #fff8f2; padding: 9px 13px; border-radius: 9px; font: 600 15px/1.3 Onest, sans-serif; }
+  .app-platforms svg { width: 20px; height: 20px; }
+  .intro, .guest { background-color: var(--cream); transition: background-color .65s ease, color .45s ease; }
+  .reading-guest :is(.intro,.guest) { background-color: #290d16; color: #fff8f1; }
+  .reading-guest :is(.intro,.guest) :is(.lead,p,.under,.eyebrow,.section-top > span,.guest-stage > span) { color: #efdbd5; }
+  .reading-guest :is(.intro,.guest) h2 em { color: #ffc99d; }
+  .reading-guest .theme-switch button { color: #ffe7df; }
+  .reading-guest .theme-switch button[aria-pressed="true"] { background: #ffe3d3; color: #400c18; }
+  .reading-guest .app-platforms li { background: #fff1e6; color: #311019; }
+  @media(max-width:650px){ .app-line { grid-template-columns: minmax(0,1fr); } }
+  @media(prefers-reduced-motion:reduce){ .intro,.guest { transition: none; } }
+</style>
+<style is:global>
+  .closing-video {
+    width: 96px;
+    height: 70px;
+    object-fit: contain;
+    mix-blend-mode: screen;
+  }
+</style>
