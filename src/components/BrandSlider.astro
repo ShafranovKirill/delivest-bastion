@@ -35,22 +35,22 @@ const brands = [
     <article class="fact">
       <strong class="fact-value">2 месяца</strong>
       <h3>Бесплатный старт</h3>
-      <p>Проверьте Delivest в работе до оплаты подписки.</p>
+      <p>Два месяца подписки бесплатно с запуска сайта.</p>
     </article>
     <article class="fact">
       <strong class="fact-value">от 3&nbsp;000&nbsp;₽</strong>
-      <h3>Собственный сайт доставки</h3>
-      <p>Базовый тариф в месяц после бесплатного периода. Цена зависит от оборота франшизы.</p>
+      <h3>Сайт доставки</h3>
+      <p>Базовый тариф в месяц. Стоимость зависит от оборота франшизы.</p>
     </article>
     <article class="fact">
       <strong class="fact-value">Больше прибыли</strong>
       <h3>Прямые и повторные заказы</h3>
-      <p>Развивайте продажи на своём сайте и возвращайте гостей акциями и персональными предложениями.</p>
+      <p>Продавайте на своём сайте и возвращайте гостей акциями.</p>
     </article>
     <article class="fact">
       <strong class="fact-value">AI-помощь</strong>
       <h3>В обоих тарифах</h3>
-      <p>Подготовка контента и маркетинговое сопровождение нашей команды.</p>
+      <p>Контент и маркетинговое сопровождение команды.</p>
     </article>
   </div>
 </section>
@@ -68,25 +68,25 @@ const brands = [
   .brand-group { display: flex; flex: none; gap: 0; width: max-content; margin: 0; padding: 0; list-style: none; }
   .brand-group li, .brand-item { display: grid; place-items: center; flex: 0 0 160px; width: 160px; height: 110px; padding: 4px 0; }
   img { display: block; width: 100%; height: 100%; object-fit: contain; filter: grayscale(1); opacity: .55; }
-  .facts-grid { max-width: 1120px; width: calc(100% - 40px); margin: 20px auto 0; display: grid; grid-template-columns: repeat(4, minmax(240px, 1fr)); gap: 14px; overflow-x: auto; overscroll-behavior-inline: contain; scroll-snap-type: x proximity; padding-bottom: 8px; }
-  .fact { min-width: 0; min-height: 230px; padding: 24px; border-radius: 8px; background: #fffaf5; scroll-snap-align: start; }
+  .facts-grid { max-width: 1120px; width: calc(100% - 40px); margin: 20px auto 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+  .fact { min-width: 0; min-height: 180px; padding: 18px; border-radius: 8px; background: #fffaf5; }
   .fact:nth-child(2) { background: #48010c; color: #fff6f4; }
   .fact:nth-child(3) { background: #e8d7cc; }
   .fact:nth-child(4) { background: #efc07a; }
-  .fact-value { display: block; margin-bottom: 24px; font-size: clamp(25px, 2.35vw, 33px); line-height: 1.05; letter-spacing: -.045em; }
-  .fact h3 { margin: 0 0 8px; font-size: 17px; line-height: 1.25; letter-spacing: -.02em; }
-  .fact p { margin: 0; font-size: 14px; line-height: 1.45; }
-  @media (max-width: 1050px) { .fact { min-height: 200px; } }
+  .fact-value { display: block; margin-bottom: 14px; font-size: clamp(20px, 2.2vw, 28px); line-height: 1.05; letter-spacing: -.045em; }
+  .fact h3 { margin: 0 0 7px; font-size: 15px; line-height: 1.25; letter-spacing: -.02em; }
+  .fact p { margin: 0; font-size: 13px; line-height: 1.4; }
+  @media (max-width: 1050px) { .facts-grid { gap: 10px; } .fact { padding: 14px; } .fact-value { font-size: 22px; } .fact h3 { font-size: 14px; } .fact p { font-size: 12px; } }
   @keyframes glide { to { transform: translateX(-50%); } }
   @media (max-width: 650px) {
     .brand-slider { padding-block: 26px 42px; }
     .brand-slider-head, .brand-frame, .facts-grid { width: calc(100% - 32px); }
     .brand-frame::before, .brand-frame::after { width: 36px; }
     .brand-group li, .brand-item { flex-basis: 125px; width: 125px; height: 92px; }
-    .fact { padding: 20px; }
-    .fact-value { font-size: 26px; }
+    .facts-grid { grid-template-columns: repeat(4, minmax(200px, 1fr)); gap: 12px; overflow-x: auto; overscroll-behavior-inline: contain; scroll-snap-type: x proximity; scrollbar-width: none; -ms-overflow-style: none; }
+    .facts-grid::-webkit-scrollbar { display: none; width: 0; height: 0; }
+    .fact { padding: 16px; scroll-snap-align: start; }
   }
-  @media (max-width: 360px) { .fact { min-height: 0; } }
   @media (prefers-reduced-motion: reduce) {
     .brand-viewport { overflow-x: auto; }
     .brand-track { animation: none; }
