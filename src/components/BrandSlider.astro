@@ -23,13 +23,15 @@ const brands = [
       <span class="play-icon" aria-hidden="true">▶</span>
     </button>
   </div>
-  <div class="brand-viewport" tabindex="0" aria-label="Примеры брендов ресторанов, прокрутка по горизонтали">
-    <div class="brand-track">
-      <ul class="brand-group">
-        {brands.map(([file, name]) => <li><img src={`/franchise/brands/${file}.webp`} alt={name} width="480" height="240" decoding="async" /></li>)}
-      </ul>
-      <div class="brand-group clone" aria-hidden="true">
-        {brands.map(([file]) => <div class="brand-item"><img src={`/franchise/brands/${file}.webp`} alt="" width="480" height="240" decoding="async" /></div>)}
+  <div class="brand-frame">
+    <div class="brand-viewport" tabindex="0" aria-label="Примеры брендов ресторанов, прокрутка по горизонтали">
+      <div class="brand-track">
+        <ul class="brand-group">
+          {brands.map(([file, name]) => <li><img src={`/franchise/brands/${file}.webp`} alt={name} width="480" height="240" decoding="async" /></li>)}
+        </ul>
+        <div class="brand-group clone" aria-hidden="true">
+          {brands.map(([file]) => <div class="brand-item"><img src={`/franchise/brands/${file}.webp`} alt="" width="480" height="240" decoding="async" /></div>)}
+        </div>
       </div>
     </div>
   </div>
@@ -37,17 +39,21 @@ const brands = [
 
 <style>
   .brand-slider { padding: 26px 0 30px; overflow: hidden; background: #f4ece6; color: #321418; border-bottom: 1px solid #d9c7bf; }
-  .brand-slider-head { max-width: 1360px; margin: 0 auto 14px; padding-inline: clamp(20px, 5vw, 80px); display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+  .brand-slider-head { max-width: 1120px; width: calc(100% - 40px); margin: 0 auto 14px; display: flex; align-items: center; justify-content: space-between; gap: 20px; }
   h2 { margin: 0; font: 700 12px/1.4 Onest, sans-serif; letter-spacing: .14em; text-transform: uppercase; }
   .motion-toggle { flex: none; display: grid; place-items: center; width: 34px; height: 34px; padding: 0; border: 1px solid #bca9a2; border-radius: 50%; background: transparent; color: #48010c; cursor: pointer; font: 700 16px/1 Onest, sans-serif; }
   .motion-toggle:hover { background: #e8d8ce; }
   .play-icon, .is-paused .pause-icon { display: none; }
   .is-paused .play-icon { display: inline; font-size: 11px; }
+  .brand-frame { position: relative; max-width: 1120px; width: calc(100% - 40px); margin: 0 auto; }
+  .brand-frame::before, .brand-frame::after { content: ''; position: absolute; inset-block: 0; z-index: 1; width: 64px; pointer-events: none; backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px); }
+  .brand-frame::before { left: 0; background: linear-gradient(90deg, #f4ece6, transparent); mask-image: linear-gradient(90deg, #000, transparent); -webkit-mask-image: linear-gradient(90deg, #000, transparent); }
+  .brand-frame::after { right: 0; background: linear-gradient(270deg, #f4ece6, transparent); mask-image: linear-gradient(270deg, #000, transparent); -webkit-mask-image: linear-gradient(270deg, #000, transparent); }
   .brand-viewport { overflow: hidden; outline-offset: -3px; }
-  .brand-track { display: flex; width: max-content; animation: glide 55s linear infinite; }
+  .brand-track { display: flex; width: max-content; animation: glide 36s linear infinite; }
   .brand-group { display: flex; flex: none; gap: 0; width: max-content; margin: 0; padding: 0; list-style: none; }
-  .brand-group li, .brand-item { display: grid; place-items: center; flex: 0 0 220px; width: 220px; height: 110px; padding: 4px 16px; }
-  img { display: block; width: 100%; height: 100%; object-fit: contain; }
+  .brand-group li, .brand-item { display: grid; place-items: center; flex: 0 0 180px; width: 180px; height: 110px; padding: 4px 0; }
+  img { display: block; width: 100%; height: 100%; object-fit: contain; filter: grayscale(1); opacity: .55; }
   .brand-slider:hover .brand-track, .brand-slider:focus-within .brand-track { animation-play-state: paused; }
   .is-paused .brand-viewport { overflow-x: auto; }
   .is-paused .brand-track { animation: none; transform: none; }
@@ -55,7 +61,9 @@ const brands = [
   @keyframes glide { to { transform: translateX(-50%); } }
   @media (max-width: 650px) {
     .brand-slider { padding-block: 20px 24px; }
-    .brand-group li, .brand-item { flex-basis: 170px; width: 170px; height: 92px; padding-inline: 12px; }
+    .brand-slider-head, .brand-frame { width: calc(100% - 32px); }
+    .brand-frame::before, .brand-frame::after { width: 36px; }
+    .brand-group li, .brand-item { flex-basis: 145px; width: 145px; height: 92px; }
   }
   @media (prefers-reduced-motion: reduce) {
     .brand-viewport { overflow-x: auto; }
