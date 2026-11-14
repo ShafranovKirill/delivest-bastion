@@ -3,6 +3,7 @@ import logo from "../assets/brand/logo-horizontal.svg?raw";
 import Faq from "./Faq.astro";
 import Pricing from "./Pricing.astro";
 import Integrations from "./Integrations.astro";
+import BrandSlider from "./BrandSlider.astro";
 const demo = "https://delivest-client.shafranov.tech/kovrov";
 const mark = logo
   .replaceAll(' fill="#48010c"', "")
@@ -37,6 +38,8 @@ const mark = logo
       </div>
     </div>
   </section>
+
+  <BrandSlider />
 
   <section class="section intro" id="app" aria-labelledby="intro-title">
     <div class="wrap">
@@ -228,8 +231,11 @@ const mark = logo
     <div class="wrap">
       <div class="section-top"><span class="eyebrow">В каждом тарифе</span></div>
       <div class="onboarding-heading">
-        <h2 id="onboarding-title">Запуск и сопровождение<br /><em>берём на себя.</em></h2>
-        <p>Полная стартовая настройка сайта, товаров и поддерживаемой CRM входит и в Базовый, и в Pro. После запуска поможем команде с маркетингом и материалами.</p>
+        <div class="onboarding-intro">
+          <h2 id="onboarding-title">Запуск и сопровождение<br /><em>берём на себя.</em></h2>
+          <p>Полная стартовая настройка сайта, товаров и поддерживаемой CRM входит и в Базовый, и в Pro. После запуска поможем команде с маркетингом и материалами.</p>
+        </div>
+        <img class="onboarding-photo" src="/franchise/onboarding-workspace.webp" alt="Ноутбук с меню доставки, телефон, блюдо и упаковка на столе кафе" width="1536" height="1024" loading="lazy" />
       </div>
       <div class="onboarding-grid">
         <article>
@@ -1020,9 +1026,10 @@ const mark = logo
     font-weight: 700;
   }
   .onboarding { background: #fffaf5; color: #321418; }
-  .onboarding-heading { display: flex; align-items: end; justify-content: space-between; gap: 36px; margin: 34px 0 42px; }
-  .onboarding-heading h2 { max-width: 760px; margin: 0; }
-  .onboarding-heading > p { max-width: 380px; margin: 0 0 5px; font-size: 17px; line-height: 1.6; }
+  .onboarding-heading { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, .95fr); align-items: center; gap: clamp(28px, 4vw, 56px); margin: 34px 0 42px; }
+  .onboarding-intro h2 { max-width: 760px; margin: 0; font-size: clamp(40px, 4.5vw, 64px); }
+  .onboarding-intro p { max-width: 580px; margin: 22px 0 0; font-size: 17px; line-height: 1.6; }
+  .onboarding-photo { width: 100%; aspect-ratio: 3 / 2; height: auto; object-fit: cover; border-radius: 10px; }
   .onboarding-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
   .onboarding-grid article { min-width: 0; padding: clamp(24px, 3vw, 38px); border: 1px solid #d9c7bf; border-radius: 10px; background: #f4ece6; }
   .onboarding-number { color: #9e1c36; font-size: 12px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
@@ -1030,8 +1037,8 @@ const mark = logo
   .onboarding-grid p { max-width: 510px; margin: 0; color: #624a47; font-size: 16px; }
   .onboarding-note { max-width: 870px; margin: 28px 0 0; color: #624a47; font-size: 15px; }
   @media (max-width: 900px) {
-    .onboarding-heading { display: block; }
-    .onboarding-heading > p { max-width: 720px; margin-top: 20px; }
+    .onboarding-heading { grid-template-columns: 1fr; }
+    .onboarding-photo { max-width: 720px; }
   }
   @media (max-width: 650px) {
     .onboarding .section-top > span:last-child { display: inline-block; }

@@ -1,0 +1,77 @@
+---
+const brands = [
+  ['brick-burger', 'Brick Burger'],
+  ['forno27', 'Forno27'],
+  ['nori', 'Nori'],
+  ['kroshka', 'Крошка'],
+  ['black-cup', 'Black Cup'],
+  ['lapsha', 'Лапша'],
+  ['green-fork', 'Green Fork'],
+  ['teply-dvor', 'Тёплый двор'],
+  ['taco-loco', 'Taco Loco'],
+  ['sol', 'Соль'],
+  ['wave-poke', 'Wave Poke'],
+  ['mishka-grill', 'Мишка Гриль'],
+];
+---
+
+<section class="brand-slider" aria-labelledby="brand-slider-title">
+  <div class="brand-slider-head">
+    <h2 id="brand-slider-title">Примеры брендов ресторанов</h2>
+    <button class="motion-toggle" type="button" aria-label="Приостановить движение логотипов" aria-pressed="false">
+      <span class="pause-icon" aria-hidden="true">Ⅱ</span>
+      <span class="play-icon" aria-hidden="true">▶</span>
+    </button>
+  </div>
+  <div class="brand-viewport" tabindex="0" aria-label="Примеры брендов ресторанов, прокрутка по горизонтали">
+    <div class="brand-track">
+      <ul class="brand-group">
+        {brands.map(([file, name]) => <li><img src={`/franchise/brands/${file}.webp`} alt={name} width="480" height="240" decoding="async" /></li>)}
+      </ul>
+      <div class="brand-group clone" aria-hidden="true">
+        {brands.map(([file]) => <div class="brand-item"><img src={`/franchise/brands/${file}.webp`} alt="" width="480" height="240" decoding="async" /></div>)}
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .brand-slider { padding: 26px 0 30px; overflow: hidden; background: #f4ece6; color: #321418; border-bottom: 1px solid #d9c7bf; }
+  .brand-slider-head { max-width: 1360px; margin: 0 auto 14px; padding-inline: clamp(20px, 5vw, 80px); display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+  h2 { margin: 0; font: 700 12px/1.4 Onest, sans-serif; letter-spacing: .14em; text-transform: uppercase; }
+  .motion-toggle { flex: none; display: grid; place-items: center; width: 34px; height: 34px; padding: 0; border: 1px solid #bca9a2; border-radius: 50%; background: transparent; color: #48010c; cursor: pointer; font: 700 16px/1 Onest, sans-serif; }
+  .motion-toggle:hover { background: #e8d8ce; }
+  .play-icon, .is-paused .pause-icon { display: none; }
+  .is-paused .play-icon { display: inline; font-size: 11px; }
+  .brand-viewport { overflow: hidden; outline-offset: -3px; }
+  .brand-track { display: flex; width: max-content; animation: glide 55s linear infinite; }
+  .brand-group { display: flex; flex: none; gap: 0; width: max-content; margin: 0; padding: 0; list-style: none; }
+  .brand-group li, .brand-item { display: grid; place-items: center; flex: 0 0 220px; width: 220px; height: 110px; padding: 4px 16px; }
+  img { display: block; width: 100%; height: 100%; object-fit: contain; }
+  .brand-slider:hover .brand-track, .brand-slider:focus-within .brand-track { animation-play-state: paused; }
+  .is-paused .brand-viewport { overflow-x: auto; }
+  .is-paused .brand-track { animation: none; transform: none; }
+  .is-paused .clone { display: none; }
+  @keyframes glide { to { transform: translateX(-50%); } }
+  @media (max-width: 650px) {
+    .brand-slider { padding-block: 20px 24px; }
+    .brand-group li, .brand-item { flex-basis: 170px; width: 170px; height: 92px; padding-inline: 12px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .brand-viewport { overflow-x: auto; }
+    .brand-track { animation: none; }
+    .clone, .motion-toggle { display: none; }
+  }
+</style>
+
+<script>
+  const slider = document.querySelector<HTMLElement>('.brand-slider');
+  const toggle = slider?.querySelector<HTMLButtonElement>('.motion-toggle');
+  const viewport = slider?.querySelector<HTMLElement>('.brand-viewport');
+  toggle?.addEventListener('click', () => {
+    if (viewport) viewport.scrollLeft = 0;
+    const paused = slider!.classList.toggle('is-paused');
+    toggle.setAttribute('aria-pressed', String(paused));
+    toggle.setAttribute('aria-label', paused ? 'Возобновить движение логотипов' : 'Приостановить движение логотипов');
+  });
+</script>
