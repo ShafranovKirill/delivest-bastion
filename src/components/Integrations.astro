@@ -1,29 +1,25 @@
 ---
+import logo from '../assets/brand/logo-horizontal.svg?url';
 const integrations = [
-  { side: 'left', row: 1, number: '01', category: 'Ресторанные системы', title: 'Frontpad · iiko · r_keeper', text: 'Передавайте заказы в систему, с которой уже работает ресторан.' },
-  { side: 'right', row: 1, number: '02', category: 'Кассовые приложения', title: 'АТОЛ', text: 'Интеграция с кассовыми приложениями АТОЛ для работы вашего заведения.' },
-  { side: 'left', row: 2, number: '03', category: 'Приём заказов', title: 'Яндекс Еда · Деливери', text: 'Собственный сайт и агрегаторы могут работать вместе. Подключайте приём заказов из Яндекс Еды и Деливери.' },
-  { side: 'right', row: 2, number: '04', category: 'Поиск курьера', title: 'Яндекс Доставка', text: 'Находите доставщика для заказа через интеграцию с Яндекс Доставкой.' },
+  { side: 'left', row: 1, category: 'POS-системы', title: 'iiko · r_keeper · Frontpad', text: 'Заказы поступают в привычную систему ресторана.' },
+  { side: 'right', row: 1, category: 'Оплата на сайте', title: 'ЮKassa', text: 'Гость оплачивает заказ картой или через СБП.' },
+  { side: 'left', row: 2, category: 'Онлайн-касса', title: 'АТОЛ Онлайн', text: 'Оформляйте электронные чеки для гостей.' },
+  { side: 'right', row: 2, category: 'Заказы и курьеры', title: 'Сервисы Яндекса', text: 'Принимайте заказы из Яндекс Еды и Деливери. Яндекс Доставка поможет найти курьера.' },
 ];
 ---
-<section id="integrations">
+<section id="integrations" aria-labelledby="integrations-title">
   <div class="wrap">
     <div class="head">
-      <span class="kicker">Готовые интеграции</span>
-      <h2>У вас уже есть системы.<br /><em>Свяжем их с доставкой.</em></h2>
-      <p>Подключайте нужные сервисы к Delivest: ресторанные системы, кассовые приложения, агрегаторы и поиск курьера. На демонстрации разберём вашу схему работы.</p>
+      <span class="kicker">Интеграции</span>
+      <h2 id="integrations-title">Ваша касса, оплата <em>и доставка.</em></h2>
+      <p>Подключите к Delivest сервисы, с которыми уже работают ваши точки.</p>
     </div>
-
-    <div class="integration-map" aria-label="Четыре направления интеграций Delivest">
-      <div class="platform-card">
-        <span class="platform-symbol" aria-hidden="true">d.</span>
-        <b>delivest</b>
-        <span>В центре<br />вашей доставки</span>
-      </div>
+    <div class="integration-map">
+      <div class="platform-card"><img src={logo} alt="Delivest" /></div>
       {integrations.map(item => (
         <>
           <article class:list={['service-card', `service-${item.side}`]} style={`--row:${item.row}`}>
-            <div class="service-label"><span>{item.category}</span><span>{item.number}</span></div>
+            <div class="service-label">{item.category}</div>
             <h3>{item.title}</h3>
             <p>{item.text}</p>
           </article>
@@ -31,18 +27,8 @@ const integrations = [
         </>
       ))}
     </div>
-
-    <div class="courier-callout">
-      <div>
-        <span class="kicker">Курьерская доставка</span>
-        <h3>Свои курьеры или Яндекс Доставка</h3>
-        <p>Работайте со своими курьерами через встроенное приложение или находите доставщика через Яндекс Доставку.</p>
-      </div>
-      <ol><li>Заказ в ресторане</li><li>Курьер забирает заказ</li><li>Доставка гостю</li></ol>
-    </div>
   </div>
 </section>
-
 <style>
   .integration-map {
     display: grid;
@@ -64,19 +50,6 @@ const integrations = [
     color: #fff6f4;
     text-align: center;
   }
-  .platform-symbol {
-    display: grid;
-    place-items: center;
-    width: 60px;
-    height: 60px;
-    border: 1px solid #ffffff40;
-    border-radius: 18px;
-    font-size: 40px;
-    font-weight: 700;
-    line-height: 1;
-  }
-  .platform-card b { font-size: 34px; letter-spacing: -.04em; line-height: 1; }
-  .platform-card > span:last-child { font-size: 14px; color: #ebcdd1; line-height: 1.5; }
   .service-card {
     grid-row: var(--row);
     padding: 28px;
@@ -96,25 +69,24 @@ const integrations = [
   .link-left { grid-column: 2; }
   .link-right { grid-column: 4; }
   .service-link span { display: block; width: 100%; height: 1px; background: var(--accent); opacity: .4; }
-  .courier-callout { margin-top: 32px; padding: 32px; border-radius: 24px; background: var(--paper-2); display: grid; grid-template-columns: 1.3fr 1fr; gap: 40px; align-items: center; }
-  .courier-callout h3 { font-size: 26px; }
-  .courier-callout p { color: var(--ink-2); margin-bottom: 0; font-size: 16px; }
-  .courier-callout ol { margin: 0; display: grid; gap: 12px; }
-  .courier-callout li { padding: 10px; border-bottom: 1px solid var(--line); }
-  @media (max-width: 900px) {
-    .integration-map { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: auto; gap: 16px; }
-    .platform-card { grid-column: 1 / -1; grid-row: auto; flex-direction: row; gap: 24px; padding: 24px; }
-    .platform-card > span:last-child { text-align: left; }
-    .service-card { grid-column: auto; grid-row: auto; padding: 24px; }
+
+  .platform-card img { width: min(100%, 145px); height: auto; filter: brightness(0) invert(1); }
+  #integrations { background: #fff9f4; padding-block: clamp(60px, 8vw, 112px); color: #310812; }
+  .head { max-width: 760px; margin-bottom: 36px; }
+  .head h2 { font-size: clamp(36px, 4.8vw, 68px); }
+  @media(max-width: 700px) {
+    .integration-map { grid-template-columns: repeat(2,minmax(0,1fr)); grid-template-rows: auto auto auto; gap: 12px; }
+    .service-card { grid-row: auto; padding: 15px 12px; border-radius: 14px; }
+    .service-left { grid-column: 1; }
+    .service-right { grid-column: 2; }
+    .service-card:nth-of-type(n+3) { grid-row: 3; }
+    .service-card h3 { font-size: 16px; overflow-wrap: anywhere; }
+    .service-label { margin-bottom: 8px; font-size: 11px; text-transform: none; letter-spacing: 0; }
+    .service-card p { font-size: 13px; line-height: 1.4; }
+    .platform-card { grid-column: 1 / -1; grid-row: 2; justify-self: center; width: 132px; padding: 18px; border-radius: 18px; position: relative; }
+    .platform-card::before, .platform-card::after { content: ''; position: absolute; width: 1px; height: 12px; background: #ae747b; left: 50%; }
+    .platform-card::before { bottom: 100%; }
+    .platform-card::after { top: 100%; }
     .service-link { display: none; }
-    .courier-callout { grid-template-columns: 1fr; gap: 24px; }
-  }
-  @media (max-width: 560px) {
-    .integration-map { grid-template-columns: minmax(0, 1fr); }
-    .platform-card { flex-wrap: wrap; gap: 16px; }
-    .platform-symbol { display: none; }
-    .platform-card b { font-size: 30px; }
-    .platform-card > span:last-child { font-size: 12px; }
-    .courier-callout { padding: 24px; }
   }
 </style>

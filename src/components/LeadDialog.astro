@@ -7,8 +7,8 @@
   </button>
 
   <form class="form" novalidate>
-    <h2 id="lead-title">Delivest <em>в деле</em></h2>
-    <p class="sub">Покажем сайт гостя и управление доставкой. Оставьте контакт — договоримся о демонстрации.</p>
+    <h2 id="lead-title">Обсудим <em>подключение</em></h2>
+    <p class="sub">Оставьте телефон или почту — свяжемся и обсудим вашу сеть.</p>
 
     <label class="field">
       <span>Телефон или почта</span>
@@ -22,7 +22,7 @@
     <label class="trap" aria-hidden="true">Сайт <input name="website" type="text" tabindex="-1" autocomplete="off"></label>
 
     <p class="error" role="alert" hidden></p>
-    <button class="btn btn-ink submit" type="submit">Записаться на демо</button>
+    <button class="btn btn-ink submit" type="submit">Обсудить подключение</button>
     <p class="fine">Нажимая кнопку, вы соглашаетесь на обработку контактных данных для связи с вами.</p>
   </form>
 
@@ -31,6 +31,14 @@
     <h2>Заявка <em>отправлена</em></h2>
     <p class="sub">Спасибо! Свяжемся с вами в рабочее время.</p>
     <button class="btn btn-line" type="button" data-close>Хорошо</button>
+  </div>
+  <div class="direct-contact">
+    <p>Или свяжитесь с нами напрямую</p>
+    <div class="messengers">
+      <a href="https://t.me/shafranov_ex" target="_blank" rel="noopener">Написать в Telegram ↗</a>
+      <a href="https://vk.ru/shafranov_kirill" target="_blank" rel="noopener">Написать в ВК ↗</a>
+    </div>
+    <a class="direct-phone" href="tel:+79255355278">+7 925 535-52-78</a>
   </div>
 </dialog>
 
@@ -74,6 +82,19 @@
   .submit[disabled] { opacity: .7; cursor: progress; transform: none; }
   .fine { margin: 14px 0 0; font-size: 12.5px; color: var(--muted); line-height: 1.45; }
 
+  .direct-contact {
+    margin: 0 clamp(28px, 5vw, 40px) 28px;
+    padding-top: 20px;
+    border-top: 1px solid var(--line);
+  }
+  .direct-contact p { margin: 0 0 12px; font-size: 14px; color: var(--ink-2); }
+  .messengers { display: grid; gap: 8px; }
+  .messengers a {
+    display: block; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px;
+    font-size: 14px; font-weight: 600; text-decoration: none; color: var(--brand);
+  }
+  .messengers a:hover { background: var(--paper-2); }
+  .direct-phone { display: inline-block; margin-top: 16px; font-weight: 600; color: var(--brand); }
   .done { text-align: center; }
   .done .btn { margin-top: 4px; min-width: 160px; }
   .check { width: 64px; height: 64px; margin: 0 auto 18px; border-radius: 50%; display: grid; place-items: center; background: color-mix(in srgb, var(--ok) 15%, transparent); color: var(--ok); }
@@ -99,8 +120,8 @@
   const intro = form.querySelector<HTMLElement>('.sub')!;
   const intent = form.elements.namedItem('intent') as HTMLInputElement;
   const requestCopy = {
-    demo: { title: 'Delivest', emphasis: 'в деле', intro: 'Покажем сайт гостя и управление доставкой. Оставьте контакт — договоримся о демонстрации.', button: 'Записаться на демо' },
-    pricing: { title: 'Рассчитаем', emphasis: 'подключение', intro: 'Обсудим ваши точки и сервисы, состав подключения и стоимость. Оставьте контакт — свяжемся с вами в рабочее время.', button: 'Получить расчёт' },
+    demo: { title: 'Delivest', emphasis: 'в деле', intro: 'Оставьте телефон или почту — свяжемся и обсудим вашу сеть.', button: 'Обсудить подключение' },
+    pricing: { title: 'Обсудим', emphasis: 'подключение', intro: 'Оставьте телефон или почту — свяжемся и обсудим вашу сеть.', button: 'Обсудить подключение' },
   };
   let selected: keyof typeof requestCopy = 'demo';
   const open = (kind: string | undefined) => {
