@@ -48,6 +48,9 @@ const demo = 'https://delivest-client.shafranov.tech/kovrov';
   .menu-btn { display: none; }
   .nav-demo { color: var(--accent); }
   .short { display: none; }
+  @media (min-width: 1251px) {
+    .top > .wrap { max-width: none; width: 100%; padding-inline: clamp(20px, 2vw, 32px); }
+  }
   @media (max-width: 1250px) {
     .wrap { gap: 12px; }
     .header-cta { margin-left: auto; }
