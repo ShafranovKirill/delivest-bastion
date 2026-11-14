@@ -217,9 +217,43 @@ const mark = logo
         Управляйте несколькими филиалами в одной системе. У каждой точки могут
         быть своё меню, цены, часы работы и зоны доставки.
       </p>
+      <p class="launch-support">Поможем подготовить и запустить каждую точку — настройка и сопровождение входят в оба тарифа.</p>
       <button class="pill cream" type="button" data-lead="pricing">
         Обсудить подключение <span>↗</span>
       </button>
+    </div>
+  </section>
+
+  <section class="section onboarding" aria-labelledby="onboarding-title">
+    <div class="wrap">
+      <div class="section-top"><span class="eyebrow">В каждом тарифе</span></div>
+      <div class="onboarding-heading">
+        <h2 id="onboarding-title">Запуск и сопровождение<br /><em>берём на себя.</em></h2>
+        <p>Полная стартовая настройка сайта, товаров и поддерживаемой CRM входит и в Базовый, и в Pro. После запуска поможем команде с маркетингом и материалами.</p>
+      </div>
+      <div class="onboarding-grid">
+        <article>
+          <span class="onboarding-number">01 / Стартовая настройка</span>
+          <h3>Подготовим сайт и меню</h3>
+          <p>Создадим карточки товаров из материалов ресторана: категории, фото, описания и цены. Настроим точки для запуска.</p>
+        </article>
+        <article>
+          <span class="onboarding-number">02 / Стартовая настройка</span>
+          <h3>Настроим CRM и приём заказов</h3>
+          <p>Подключим поддерживаемую ресторанную CRM, согласуем конфигурацию, настроим доступный обмен меню и заказами и проверим путь заказа.</p>
+        </article>
+        <article>
+          <span class="onboarding-number">03 / Сопровождение</span>
+          <h3>Поможем с маркетингом</h3>
+          <p>Подготовим акции, тексты, баннеры и предложения, которые помогут возвращать гостей.</p>
+        </article>
+        <article>
+          <span class="onboarding-number">04 / Сопровождение</span>
+          <h3>AI-сопровождение команды</h3>
+          <p>Поможем с обработкой реальных фото блюд, описаниями меню и материалами акций с использованием AI.</p>
+        </article>
+      </div>
+      <p class="onboarding-note">Материалы согласуем с рестораном до публикации. Состав работ и план сопровождения согласуем при подключении.</p>
     </div>
   </section>
 
@@ -979,6 +1013,31 @@ const mark = logo
     font-size: 18px;
     color: #f1dcd9;
     margin: 0 0 31px;
+  }
+  .photo-split .launch-support {
+    margin-top: -14px;
+    color: #f0ba89;
+    font-weight: 700;
+  }
+  .onboarding { background: #fffaf5; color: #321418; }
+  .onboarding-heading { display: flex; align-items: end; justify-content: space-between; gap: 36px; margin: 34px 0 42px; }
+  .onboarding-heading h2 { max-width: 760px; margin: 0; }
+  .onboarding-heading > p { max-width: 380px; margin: 0 0 5px; font-size: 17px; line-height: 1.6; }
+  .onboarding-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+  .onboarding-grid article { min-width: 0; padding: clamp(24px, 3vw, 38px); border: 1px solid #d9c7bf; border-radius: 10px; background: #f4ece6; }
+  .onboarding-number { color: #9e1c36; font-size: 12px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
+  .onboarding-grid h3 { margin: 24px 0 14px; font-size: clamp(25px, 2.4vw, 33px); line-height: 1.15; }
+  .onboarding-grid p { max-width: 510px; margin: 0; color: #624a47; font-size: 16px; }
+  .onboarding-note { max-width: 870px; margin: 28px 0 0; color: #624a47; font-size: 15px; }
+  @media (max-width: 900px) {
+    .onboarding-heading { display: block; }
+    .onboarding-heading > p { max-width: 720px; margin-top: 20px; }
+  }
+  @media (max-width: 650px) {
+    .onboarding .section-top > span:last-child { display: inline-block; }
+    .onboarding-heading { margin: 28px 0; }
+    .onboarding-grid { grid-template-columns: 1fr; }
+    .onboarding-grid h3 { margin-top: 18px; }
   }
   .delivery {
     grid-template-columns: 1.15fr 0.85fr;
