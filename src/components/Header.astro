@@ -15,6 +15,7 @@ const demo = 'https://delivest-client.shafranov.tech/kovrov';
       <a href="#operations">Работа команды</a>
       <a href="#integrations">Интеграции</a>
       <a href="#launch">Филиалы</a>
+      <a href="#tariffs">Тарифы</a>
       <a class="nav-demo" href={demo} target="_blank" rel="noopener">Демо-сайт ↗</a>
     </nav>
     <button class="btn btn-ink btn-sm header-cta" type="button" data-lead="pricing"><span class="long">Обсудить подключение</span><span class="short">Подключение</span></button>
@@ -47,7 +48,7 @@ const demo = 'https://delivest-client.shafranov.tech/kovrov';
   .menu-btn { display: none; }
   .nav-demo { color: var(--accent); }
   .short { display: none; }
-  @media (max-width: 1100px) {
+  @media (max-width: 1250px) {
     .wrap { gap: 12px; }
     .header-cta { margin-left: auto; }
     .nav { display: none; position: absolute; top: 100%; left: var(--gutter); right: var(--gutter); margin: 0; padding: 12px; background: var(--card); border: 1px solid var(--line); border-radius: 0 0 20px 20px; box-shadow: 0 16px 32px #2a000718; }
@@ -89,7 +90,7 @@ const demo = 'https://delivest-client.shafranov.tech/kovrov';
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape' && toggle.getAttribute('aria-expanded') === 'true') { setMenu(false); toggle.focus(); }
   });
-  matchMedia('(min-width: 1101px)').addEventListener('change', () => setMenu(false));
+  matchMedia('(min-width: 1251px)').addEventListener('change', () => setMenu(false));
   const syncHeader = () => header.classList.toggle('scrolled', scrollY > 8);
   addEventListener('scroll', syncHeader, { passive: true });
   syncHeader();
