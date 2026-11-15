@@ -161,6 +161,7 @@ const mark = logo
           <p>
             Гость выбирает способ получения и видит детали до подтверждения.
           </p>
+          <div class="order-status"><i aria-hidden="true"></i>Заказ оформлен</div>
           <button
             class="shot checkout-shot"
             type="button"
@@ -192,6 +193,7 @@ const mark = logo
             Новые заказы и их статус доступны сотрудникам. Повар отмечает, когда
             заказ можно выдавать.
           </p>
+          <div class="order-status"><i aria-hidden="true"></i>Новый заказ</div>
           <button
             class="shot kitchen-shot"
             type="button"
@@ -220,7 +222,7 @@ const mark = logo
     </div>
   </section>
 
-  <section class="photo-split delivery" aria-labelledby="delivery-title">
+  <section class="photo-split delivery" id="delivery" aria-labelledby="delivery-title">
     <div class="photo">
       <img
         src="/franchise/delivery.webp"
@@ -241,6 +243,10 @@ const mark = logo
         любимое блюдо, а вы сохраняете контроль над собственным каналом
         доставки.
       </p>
+      <div class="delivery-route" aria-hidden="true">
+        <div class="route-track"><i></i><b></b><i></i><b></b><i></i></div>
+        <div class="route-labels"><span>Кухня</span><span>Курьер</span><span>Гость</span></div>
+      </div>
     </div>
   </section>
 
@@ -380,6 +386,14 @@ const mark = logo
   const presentation = document.querySelector<HTMLElement>('#presentation');
   const facts = document.querySelector<HTMLElement>('.facts-grid');
   const onboarding = document.querySelector<HTMLElement>('.onboarding');
+  const movementObserver = new IntersectionObserver(entries => {
+    entries.forEach(entry => {
+      if (!entry.isIntersecting) return;
+      entry.target.classList.add('in-view');
+      movementObserver.unobserve(entry.target);
+    });
+  }, { threshold: .35 });
+  document.querySelectorAll('.intro-phone, .order-status, .delivery-route').forEach(element => movementObserver.observe(element));
   const onboardingGrid = onboarding?.querySelector<HTMLElement>('.onboarding-grid');
   if (onboardingGrid && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
     onboardingGrid.classList.add('assemble-ready');
@@ -769,6 +783,76 @@ const mark = logo
     overflow: hidden;
     transform: rotate(4deg);
     transition: transform 0.2s;
+  }
+  .order-status {
+    align-self: flex-start;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin: 16px 0;
+    padding: 6px 12px;
+    border: 1px solid #48010c24;
+    border-radius: 99px;
+    background: #fffaf5;
+    color: var(--wine);
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .order-status i, .route-track i {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: currentColor;
+  }
+  .delivery .photo-copy { position: relative; isolation: isolate; overflow: hidden; }
+  .delivery .photo-copy::before {
+    content: "";
+    position: absolute;
+    right: -160px;
+    bottom: -210px;
+    width: 440px;
+    height: 440px;
+    z-index: -1;
+    pointer-events: none;
+    border-radius: 50%;
+    background: repeating-radial-gradient(circle, transparent 0 34px, #f1bd8218 35px 36px, transparent 37px 47px);
+    mask-image: radial-gradient(circle, #000 42%, transparent 72%);
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .delivery .photo-copy:has(.in-view)::before { animation: delivery-rings 7s ease-in-out infinite alternate; }
+    @keyframes delivery-rings { to { transform: scale(1.14); } }
+  }
+  .delivery-route { max-width: 350px; margin-top: 32px; color: #f1bd82; }
+  .route-track { display: flex; align-items: center; margin-inline: 3px; }
+  .route-track i { box-shadow: 0 0 0 3px #f1bd8220; }
+  .route-track b { position: relative; flex: 1; height: 1px; background: #f1bd8245; }
+  .route-labels { display: grid; grid-template-columns: 1fr 1fr 1fr; margin-top: 12px; font-size: 12px; }
+  .route-labels span:nth-child(2) { text-align: center; }
+  .route-labels span:last-child { text-align: right; }
+  @media (prefers-reduced-motion: no-preference) {
+    .intro-phone.in-view { animation: handset-in .8s var(--ease); }
+    @keyframes handset-in { from { translate: 0 16px; } }
+    .order-status.in-view { animation: status-in .5s var(--ease) backwards; }
+    @keyframes status-in { from { opacity: 0; translate: 0 7px; } }
+    .delivery-route.in-view .route-track b::after {
+      content: "";
+      position: absolute;
+      top: -1px;
+      width: 26%;
+      height: 3px;
+      background: linear-gradient(90deg, transparent, #f1bd82);
+      border-radius: 100%;
+      animation: route-pass 5s linear infinite;
+    }
+    .delivery-route.in-view .route-track b:nth-of-type(2)::after { animation-delay: 1.6s; opacity: 0; }
+    @keyframes route-pass {
+      0% { transform: translateX(0); opacity: 0; }
+      5%, 26% { opacity: 1; }
+      32%, 100% { transform: translateX(285%); opacity: 0; }
+    }
+  }
+  @media (min-width: 651px) and (prefers-reduced-motion: no-preference) {
+    .kitchen-card .order-status.in-view { animation-delay: .35s; }
   }
   .intro-phone img {
     border-radius: 8% / 4%;
