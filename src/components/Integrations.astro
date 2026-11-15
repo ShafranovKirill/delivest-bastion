@@ -20,11 +20,9 @@
   .integration-picture { display:block; width:100%; max-width:860px; margin-inline:auto; }
   .integration-network { display:block; width:100%; height:auto; }
   @media(min-width:901px) {
-    .integration-picture {
-      --network-bleed:min(5vw, max(0px, (100vw - 100%) / 2 - 8px));
-      max-width:none;
-      width:calc(100% + 2 * var(--network-bleed));
-      margin-inline:calc(-1 * var(--network-bleed));
+    .head, .integration-picture {
+      max-width:1040px;
+      margin-inline:auto;
     }
   }
   @media(max-width:650px) {
