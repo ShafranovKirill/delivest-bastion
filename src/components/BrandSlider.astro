@@ -17,7 +17,7 @@ const brands = [
 
 <section class="brand-slider" aria-labelledby="brand-slider-title">
   <div class="brand-slider-head">
-    <h2 id="brand-slider-title">С нами сотрудничают 30+ ресторанов</h2>
+    <h2 id="brand-slider-title">Нам доверяют 30+ ресторанов</h2>
   </div>
   <div class="brand-frame">
     <div class="brand-viewport" tabindex="0" aria-label="Примеры брендов ресторанов, прокрутка по горизонтали">
@@ -56,20 +56,20 @@ const brands = [
 </section>
 
 <style>
-  .brand-slider { padding: 32px 0 52px; overflow: hidden; background: #f4ece6; color: #321418; }
-  .brand-slider-head { max-width: 1120px; width: calc(100% - 40px); margin: 0 auto 14px; text-align: center; }
+  .brand-slider { padding: 32px 0 52px; overflow: hidden; background: #f5eee8; color: #321418; }
+  .brand-slider-head { max-width: 1120px; width: calc(100% - 40px); margin: 0 auto 1px; text-align: center; }
   h2 { margin: 0; font: 700 clamp(18px, 2vw, 24px)/1.25 Onest, sans-serif; letter-spacing: -.02em; }
   .brand-frame { position: relative; max-width: 1120px; width: calc(100% - 40px); margin: 0 auto; }
   .brand-frame::before, .brand-frame::after { content: ''; position: absolute; inset-block: 0; z-index: 1; width: 64px; pointer-events: none; backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px); }
-  .brand-frame::before { left: 0; background: linear-gradient(90deg, #f4ece6, transparent); mask-image: linear-gradient(90deg, #000, transparent); -webkit-mask-image: linear-gradient(90deg, #000, transparent); }
-  .brand-frame::after { right: 0; background: linear-gradient(270deg, #f4ece6, transparent); mask-image: linear-gradient(270deg, #000, transparent); -webkit-mask-image: linear-gradient(270deg, #000, transparent); }
+  .brand-frame::before { left: 0; background: linear-gradient(90deg, var(--story-bg,#f5eee8), transparent); mask-image: linear-gradient(90deg, #000, transparent); -webkit-mask-image: linear-gradient(90deg, #000, transparent); }
+  .brand-frame::after { right: 0; background: linear-gradient(270deg, var(--story-bg,#f5eee8), transparent); mask-image: linear-gradient(270deg, #000, transparent); -webkit-mask-image: linear-gradient(270deg, #000, transparent); }
   .brand-viewport { overflow: hidden; outline-offset: -3px; }
-  .brand-track { display: flex; width: max-content; animation: glide 36s linear infinite; }
+  .brand-track { display: flex; width: max-content; animation: glide 24s linear infinite; }
   .brand-group { display: flex; flex: none; gap: 0; width: max-content; margin: 0; padding: 0; list-style: none; }
-  .brand-group li, .brand-item { display: grid; place-items: center; flex: 0 0 160px; width: 160px; height: 110px; padding: 4px 0; }
-  img { display: block; width: 100%; height: 100%; object-fit: contain; filter: grayscale(1); opacity: .55; }
-  .facts-grid { max-width: 1120px; width: calc(100% - 40px); margin: 20px auto 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
-  .fact { min-width: 0; min-height: 180px; padding: 18px; border-radius: 8px; background: #fffaf5; }
+  .brand-group li, .brand-item { display: grid; place-items: center; flex: 0 0 136px; width: 136px; height: 110px; padding: 4px 0; }
+  img { display: block; width:160px; max-width:none; height:100%; object-fit:contain; filter: grayscale(1); opacity: .55; }
+  .facts-grid { max-width: 1120px; width: calc(100% - 40px); margin: 8px auto 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+  .fact { min-width: 0; min-height: 180px; padding: 18px; border-radius: 8px; background: #fffaf5; color:#321418; }
   .fact:nth-child(2) { background: #48010c; color: #fff6f4; }
   .fact:nth-child(3) { background: #e8d7cc; }
   .fact:nth-child(4) { background: #efc07a; }
@@ -80,12 +80,14 @@ const brands = [
   @keyframes glide { to { transform: translateX(-50%); } }
   @media (max-width: 650px) {
     .brand-slider { padding-block: 26px 42px; }
-    .brand-slider-head, .brand-frame, .facts-grid { width: calc(100% - 32px); }
+    .brand-slider-head, .brand-frame { width: calc(100% - 32px); }
     .brand-frame::before, .brand-frame::after { width: 36px; }
-    .brand-group li, .brand-item { flex-basis: 125px; width: 125px; height: 92px; }
-    .facts-grid { grid-template-columns: repeat(4, minmax(200px, 1fr)); gap: 12px; overflow-x: auto; overscroll-behavior-inline: contain; scroll-snap-type: x proximity; scrollbar-width: none; -ms-overflow-style: none; }
+    .brand-group li, .brand-item { flex-basis: 106px; width: 106px; height: 92px; }
+    img { width:125px; }
+    .facts-grid { width:100%; max-width:none; padding-inline:16px; grid-template-columns:none; grid-auto-flow:column; grid-auto-columns:calc((100vw - 28px) / 1.5); gap:12px; overflow-x:auto; scroll-padding-inline:16px; overscroll-behavior-inline: contain; scroll-snap-type: x proximity; scrollbar-width: none; -ms-overflow-style: none; }
     .facts-grid::-webkit-scrollbar { display: none; width: 0; height: 0; }
-    .fact { padding: 16px; scroll-snap-align: start; }
+    .fact { min-height:150px; padding:14px; scroll-snap-align:start; }
+    .fact-value { margin-bottom:10px; }
   }
   @media (prefers-reduced-motion: reduce) {
     .brand-viewport { overflow-x: auto; }

@@ -1,0 +1,194 @@
+---
+const slides = [
+  { title: 'Заказ в 2 касания', text: 'От любимого блюда до готового заказа — легко и быстро. Чтобы гости возвращались чаще и заказывали больше.', media: 'order-poster' },
+  { title: 'Отслеживание заказа', text: 'Пуш-уведомления об изменении статуса — гость всегда в курсе, что с его заказом.', media: 'tracking' },
+  { title: 'Авторасчёт условий доставки', text: 'Настройте несколько зон с разными минимальными заказами и стоимостью доставки. Условия рассчитаются автоматически.', media: 'delivery' },
+  { title: 'Дизайн под ваш бренд', text: 'Ваши цвета, ваш характер. Настройте оформление под свой ресторан и сделайте бренд узнаваемым.', media: '' },
+  { title: 'Бонусная система', text: 'Дарите звёзды за заказы и обменивайте их на любимые блюда. Больше приятных поводов вернуться к вам.', media: 'bonuses' },
+];
+const names = ['Бордовый', 'Зелёный', 'Синий', 'Фиолетовый', 'Карамельный'];
+---
+<section class="product-presentation guest" id="presentation" aria-labelledby="presentation-title" data-presentation>
+  <div class="wrap presentation-wrap">
+    <header class="presentation-heading">
+      <h2 id="presentation-title">Приложение и сайт топ-уровня</h2>
+      <p>Красивое и функциональное. Своё.</p>
+    </header>
+    <div class="presentation-layout">
+      <div class="presentation-navigation">
+      <div class="presentation-menu" role="tablist" aria-label="Возможности приложения" aria-orientation="vertical">
+        {slides.map((slide, i) => (
+          <button type="button" role="tab" id={`presentation-tab-${i}`} aria-controls={`presentation-panel-${i}`} aria-selected={i === 0 ? 'true' : 'false'} tabindex={i === 0 ? 0 : -1} class:list={['presentation-tab', {active: i === 0}]} data-slide={i}>
+            <span class="presentation-tab-title">{slide.title}</span>
+            <span class="presentation-tab-description">{slide.text}</span>
+          </button>
+        ))}
+      </div>
+      </div>
+      <div class="presentation-main">
+        <div class="presentation-stage">
+          {slides.map((slide, i) => (
+            <div class="presentation-panel" role="tabpanel" id={`presentation-panel-${i}`} aria-labelledby={`presentation-tab-${i}`} hidden={i !== 0}>
+              {i === 0 ? (
+                <video class="presentation-media" src="/presentation/order.mp4" poster="/presentation/order-poster.webp" muted loop playsinline preload="metadata" aria-label="Демонстрация оформления заказа в Delivest" />
+              ) : i === 3 ? (
+                <div class="brand-preview">
+                  {names.map((name, n) => <img src={`/presentation/brand-photo-${n + 1}.webp`} alt={`Интерфейс Delivest: ${name.toLowerCase()} цвет`} width="1173" height="1341" loading="lazy" class:list={['brand-image', {active: n === 0}]} />)}
+                  <button type="button" class="brand-motion" aria-pressed="true" aria-label="Приостановить смену цветов">Ⅱ</button>
+                </div>
+              ) : (
+                <img class="presentation-media" src={`/presentation/${slide.media}.webp`} alt={slide.title} width="1173" height="1341" loading="lazy" />
+              )}
+            </div>
+          ))}
+          <div class="presentation-controls">
+            <span class="presentation-count" aria-live="polite" aria-atomic="true"><span data-slide-number>1</span><span class="count-divider">/</span>5</span>
+            <div class="presentation-arrows">
+              <button type="button" data-prev aria-label="Предыдущий слайд"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m14 6-6 6 6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+              <button type="button" data-next aria-label="Следующий слайд"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m10 6 6 6-6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+            </div>
+          </div>
+        </div>
+        <div class="presentation-caption" aria-live="polite" aria-atomic="true">
+          <h3 data-caption-title>{slides[0].title}</h3>
+          <p data-caption-text>{slides[0].text}</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .product-presentation { background:var(--story-bg,#100b0c); color:var(--story-text,#fffaf5); padding:clamp(64px,7vw,100px) 0 !important; }
+  .presentation-heading { margin-bottom:40px; text-align:center; }
+  .presentation-heading h2 { font:600 clamp(28px,3.2vw,42px)/1.15 Onest,sans-serif; letter-spacing:-.035em; margin:0 0 14px; }
+  .presentation-heading p { color:var(--story-muted,#b9aaad); margin:0; font-size:16px; }
+  .presentation-layout { display:grid; grid-template-columns:minmax(0, .9fr) minmax(0,1.4fr); gap:clamp(36px,5vw,80px); align-items:stretch; position:relative; }
+  .presentation-navigation { position:relative; min-width:0; }
+  .presentation-menu { position:absolute; inset:0 0 auto; display:flex; flex-direction:column; gap:16px; }
+  .presentation-tab { position:relative; display:block; width:100%; padding:0; flex-shrink:0; border:0; border-radius:0; background:none; color:var(--story-idle,#897e81); text-align:left; cursor:pointer; transition:color .2s, padding-left .2s; }
+  .presentation-tab::before { content:''; position:absolute; top:0; bottom:0; left:0; width:3px; border-radius:4px; background:var(--story-text,#fffaf5); opacity:0; transition:opacity .2s; }
+  .presentation-tab.active { color:var(--story-text,#fffaf5); padding-left:20px; }
+  .presentation-tab.active::before { opacity:1; }
+  .presentation-tab:hover { color:var(--story-text,#e0d2d5); }
+  .presentation-tab-title { display:block; font-size:clamp(19px,1.65vw,23px); line-height:1.2; font-weight:600; letter-spacing:-.035em; margin-bottom:7px; }
+  .presentation-tab-description { display:block; font-size:14px; line-height:1.45; }
+  .presentation-main { min-width:0; }
+  .presentation-stage { position:relative; aspect-ratio:1173/1341; overflow:hidden; border-radius:12px; background:#30050c; isolation:isolate; }
+  .presentation-panel { position:absolute; inset:0; }
+  @media (prefers-reduced-motion: no-preference) {
+    .presentation-panel:not([hidden]) { animation: panel-in .28s ease-out; }
+    @keyframes panel-in { from { opacity: .72; } to { opacity: 1; } }
+  }
+  .presentation-media { display:block; width:100%; height:100%; object-fit:cover; }
+  .presentation-controls { display:none; position:absolute; z-index:3; bottom:0; left:0; right:0; padding:28px 16px 16px; align-items:center; justify-content:space-between; background:linear-gradient(transparent,rgba(19,3,6,.8)); color:white; }
+  .presentation-count { display:flex; gap:9px; font-size:14px; font-variant-numeric:tabular-nums; font-weight:500; }
+  .count-divider { opacity:.5; }
+  .presentation-arrows { display:flex; gap:8px; }
+  .presentation-arrows button { width:44px; height:44px; display:grid; place-items:center; padding:10px; background:#fffaf5; border:0; border-radius:7px; color:#28060c; cursor:pointer; }
+  .presentation-arrows button:hover { background:#ead9d6; }
+  .presentation-arrows svg { width:22px; height:22px; }
+  .presentation-caption { display:none; }
+  .brand-preview { position:absolute; inset:0; }
+  .brand-image { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; opacity:0; transition:opacity .8s ease; }
+  .brand-image.active { opacity:1; }
+  .brand-motion { position:absolute; right:18px; top:18px; background:#1c0a1080; color:white; border:1px solid #ffffff40; border-radius:50%; width:32px; height:32px; font-size:13px; cursor:pointer; }
+  .is-compact .presentation-layout { grid-template-columns:minmax(0,1fr); gap:0; }
+  .is-compact .presentation-navigation { position:absolute; width:var(--desktop-menu-width); height:0; overflow:hidden; visibility:hidden; pointer-events:none; }
+  .is-compact .presentation-menu { position:relative; }
+  .is-compact .presentation-main { max-width:600px; width:100%; margin:0 auto; }
+  .is-compact .presentation-controls { display:flex; }
+  .is-compact .presentation-caption { display:block; padding-top:22px; min-height:140px; }
+  .presentation-caption h3 { color:var(--story-text,#fffaf5); font-size:22px; font-weight:600; letter-spacing:-.035em; margin:0 0 10px; }
+  .presentation-caption p { color:var(--story-muted,#b9aaad); font-size:15px; line-height:1.5; margin:0; }
+  @media(max-width:1100px) {
+    .presentation-layout { grid-template-columns:minmax(0,1fr); gap:0; }
+    .presentation-navigation { position:absolute; width:var(--desktop-menu-width,300px); height:0; overflow:hidden; visibility:hidden; pointer-events:none; }
+    .presentation-menu { position:relative; }
+    .presentation-main { max-width:600px; width:100%; margin:0 auto; }
+    .presentation-controls { display:flex; }
+    .presentation-caption { display:block; padding-top:22px; min-height:140px; }
+    .presentation-heading { margin-bottom:32px; }
+  }
+  @media(prefers-reduced-motion:reduce) { .brand-image, .presentation-tab, .presentation-tab::before { transition:none; } }
+</style>
+
+<script>
+  document.querySelectorAll<HTMLElement>('[data-presentation]').forEach(root => {
+    const tabs = Array.from(root.querySelectorAll<HTMLButtonElement>('[data-slide]'));
+    const panels = Array.from(root.querySelectorAll<HTMLElement>('[role="tabpanel"]'));
+    const layout = root.querySelector<HTMLElement>('.presentation-layout')!;
+    const navigation = root.querySelector<HTMLElement>('.presentation-navigation')!;
+    // Measure the five items at the desktop column width even while the compact view is active.
+    // The image determines the desktop height; switch views if the list cannot fit inside it.
+    const syncLayout = () => {
+      const width = layout.clientWidth;
+      const gap = Math.min(80, Math.max(36, innerWidth * .05));
+      const menuWidth = (width - gap) * .9 / 2.3;
+      const imageHeight = (width - gap) * 1.4 / 2.3 * 1341 / 1173;
+      root.style.setProperty('--desktop-menu-width', `${menuWidth}px`);
+      const requiredHeight = tabs.reduce((sum, tab) => sum + tab.scrollHeight, 0) + 16 * (tabs.length - 1);
+      const compact = innerWidth <= 1100 || requiredHeight > imageHeight;
+      root.classList.toggle('is-compact', compact);
+      navigation.inert = compact;
+      navigation.setAttribute('aria-hidden', String(compact));
+    };
+    new ResizeObserver(syncLayout).observe(layout);
+    document.fonts.ready.then(syncLayout);
+    window.addEventListener('resize', syncLayout);
+    syncLayout();
+    const video = root.querySelector('video')!;
+    const images = Array.from(root.querySelectorAll<HTMLElement>('.brand-image'));
+    const motionButton = root.querySelector<HTMLButtonElement>('.brand-motion')!;
+    const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+    let current = 0, brand = 0, visible = false, brandPlaying = !reducedMotion.matches;
+    let timer: ReturnType<typeof setInterval> | undefined;
+    const showBrand = (index: number) => {
+      brand = index;
+      images.forEach((image, i) => image.classList.toggle('active', i === brand));
+    };
+    const syncMedia = () => {
+      clearInterval(timer);
+      if (visible && !document.hidden && current === 0 && !reducedMotion.matches) video.play().catch(() => {});
+      else video.pause();
+      if (visible && !document.hidden && current === 3 && brandPlaying) timer = setInterval(() => showBrand((brand + 1) % images.length), 2200);
+      motionButton.setAttribute('aria-pressed', String(brandPlaying));
+      motionButton.setAttribute('aria-label', brandPlaying ? 'Приостановить смену цветов' : 'Включить смену цветов');
+      motionButton.textContent = brandPlaying ? 'Ⅱ' : '▶';
+    };
+    const show = (index: number) => {
+      current = (index + tabs.length) % tabs.length;
+      tabs.forEach((tab, i) => {
+        tab.classList.toggle('active', i === current);
+        tab.setAttribute('aria-selected', String(i === current));
+        tab.tabIndex = i === current ? 0 : -1;
+        panels[i].hidden = i !== current;
+      });
+      root.querySelector('[data-slide-number]')!.textContent = String(current + 1);
+      root.querySelector('[data-caption-title]')!.textContent = tabs[current].querySelector('.presentation-tab-title')!.textContent;
+      root.querySelector('[data-caption-text]')!.textContent = tabs[current].querySelector('.presentation-tab-description')!.textContent;
+      syncLayout();
+      syncMedia();
+    };
+    tabs.forEach((tab, i) => {
+      tab.addEventListener('click', () => show(i));
+      tab.addEventListener('keydown', event => {
+        let next = i;
+        if (event.key === 'ArrowDown' || event.key === 'ArrowRight') next++;
+        else if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') next--;
+        else if (event.key === 'Home') next = 0;
+        else if (event.key === 'End') next = tabs.length - 1;
+        else return;
+        event.preventDefault(); show(next); tabs[current].focus();
+      });
+    });
+    root.querySelector('[data-prev]')!.addEventListener('click', () => show(current - 1));
+    root.querySelector('[data-next]')!.addEventListener('click', () => show(current + 1));
+    motionButton.addEventListener('click', () => { brandPlaying = !brandPlaying; syncMedia(); });
+    reducedMotion.addEventListener('change', () => { brandPlaying = !reducedMotion.matches; video.controls = reducedMotion.matches; syncMedia(); });
+    video.controls = reducedMotion.matches;
+    document.addEventListener('visibilitychange', syncMedia);
+    new IntersectionObserver(([entry]) => { visible = entry.isIntersecting; syncMedia(); }, {threshold:0.15}).observe(root.querySelector('.presentation-stage')!);
+    syncMedia();
+  });
+</script>

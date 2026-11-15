@@ -4,6 +4,7 @@ import Faq from "./Faq.astro";
 import Pricing from "./Pricing.astro";
 import Integrations from "./Integrations.astro";
 import BrandSlider from "./BrandSlider.astro";
+import ProductPresentation from "./ProductPresentation.astro";
 const demo = "https://delivest-client.shafranov.tech/kovrov";
 const mark = logo
   .replaceAll(' fill="#48010c"', "")
@@ -17,21 +18,15 @@ const mark = logo
   <section class="hero" aria-labelledby="hero-title">
     <div class="wrap hero-inner">
       <div class="hero-copy">
-        <span class="eyebrow pale">Delivest · для ресторанных сетей</span>
         <h1 id="hero-title">
-          Сайт и мобильное<br />приложение <em>для вашей сети.</em>
+          Сайт и мобильное приложение <em>для вашей сети.</em>
         </h1>
-        <p>
-          Принимайте онлайн-заказы под своим брендом. Для каждой точки настройте
-          меню и зону доставки. Мобильное приложение под вашим брендом — в Pro;
-          запуск и публикацию согласуем при подключении.
-        </p>
         <div class="actions">
           <button class="pill gold" type="button" data-lead="pricing">
             Обсудить подключение <span>↗</span>
           </button>
-          <a class="under pale-link" href={demo} target="_blank" rel="noopener">
-            Посмотреть демо-сайт ↗
+          <a class="pill hero-demo" href={demo} target="_blank" rel="noopener">
+            Посмотреть демо-сайт <span aria-hidden="true">↗</span>
           </a>
         </div>
         <p class="trial-note">Первые 2 месяца подписки бесплатно — с запуска сайта.</p>
@@ -39,36 +34,10 @@ const mark = logo
     </div>
   </section>
 
-  <BrandSlider />
-
-  <section class="section intro" id="app" aria-labelledby="intro-title">
+  <section class="product-overview intro" id="app" aria-label="Сайт ресторана на компьютере и телефоне">
     <div class="wrap">
-      <div class="section-top">
-        <span class="eyebrow">Сайт ресторана</span>
-      </div>
-      <div class="intro-grid">
-        <div class="copy">
-          <h2 id="intro-title">Ваше меню<br /><em>под вашим брендом.</em></h2>
-          <p class="lead">
-            Меню, фотографии, акции и оформление складываются в узнаваемое
-            пространство вашего бренда. Гость может заказать с телефона или
-            компьютера.
-          </p>
-          <p>
-            Ссылка на ваш сайт работает в соцсетях, рекламе, на упаковке и в
-            самом ресторане. По ней человек попадает сразу к вам.
-          </p>
-          <a class="under" href={demo} target="_blank" rel="noopener">
-            Посмотреть живой пример ↗
-          </a>
-        </div>
         <div class="intro-visual">
-          <button
-            class="desktop shot"
-            type="button"
-            data-enlarge="desktop"
-            aria-label="Увеличить снимок сайта гостя на компьютере"
-          >
+          <div class="desktop shot">
             <img
               class="light"
               src="/franchise/desktop-light.webp"
@@ -85,14 +54,8 @@ const mark = logo
               height="651"
               loading="lazy"
             />
-            <span>Увеличить ↗</span>
-          </button>
-          <button
-            class="intro-phone shot"
-            type="button"
-            data-enlarge="mobile-menu"
-            aria-label="Увеличить меню на телефоне"
-          >
+          </div>
+          <div class="intro-phone shot">
             <img
               src="/franchise/mobile-menu.webp"
               alt="Мобильное меню ресторана с акциями, категориями и ценами на бургеры"
@@ -100,102 +63,14 @@ const mark = logo
               height="806"
               loading="lazy"
             />
-          </button>
+          </div>
         </div>
-      </div>
-      <div class="app-line">
-        <div>
-          <span class="eyebrow">В кармане у гостя</span>
-          <h3>Приложение под вашим брендом — в тарифе Pro.</h3>
-        </div>
-        <div class="app-platforms">
-          <p>Запуск приложения и публикацию в магазинах согласуем при подключении.</p>
-          <ul aria-label="Магазины приложений">
-            <li><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24"><path fill="currentColor" d="m8.809 14.92l6.11-11.037c.084-.152.168-.302.244-.459c.069-.142.127-.285.165-.44c.08-.326.058-.666-.066-.977a1.5 1.5 0 0 0-.62-.735a1.42 1.42 0 0 0-.922-.193c-.32.043-.613.194-.844.43c-.11.11-.2.235-.283.368c-.092.146-.175.298-.259.45l-.386.697l-.387-.698c-.084-.151-.167-.303-.259-.449a2.2 2.2 0 0 0-.283-.369a1.45 1.45 0 0 0-.844-.429a1.42 1.42 0 0 0-.921.193a1.5 1.5 0 0 0-.62.735a1.6 1.6 0 0 0-.066.977c.038.155.096.298.164.44c.076.157.16.307.244.459l1.248 2.254l-4.862 8.782H2.03c-.168 0-.336 0-.503.01c-.152.009-.3.028-.448.071c-.31.09-.582.28-.778.548A1.58 1.58 0 0 0 .3 17.404c.197.268.468.457.779.548c.148.043.296.062.448.071c.167.01.335.01.503.01h13.097a2 2 0 0 0 .1-.27c.415-1.416-.616-2.844-2.035-2.844zm-5.696 3.622l-.792 1.5c-.082.156-.165.31-.239.471a2.4 2.4 0 0 0-.16.452a1.7 1.7 0 0 0 .064 1.003c.121.318.334.583.607.755s.589.242.901.197c.314-.044.6-.198.826-.44c.108-.115.196-.242.278-.378c.09-.15.171-.306.253-.462L6 19.464c-.09-.15-.947-1.47-2.887-.922m20.586-3.006a1.47 1.47 0 0 0-.779-.54a2 2 0 0 0-.448-.071c-.168-.01-.335-.01-.503-.01h-3.321L14.258 7.1a4.06 4.06 0 0 0-1.076 2.198a4.64 4.64 0 0 0 .546 3l5.274 9.393c.084.15.167.3.259.444c.084.13.174.253.283.364c.231.232.524.38.845.423s.643-.024.922-.19a1.5 1.5 0 0 0 .621-.726c.125-.307.146-.642.066-.964a2.2 2.2 0 0 0-.165-.434c-.075-.155-.16-.303-.244-.453l-1.216-2.166h1.596c.168 0 .335 0 .503-.009c.152-.009.3-.028.448-.07a1.47 1.47 0 0 0 .78-.541a1.54 1.54 0 0 0 .3-.916a1.54 1.54 0 0 0-.3-.916"/></svg><span>App Store</span></li>
-            <li><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24"><path fill="currentColor" d="m22.018 13.298l-3.919 2.218l-3.515-3.493l3.543-3.521l3.891 2.202a1.49 1.49 0 0 1 0 2.594M1.337.924a1.5 1.5 0 0 0-.112.568v21.017c0 .217.045.419.124.6l11.155-11.087zm12.207 10.065l3.258-3.238L3.45.195a1.47 1.47 0 0 0-.946-.179zm0 2.067l-11 10.933c.298.036.612-.016.906-.183l13.324-7.54z"/></svg><span>Google Play</span></li>
-            <li><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 48 48"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" d="m8.574 14.79l10.488 2.574c2.51.653 2.997 2.292 2.958 4.227l.039 17.484c-.039 2.054-1.558 2.998-3.535 2.459L8.036 38.998c-1.909-.458-2.46-1.427-2.536-3.612l.077-17.369c.127-2.586 1.303-3.481 2.996-3.228Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" d="m15.767 16.555l.106-3.649c-.106-1.553 1.18-2.588 2.651-2.305l10.988 2.651c2.01.36 2.613 1.382 2.651 3.343l.192 18.33c.005 1.65-.565 2.97-2.497 2.497l-7.8-1.64"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" d="m25.879 12.375l-.017-3.196c.017-2.424 1.346-3.146 3.035-2.767l10.22 2.421c1.973.553 3.448 1.524 3.38 3.804V30.66c0 1.152-.837 2.994-3.764 2.46l-6.41-1.172"/></svg><span>RuStore</span></li>
-          </ul>
-        </div>
-      </div>
     </div>
   </section>
 
-  <section class="section guest" aria-labelledby="guest-title">
-    <div class="wrap guest-grid">
-      <div class="copy">
-        <span class="eyebrow">Глазами гостя</span>
-        <h2 id="guest-title">
-          Заказ начинается<br />
-          <em>с желания.</em>
-        </h2>
-        <p class="lead">
-          Понятное меню, детали блюда и корзина ведут гостя к оформлению заказа.
-          Покажите свой ресторан в светлом или тёмном оформлении.
-        </p>
-        <div
-          class="theme-switch"
-          role="group"
-          aria-label="Оформление примера сайта гостя"
-        >
-          <button type="button" data-guest-theme="light" aria-pressed="true">
-            Светлое
-          </button>
-          <button type="button" data-guest-theme="dark" aria-pressed="false">
-            Тёмное
-          </button>
-        </div>
-      </div>
-      <div class="guest-stage" data-screen-theme="light">
-        <button
-          class="phone product"
-          type="button"
-          data-enlarge="product"
-          aria-label="Увеличить карточку блюда"
-        >
-          <img
-            class="light"
-            src="/franchise/product-light.webp"
-            alt="Карточка блюда, светлая тема"
-            width="330"
-            height="718"
-            loading="lazy"
-          />
-          <img
-            class="dark"
-            src="/franchise/product-dark.webp"
-            alt="Карточка блюда, тёмная тема"
-            width="330"
-            height="718"
-            loading="lazy"
-          />
-        </button>
-        <button
-          class="phone checkout"
-          type="button"
-          data-enlarge="checkout"
-          aria-label="Увеличить оформление заказа"
-        >
-          <img
-            class="light"
-            src="/franchise/checkout-light.webp"
-            alt="Оформление заказа, светлая тема"
-            width="374"
-            height="718"
-            loading="lazy"
-          />
-          <img
-            class="dark"
-            src="/franchise/checkout-dark.webp"
-            alt="Оформление заказа, тёмная тема"
-            width="374"
-            height="718"
-            loading="lazy"
-          />
-        </button>
-        <span>Меню → блюдо → заказ</span>
-      </div>
-    </div>
-  </section>
+  <BrandSlider />
+
+  <ProductPresentation />
 
   <section
     class="photo-split launch"
@@ -217,10 +92,10 @@ const mark = logo
         Одна сеть.<br /><em>Свои условия у каждой точки.</em>
       </h2>
       <p>
-        Управляйте несколькими филиалами в одной системе. У каждой точки могут
-        быть своё меню, цены, часы работы и зоны доставки.
+        Все филиалы — в одной системе. Для каждой точки — своё меню, цены,
+        график и зоны доставки.
       </p>
-      <p class="launch-support">Поможем подготовить и запустить каждую точку — настройка и сопровождение входят в оба тарифа.</p>
+      <p class="launch-support">Настройка и сопровождение каждой точки — в обоих тарифах.</p>
       <button class="pill cream" type="button" data-lead="pricing">
         Обсудить подключение <span>↗</span>
       </button>
@@ -233,33 +108,33 @@ const mark = logo
       <div class="onboarding-heading">
         <div class="onboarding-intro">
           <h2 id="onboarding-title">Запуск и сопровождение<br /><em>берём на себя.</em></h2>
-          <p>Полная стартовая настройка сайта, товаров и поддерживаемой CRM входит и в Базовый, и в Pro. После запуска поможем команде с маркетингом и материалами.</p>
+          <p>В обоих тарифах: настройка сайта, меню и поддерживаемой CRM. После запуска — помощь с маркетингом и контентом.</p>
         </div>
         <img class="onboarding-photo" src="/franchise/onboarding-workspace.webp" alt="Ноутбук с меню доставки, телефон, блюдо и упаковка на столе кафе" width="1536" height="1024" loading="lazy" />
       </div>
       <div class="onboarding-grid">
         <article>
-          <span class="onboarding-number">01 / Стартовая настройка</span>
-          <h3>Подготовим сайт и меню</h3>
-          <p>Создадим карточки товаров из материалов ресторана: категории, фото, описания и цены. Настроим точки для запуска.</p>
+          <span class="onboarding-number">01 · Запуск</span>
+          <h3>Сайт и меню</h3>
+          <p>Добавим блюда, фото и цены. Подготовим точки к запуску.</p>
         </article>
         <article>
-          <span class="onboarding-number">02 / Стартовая настройка</span>
-          <h3>Настроим CRM и приём заказов</h3>
-          <p>Подключим поддерживаемую ресторанную CRM, согласуем конфигурацию, настроим доступный обмен меню и заказами и проверим путь заказа.</p>
+          <span class="onboarding-number">02 · Запуск</span>
+          <h3>CRM и заказы</h3>
+          <p>Подключим поддерживаемую CRM и проверим приём заказов.</p>
         </article>
         <article>
-          <span class="onboarding-number">03 / Сопровождение</span>
-          <h3>Поможем с маркетингом</h3>
-          <p>Подготовим акции, тексты, баннеры и предложения, которые помогут возвращать гостей.</p>
+          <span class="onboarding-number">03 · Поддержка</span>
+          <h3>Маркетинг</h3>
+          <p>Подготовим акции и баннеры, чтобы гости возвращались.</p>
         </article>
         <article>
-          <span class="onboarding-number">04 / Сопровождение</span>
-          <h3>AI-сопровождение команды</h3>
-          <p>Поможем с обработкой реальных фото блюд, описаниями меню и материалами акций с использованием AI.</p>
+          <span class="onboarding-number">04 · Поддержка</span>
+          <h3>AI-помощь</h3>
+          <p>Поможем с фото блюд, описаниями и контентом с помощью AI.</p>
         </article>
       </div>
-      <p class="onboarding-note">Материалы согласуем с рестораном до публикации. Состав работ и план сопровождения согласуем при подключении.</p>
+      <p class="onboarding-note">План работ согласуем при подключении, материалы — до публикации.</p>
     </div>
   </section>
 
@@ -501,24 +376,49 @@ const mark = logo
 </div>
 
 <script>
-  const landing = document.querySelector<HTMLElement>(".franchise");
-  const guest = document.querySelector<HTMLElement>(".guest");
-  if (landing && guest) {
-    const syncChapter = () => {
-      const {top, bottom} = guest.getBoundingClientRect();
-      const focusLine = innerHeight * 0.68;
-      landing.classList.toggle("reading-guest", top <= focusLine && bottom > 0);
+  const story = document.querySelector<HTMLElement>('.franchise');
+  const presentation = document.querySelector<HTMLElement>('#presentation');
+  const facts = document.querySelector<HTMLElement>('.facts-grid');
+  const onboarding = document.querySelector<HTMLElement>('.onboarding');
+  const onboardingGrid = onboarding?.querySelector<HTMLElement>('.onboarding-grid');
+  if (onboardingGrid && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    onboardingGrid.classList.add('assemble-ready');
+    const cardsObserver = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (!entry.isIntersecting) return;
+        entry.target.classList.add('is-assembled');
+        cardsObserver.unobserve(entry.target);
+      });
+    }, { threshold: .16, rootMargin: '0px 0px -40px 0px' });
+    onboardingGrid.querySelectorAll('article').forEach((card) => cardsObserver.observe(card));
+  }
+  if (story && presentation && facts && onboarding) {
+    const smooth = (value: number) => { const t = Math.max(0, Math.min(1, value)); return t * t * (3 - 2 * t); };
+    const mix = (from: number[], to: number[], amount: number) => `rgb(${from.map((v, i) => Math.round(v + (to[i] - v) * amount)).join(' ')})`;
+    const syncStoryBackground = () => {
+      const focus = innerHeight;
+      const start = facts.getBoundingClientRect().top;
+      const end = presentation.getBoundingClientRect().top;
+      const darken = smooth((focus * .78 - start) / Math.max(1, end - start + focus * .38));
+      const lighten = smooth((focus * .85 - onboarding.getBoundingClientRect().top) / (focus * .6));
+      const amount = darken * (1 - lighten);
+      story.style.setProperty('--story-bg', mix([245,238,232], [16,11,12], amount));
+      story.style.setProperty('--story-text', mix([36,5,11], [255,250,245], amount));
+      story.style.setProperty('--story-muted', mix([101,76,75], [185,170,173], amount));
+      story.style.setProperty('--story-idle', mix([125,99,102], [137,126,129], amount));
     };
-    let pending = false;
-    const scheduleChapter = () => {
-      if (pending) return;
-      pending = true;
-      requestAnimationFrame(() => { syncChapter(); pending = false; });
+    let scheduled = false;
+    const scheduleStoryBackground = () => {
+      if (scheduled) return;
+      scheduled = true;
+      requestAnimationFrame(() => { syncStoryBackground(); scheduled = false; });
     };
-    syncChapter();
-    window.addEventListener("scroll", scheduleChapter, { passive: true });
-    window.addEventListener("resize", scheduleChapter);
-    window.addEventListener("pageshow", scheduleChapter);
+    window.addEventListener('scroll', scheduleStoryBackground, {passive:true});
+    window.addEventListener('resize', scheduleStoryBackground);
+    window.addEventListener('pageshow', scheduleStoryBackground);
+    new ResizeObserver(scheduleStoryBackground).observe(story);
+    document.fonts.ready.then(scheduleStoryBackground);
+    syncStoryBackground();
   }
 
   const guestStage = document.querySelector<HTMLElement>(".guest-stage");
@@ -714,7 +614,7 @@ const mark = logo
     gap: 24px;
   }
   .hero {
-    min-height: calc(100dvh - var(--header-row-height) - 1px);
+    min-height: 0;
     position: relative;
     display: flex;
     color: var(--white);
@@ -728,24 +628,45 @@ const mark = logo
       linear-gradient(90deg, #170408e0 0%, #1e060aaa 35%, #1e060a2a 73%),
       linear-gradient(0deg, #19050980, transparent 28%);
   }
+  .hero::after {
+    content: "";
+    position: absolute;
+    inset-inline: 0;
+    bottom: -1px;
+    height: clamp(56px, 7vw, 96px);
+    background: linear-gradient(to bottom, #f5eee800 0%, #f5eee814 20%, #f5eee84d 42%, #f5eee899 64%, #f5eee8db 83%, var(--cream) 100%);
+    pointer-events: none;
+  }
   .hero-inner {
     position: relative;
     width: 100%;
     display: flex;
     flex-direction: column;
     justify-content: center;
-    padding-block: clamp(32px, 5vw, 72px);
+    padding-top: clamp(32px, 5vw, 72px);
+    padding-bottom: calc(clamp(56px, 7vw, 96px) + 72px);
   }
   .hero-copy {
     max-width: 840px;
   }
+  .hero .actions { display:grid; grid-template-columns:repeat(2,minmax(0,280px)); gap:12px; }
+  .hero .actions .pill { width:100%; height:56px; gap:16px; }
+  .hero-demo { background:#fffaf510; border-color:#fffaf580; color:var(--white); }
+  @media (hover: hover) and (prefers-reduced-motion: no-preference) {
+    .hero .pill { transform: none; }
+    .hero .pill span { transition: transform .22s var(--ease); }
+    .hero .pill:hover span { transform: translate(2px, -2px); }
+  }
+  .hero-demo:hover { background:#fffaf526; }
+
   .hero h1 {
     font-size: clamp(52px, 5.2vw, 84px);
     line-height: 0.97;
     color: var(--white);
-    margin: 24px 0 30px;
+    margin: 0 0 28px;
   }
   .hero h1 em {
+    display: block;
     color: #f1bd82;
   }
   .hero p {
@@ -852,20 +773,7 @@ const mark = logo
   .intro-phone img {
     border-radius: 8% / 4%;
   }
-  .intro-phone:hover {
-    transform: rotate(2deg) translateY(-4px);
-  }
-  .desktop > span {
-    position: absolute;
-    bottom: 14px;
-    right: 14px;
-    padding: 7px 10px;
-    background: #fffaf4;
-    color: #2d0a10;
-    font-size: 12px;
-    font-weight: 700;
-    border-radius: 3px;
-  }
+  .intro-visual .shot { cursor: default; }
   .app-line {
     display: grid;
     grid-template-columns: 1fr 1fr auto;
@@ -1032,6 +940,18 @@ const mark = logo
   .onboarding-photo { width: 100%; aspect-ratio: 3 / 2; height: auto; object-fit: cover; border-radius: 10px; }
   .onboarding-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
   .onboarding-grid article { min-width: 0; padding: clamp(24px, 3vw, 38px); border: 1px solid #d9c7bf; border-radius: 10px; background: #f4ece6; }
+  .onboarding-grid.assemble-ready article {
+    opacity: 0;
+    transform: translateY(12px);
+    transition: transform .42s var(--ease), opacity .36s ease-out;
+  }
+  .onboarding-grid.assemble-ready article.is-assembled { opacity: 1; transform: none; }
+  @media (min-width: 651px) {
+    .onboarding-grid.assemble-ready article:nth-child(even) { transition-delay: 50ms; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .onboarding-grid.assemble-ready article { opacity: 1; transform: none; transition: none; }
+  }
   .onboarding-number { color: #9e1c36; font-size: 12px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
   .onboarding-grid h3 { margin: 24px 0 14px; font-size: clamp(25px, 2.4vw, 33px); line-height: 1.15; }
   .onboarding-grid p { max-width: 510px; margin: 0; color: #624a47; font-size: 16px; }
@@ -1313,6 +1233,7 @@ const mark = logo
     }
   }
   @media (max-width: 650px) {
+    .hero .actions { grid-template-columns:minmax(0,1fr); max-width:360px; }
     .hero {
       background-position: 58% center;
     }
@@ -1322,10 +1243,11 @@ const mark = logo
         linear-gradient(0deg, #19070bc9, transparent 35%);
     }
     .hero-inner {
-      padding-block: 32px;
+      padding-top: 32px;
+      padding-bottom: 80px;
     }
     .hero h1 {
-      font-size: clamp(52px, 13vw, 76px);
+      font-size: clamp(34px, 10.8vw, 62px);
     }
     .hero p {
       font-size: 17px;
@@ -1435,17 +1357,57 @@ const mark = logo
   .app-platforms ul { display: flex; flex-wrap: wrap; gap: 8px; padding: 0; margin: 16px 0 0; list-style: none; }
   .app-platforms li { display: inline-flex; align-items: center; gap: 8px; background: #291419; color: #fff8f2; padding: 9px 13px; border-radius: 9px; font: 600 15px/1.3 Onest, sans-serif; }
   .app-platforms svg { width: 20px; height: 20px; }
-  .intro, .guest { background-color: var(--cream); transition: background-color .65s ease, color .45s ease; }
-  .reading-guest :is(.intro,.guest) { background-color: #290d16; color: #fff8f1; }
-  .reading-guest :is(.intro,.guest) :is(.lead,p,.under,.eyebrow,.section-top > span,.guest-stage > span) { color: #efdbd5; }
-  .reading-guest :is(.intro,.guest) h2 em { color: #ffc99d; }
-  .reading-guest .theme-switch button { color: #ffe7df; }
-  .reading-guest .theme-switch button[aria-pressed="true"] { background: #ffe3d3; color: #400c18; }
-  .reading-guest .app-platforms li { background: #fff1e6; color: #311019; }
   @media(max-width:650px){ .app-line { grid-template-columns: minmax(0,1fr); } }
-  @media(prefers-reduced-motion:reduce){ .intro,.guest { transition: none; } }
+  .product-overview { background:var(--cream); padding:clamp(32px,4vw,56px) 0 !important; }
+  .product-overview .intro-visual { max-width:1000px; margin-inline:auto; }
+  .launch { min-height:420px; }
+  .launch .photo-copy { padding:clamp(28px,4vw,56px); }
+  .launch h2 { font-size:clamp(32px,3.4vw,48px); margin:12px 0 18px; }
+  .launch p { font-size:16px; line-height:1.5; margin:0 0 16px; }
+  .launch .launch-support { margin:0 0 20px; font-size:14px; font-weight:500; }
+  @media(max-width:650px) {
+    .launch { min-height:0; }
+    .launch .photo { height:180px; }
+    .launch .photo-copy { padding:24px 20px 30px; }
+    .launch h2 { font-size:32px; margin:10px 0 14px; }
+    .launch p { font-size:14px; margin-bottom:12px; }
+    .launch .launch-support { font-size:13px; margin-bottom:16px; }
+    .launch .pill { min-height:46px; padding:11px 16px; font-size:14px; }
+    .onboarding.section { padding:36px 0 !important; }
+    .onboarding-heading { gap:18px; margin:16px 0 20px; }
+    .onboarding-intro h2 { font-size:30px; line-height:1.1; }
+    .onboarding-intro p { font-size:14px; line-height:1.45; margin-top:12px; }
+    .onboarding-photo { height:150px; aspect-ratio:auto; }
+    .onboarding-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+    .onboarding-grid article { padding:14px 12px; border-radius:9px; }
+    .onboarding-number { display:block; font-size:9px; line-height:1.3; letter-spacing:.045em; }
+    .onboarding-grid h3 { font-size:18px; line-height:1.15; margin:10px 0 7px; letter-spacing:-.03em; }
+    .onboarding-grid p { font-size:13px; line-height:1.4; }
+    .onboarding-note { font-size:12px; line-height:1.4; margin-top:14px; }
+  }
+  @media(max-width:440px) {
+    .onboarding-grid { grid-template-columns:1fr; gap:8px; }
+    .onboarding-grid article { padding:16px 18px; }
+    .onboarding-grid p { font-size:14px; }
+    .onboarding-grid h3 { margin:5px 0; }
+  }
 </style>
 <style is:global>
+  .franchise {
+    --story-bg:#f5eee8;
+    --story-text:#24050b;
+    --story-muted:#654c4b;
+    --story-idle:#7d6366;
+  }
+  .franchise :is(.product-overview,.brand-slider,.product-presentation,.launch,.onboarding) {
+    background:var(--story-bg) !important;
+    color:var(--story-text) !important;
+  }
+  .franchise .launch :is(p,.eyebrow),
+  .franchise .onboarding-heading p,
+  .franchise .onboarding-note { color:var(--story-muted) !important; }
+  .franchise .onboarding-grid article { color:#321418; }
+
   .closing-video {
     width: 96px;
     height: 70px;
