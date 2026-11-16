@@ -115,6 +115,24 @@ const names = ['Бордовый', 'Зелёный', 'Синий', 'Фиолет
 
 <script>
   document.querySelectorAll<HTMLElement>('[data-presentation]').forEach(root => {
+    let imagesPrimed = false;
+    const primeImages = () => {
+      if (imagesPrimed) return;
+      imagesPrimed = true;
+      root.querySelectorAll<HTMLImageElement>('.presentation-panel img').forEach(image => {
+        const preload = new Image();
+        preload.src = image.src;
+        preload.decode?.().catch(() => {});
+      });
+    };
+    const scheduleImages = () => {
+      if ('requestIdleCallback' in window) window.requestIdleCallback(primeImages, { timeout: 1500 });
+      else setTimeout(primeImages, 0);
+    };
+    if (document.documentElement.classList.contains('loading-done')) scheduleImages();
+    else window.addEventListener('landing:loaded', scheduleImages, { once: true });
+    root.addEventListener('pointerenter', primeImages, { once: true });
+    root.addEventListener('focusin', primeImages, { once: true });
     const tabs = Array.from(root.querySelectorAll<HTMLButtonElement>('[data-slide]'));
     const panels = Array.from(root.querySelectorAll<HTMLElement>('[role="tabpanel"]'));
     const layout = root.querySelector<HTMLElement>('.presentation-layout')!;

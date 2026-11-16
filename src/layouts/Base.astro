@@ -19,17 +19,75 @@ const site = 'https://delivest.shafranov.tech';
   <meta name="theme-color" content="#FFF8F0">
   <link rel="icon" href="/brand/favicon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/brand/apple-touch-icon.png">
+  <link rel="preload" as="image" href="/franchise/hero.webp" fetchpriority="high">
+  <script is:inline>
+    (() => {
+      const root = document.documentElement;
+      root.classList.add('loading-active');
+      let deadline;
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        clearTimeout(deadline);
+        root.classList.remove('loading-active');
+        root.classList.add('loading-done');
+        window.dispatchEvent(new Event('landing:loaded'));
+      };
+      window.addEventListener('landing:ready', finish, { once: true });
+      deadline = setTimeout(finish, 2000);
+      const dismiss = () => finish();
+      window.addEventListener('pointerdown', dismiss, { once: true, capture: true });
+      window.addEventListener('keydown', dismiss, { once: true, capture: true });
+    })();
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&family=Lora:ital,wght@1,500&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
 </head>
 <body id="top">
+  <div class="page-loader" aria-hidden="true">
+    <img src="/brand/loader.svg" alt="" width="520" height="350">
+    <span>Готовим для вас кое-что вкусное</span>
+  </div>
   <slot />
   <script>
+    const heroImage = new Image();
+    heroImage.src = '/franchise/hero.webp';
+    const heroReady = heroImage.decode?.().catch(() => {}) ?? Promise.resolve();
+    const fontsReady = document.fonts ? Promise.allSettled([
+      document.fonts.load('700 74px Onest'),
+      document.fonts.load('italic 500 74px Lora'),
+    ]) : Promise.resolve();
+    Promise.allSettled([heroReady, fontsReady]).then(() => {
+      window.dispatchEvent(new Event('landing:ready'));
+    });
+
+    const imageSafety = new IntersectionObserver(entries => entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        setTimeout(() => entry.target.dispatchEvent(new Event('image:safety')), 2000);
+        imageSafety.unobserve(entry.target);
+      }
+    }), { rootMargin: '300px' });
+    document.querySelectorAll<HTMLImageElement>('main img[loading="lazy"], .intro-visual img').forEach(img => {
+      if (img.matches('.brand-image, .light, .dark') || img.closest('.brand-slider')) return;
+      if (img.complete) return;
+      img.classList.add('image-pending');
+      const reveal = () => {
+        img.classList.remove('image-pending');
+        img.classList.add('image-ready');
+      };
+      img.addEventListener('load', reveal, { once: true });
+      img.addEventListener('error', reveal, { once: true });
+      img.addEventListener('image:safety', reveal, { once: true });
+      imageSafety.observe(img);
+    });
+
     const io = new IntersectionObserver(entries => entries.forEach(e => {
       if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); }
     }), { rootMargin: '0px 0px -8% 0px' });
     document.querySelectorAll('.reveal').forEach(el => io.observe(el));
+    document.documentElement.classList.add('reveal-ready');
   </script>
 </body>
 </html>
