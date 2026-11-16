@@ -27,3 +27,7 @@ Changed `src/layouts/Base.astro`, `src/styles/global.css`, `src/components/Franc
 Kirill approved replacing the logo, pizza and caption with three animated cream steam strokes on burgundy. The standalone preview is available at /brand/loader.svg.
 
 The loader now waits for decoding of the hero background and both eager intro screenshots. Font loading and input no longer control dismissal. Failed image requests settle independently and an eight-second fallback covers stalled requests. Verified on port 4326 in fresh Chrome contexts with delayed, failed and stalled mobile-menu requests. Build and diff check passed.
+
+## SEO — 2026-11-16, Europe/Moscow
+
+Canonical domain is https://delivest.ru/. The old host redirects preserving the path and query. Share previews use a versioned-by-name B2B cover with real restaurant screenshots. Added search metadata, WebSite/Organization JSON-LD, robots and sitemap; unknown paths return 404. Astro build and local production Nginx response checks passed. Search console ownership, indexing and messaging-app caches were not verified.

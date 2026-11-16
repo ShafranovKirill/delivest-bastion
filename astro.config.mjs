@@ -1,6 +1,6 @@
 import { defineConfig } from 'astro/config';
 
 export default defineConfig({
-  site: 'https://delivest.shafranov.tech',
+  site: 'https://delivest.ru',
   build: { inlineStylesheets: 'always' },
 });

@@ -1,9 +1,16 @@
 ---
 import '../styles/global.css';
 
-const title = 'Delivest — сайт доставки для ресторанной сети';
-const description = 'Сайт доставки под вашим брендом для всей сети. Первые 2 месяца подписки бесплатно с запуска сайта. Базовый от 3 000 ₽/мес, Pro с мобильным приложением от 6 000 ₽/мес после пробного периода.';
-const site = 'https://delivest.shafranov.tech';
+const title = 'Сайт и мобильное приложение доставки для ресторанной сети — Delivest';
+const description = 'Запустите доставку под брендом вашей ресторанной сети. Сайт, приложение, меню и зоны доставки для каждого филиала. Первые два месяца подписки бесплатно.';
+const site = Astro.site!.href;
+const cover = new URL('/brand/share-restaurant.jpg', site).href;
+const coverAlt = 'Delivest — сайт и приложение доставки для ресторанных сетей. Экраны заказа на компьютере и телефоне.';
+const organization = { '@type': 'Organization', '@id': site + '#organization', name: 'Delivest', url: site };
+const structuredData = { '@context': 'https://schema.org', '@graph': [
+  organization,
+  { '@type': 'WebSite', name: 'Delivest', url: site, inLanguage: 'ru', publisher: { '@id': organization['@id'] } },
+] };
 ---
 <!doctype html>
 <html lang="ru" data-theme="light">
@@ -12,10 +19,24 @@ const site = 'https://delivest.shafranov.tech';
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{title}</title>
   <meta name="description" content={description}>
+  <link rel="canonical" href={site}>
+  <meta property="og:type" content="website">
+  <meta property="og:locale" content="ru_RU">
+  <meta property="og:site_name" content="Delivest">
   <meta property="og:title" content={title}>
   <meta property="og:description" content={description}>
-  <meta property="og:image" content={`${site}/brand/og-image.png`}>
+  <meta property="og:image" content={cover}>
   <meta property="og:url" content={site}>
+  <meta property="og:image:type" content="image/jpeg">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content={coverAlt}>
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content={title}>
+  <meta name="twitter:description" content={description}>
+  <meta name="twitter:image" content={cover}>
+  <meta name="twitter:image:alt" content={coverAlt}>
+  <script type="application/ld+json" set:html={JSON.stringify(structuredData)} />
   <meta name="theme-color" content="#FFF8F0">
   <link rel="icon" href="/brand/favicon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/brand/apple-touch-icon.png">
