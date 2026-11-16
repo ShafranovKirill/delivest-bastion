@@ -59,10 +59,9 @@ body {
   overflow-x: hidden;
 }
 img { display: block; max-width: 100%; height: auto; }
-.page-loader { display: grid; position: fixed; inset: 0; z-index: 1000; align-content: center; justify-items: center; gap: 8px; padding: 24px; background: #48010c; color: #fff6f4; text-align: center; opacity: 0; visibility: hidden; pointer-events: none; transition: opacity .22s, visibility 0s .22s; }
-.page-loader img { width: min(520px, 90vw); }
-.page-loader span { font: 500 12px/1.5 "Onest", sans-serif; letter-spacing: .16em; text-transform: uppercase; }
-.loading-active .page-loader { opacity: 1; visibility: visible; pointer-events: auto; transition-delay: .12s, 0s; }
+.page-loader { display: grid; position: fixed; inset: 0; z-index: 1000; place-items: center; background: #48010c; opacity: 0; visibility: hidden; pointer-events: none; transition: opacity .28s ease-out, visibility 0s .28s; }
+.page-loader img { width: 88px; height: 88px; }
+.loading-active .page-loader { opacity: 1; visibility: visible; pointer-events: auto; transition: none; }
 .loading-active body > :not(.page-loader) { visibility: hidden; }
 .image-pending { opacity: 0; }
 .image-ready { animation: image-appear .5s ease-out both; }

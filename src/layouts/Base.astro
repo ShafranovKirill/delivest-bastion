@@ -35,10 +35,8 @@ const site = 'https://delivest.shafranov.tech';
         window.dispatchEvent(new Event('landing:loaded'));
       };
       window.addEventListener('landing:ready', finish, { once: true });
-      deadline = setTimeout(finish, 2000);
-      const dismiss = () => finish();
-      window.addEventListener('pointerdown', dismiss, { once: true, capture: true });
-      window.addEventListener('keydown', dismiss, { once: true, capture: true });
+      // Keep the landing accessible if a critical request stalls.
+      deadline = setTimeout(finish, 8000);
     })();
   </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -47,19 +45,15 @@ const site = 'https://delivest.shafranov.tech';
 </head>
 <body id="top">
   <div class="page-loader" aria-hidden="true">
-    <img src="/brand/loader.svg" alt="" width="520" height="350">
-    <span>Готовим для вас кое-что вкусное</span>
+    <img src="/brand/loader.svg" alt="" width="88" height="88">
   </div>
   <slot />
   <script>
     const heroImage = new Image();
     heroImage.src = '/franchise/hero.webp';
-    const heroReady = heroImage.decode?.().catch(() => {}) ?? Promise.resolve();
-    const fontsReady = document.fonts ? Promise.allSettled([
-      document.fonts.load('700 74px Onest'),
-      document.fonts.load('italic 500 74px Lora'),
-    ]) : Promise.resolve();
-    Promise.allSettled([heroReady, fontsReady]).then(() => {
+    const introImages = document.querySelectorAll<HTMLImageElement>('.intro-visual img[loading="eager"]');
+    const firstImages = [heroImage, ...introImages];
+    Promise.allSettled(firstImages.map(image => image.decode())).then(() => {
       window.dispatchEvent(new Event('landing:ready'));
     });
 
@@ -69,7 +63,7 @@ const site = 'https://delivest.shafranov.tech';
         imageSafety.unobserve(entry.target);
       }
     }), { rootMargin: '300px' });
-    document.querySelectorAll<HTMLImageElement>('main img[loading="lazy"], .intro-visual img').forEach(img => {
+    document.querySelectorAll<HTMLImageElement>('main img[loading="lazy"]').forEach(img => {
       if (img.matches('.brand-image, .light, .dark') || img.closest('.brand-slider')) return;
       if (img.complete) return;
       img.classList.add('image-pending');
