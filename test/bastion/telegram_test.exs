@@ -26,9 +26,7 @@ defmodule Bastion.TelegramTest do
 
       send(test_pid, {:telegram, List.last(conn.path_info), body})
 
-      if List.last(conn.path_info) == "sendWidget",
-        do: Req.Test.json(conn, %{"ok" => false, "description" => "Not Found: method not found"}),
-        else: Req.Test.json(conn, %{"ok" => true, "result" => %{"message_id" => 100}})
+      Req.Test.json(conn, %{"ok" => true, "result" => %{"message_id" => 100}})
     end)
 
     on_exit(fn ->
@@ -164,9 +162,6 @@ defmodule Bastion.TelegramTest do
       send(test_pid, {:telegram, List.last(conn.path_info), Jason.decode!(body)})
 
       case List.last(conn.path_info) do
-        "sendWidget" ->
-          Req.Test.json(conn, %{"ok" => false, "description" => "Not Found"})
-
         "editMessageText" ->
           conn
           |> Plug.Conn.put_status(400)
@@ -354,7 +349,48 @@ defmodule Bastion.TelegramTest do
     assert text =~ "(идёт)"
   end
 
+  test "a repeated stale confirmation cannot start a second concurrent command" do
+    instance = healthy(%{"name" => "Pizza"})
+    bring_online(instance)
+    press("y:restart:" <> instance.id)
+    assert_receive {:agent_got, "restart", %{}}
+    press("y:restart:" <> instance.id)
+    refute_received {:agent_got, "restart", _}
+    assert length(Instances.list_commands(instance.id)) == 1
+
+    assert_received {:telegram, "answerCallbackQuery",
+                     %{"text" => "Уже выполняется команда. Дождитесь результата."}}
+  end
+
+  test "webhook acknowledgement avoids a second outbound API call" do
+    instance = healthy(%{"name" => "Pizza"})
+
+    update = %{
+      "_telegram_acknowledged" => true,
+      "callback_query" => %{
+        "id" => "already-answered",
+        "data" => "i:" <> instance.id,
+        "message" => %{"message_id" => 7, "chat" => %{"id" => @chat}}
+      }
+    }
+
+    Bot.handle_update(update)
+    assert_received {:telegram, "editMessageText", %{"message_id" => 7}}
+    refute_received {:telegram, "answerCallbackQuery", _}
+  end
+
+  test "ordinary navigation acknowledges before editing the card" do
+    instance = healthy(%{"name" => "Pizza"})
+    press("i:" <> instance.id)
+    assert_receive {:telegram, method, _}
+    assert method == "answerCallbackQuery"
+    assert_receive {:telegram, "editMessageText", _}
+    refute_received {:telegram, _, _}
+  end
+
   test "the server polls updates and answers them" do
+    Application.put_env(:bastion, :telegram_polling, true)
+    on_exit(fn -> Application.put_env(:bastion, :telegram_polling, false) end)
     Req.Test.set_req_test_to_shared()
     on_exit(&Req.Test.set_req_test_to_private/0)
     test_pid = self()
@@ -366,9 +402,18 @@ defmodule Bastion.TelegramTest do
 
       result =
         case {List.last(conn.path_info), body["offset"]} do
-          {"getUpdates", nil} -> [message("/start")]
-          {"getUpdates", _offset} -> Process.sleep(1_000) && []
-          _ -> %{}
+          {"getUpdates", nil} ->
+            [message("/start")]
+
+          {"getUpdates", _offset} ->
+            send(test_pid, {:poll_waiting, self()})
+
+            receive do
+              :release_poll -> []
+            end
+
+          _ ->
+            %{}
         end
 
       Req.Test.json(conn, %{"ok" => true, "result" => result})
@@ -377,9 +422,12 @@ defmodule Bastion.TelegramTest do
     start_supervised!(Bastion.Telegram.Server)
 
     assert_receive {:telegram, "setMyCommands", %{"commands" => [%{"command" => "sites"}]}}
-    assert_receive {:telegram, "sendMessage", %{"chat_id" => @chat, "text" => text}}
-    assert text =~ "Пока ни один агент"
     assert_receive {:telegram, "getUpdates", %{"offset" => 2, "allowed_updates" => allowed}}
-    assert "widget_query" in allowed
+    assert allowed == ["message", "callback_query"]
+    assert_receive {:poll_waiting, poll_pid}
+    on_exit(fn -> Process.exit(poll_pid, :kill) end)
+    assert %{success: 1} = Oban.drain_queue(queue: :telegram)
+    assert_received {:telegram, "sendMessage", %{"chat_id" => @chat, "text" => text}}
+    assert text =~ "Пока ни один агент"
   end
 end

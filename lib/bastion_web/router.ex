@@ -32,6 +32,10 @@ defmodule BastionWeb.Router do
     delete "/logout", SessionController, :delete
   end
 
+  scope "/telegram", BastionWeb do
+    post "/webhook", TelegramController, :create
+  end
+
   scope "/agent", BastionWeb do
     put "/backups/:id", BackupController, :upload
     get "/backups/:id/file", BackupController, :file
