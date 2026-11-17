@@ -107,7 +107,7 @@ if config_env() == :prod do
   host = System.get_env("PHX_HOST") || "example.com"
 
   transport =
-    case System.get_env("TELEGRAM_TRANSPORT", "webhook") do
+    case System.get_env("TELEGRAM_TRANSPORT", "polling") do
       "webhook" -> :webhook
       "polling" -> :polling
       value -> raise "unsupported TELEGRAM_TRANSPORT: #{inspect(value)}"

@@ -58,14 +58,15 @@ defmodule Bastion.Telegram do
   defp encode_field(value) when is_map(value), do: Jason.encode!(value)
   defp encode_field(value), do: to_string(value)
 
-  # Pooled connections to Telegram go stale while the bastion is idle and a request sent
-  # into one only times out, so a request is sent again over a fresh connection.
+  # A proxy can silently lose a reused TLS tunnel. Close each HTTP/1 connection
+  # after the response so the next request starts with a fresh tunnel.
   @retry [
     retry: :transient,
     max_retries: 2,
     retry_delay: 500,
     receive_timeout: 10_000,
-    connect_options: [timeout: 3_000]
+    connect_options: [protocols: [:http1], timeout: 3_000],
+    headers: [{"connection", "close"}]
   ]
 
   def call(method, params, opts \\ []) do
