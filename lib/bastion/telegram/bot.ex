@@ -5,58 +5,37 @@ defmodule Bastion.Telegram.Bot do
   """
 
   alias Bastion.{Alerts, Backups, CrmAlerts, Instances, Telegram, Updates}
-  alias Bastion.Telegram.{Cards, Screens, Widget}
+  alias Bastion.Telegram.{Cards, Screens}
 
   require Logger
 
   @notify_actions ~w(update rollback agent_update start stop restart env_write restore)
   @commands [%{command: "sites", description: "Все сети"}]
 
+  @interactive [retry: false, receive_timeout: 3_000, request_timeout: 3_000]
+
   def setup do
-    Telegram.call("deleteWebhook", %{})
-    Telegram.call("setMyCommands", %{commands: @commands})
-  end
-
-  def handle_update(%{"widget_query" => query}) do
-    case Widget.resolve(query) do
-      {:ok, instance, action, confirmation} ->
-        message = %{"chat" => query["chat"], "message_id" => query["message_id"], "widget" => %{}}
-
-        callback =
-          Map.merge(query, %{
-            "message" => message,
-            "widget_request" => true,
-            "widget_instance" => instance.id
-          })
-
-        cond do
-          action in ["refresh", "cancel"] ->
-            answer(callback)
-            Widget.edit(query["chat"]["id"], query["message_id"], instance)
-
-          action == "confirm" and confirmation in ~w(update stop restart) ->
-            run(callback, instance, confirmation)
-
-          Screens.confirm?(action) ->
-            answer(callback)
-            Widget.edit(query["chat"]["id"], query["message_id"], instance, nil, action)
-
-          action in ~w(update start stop restart backup) ->
-            run(callback, instance, action)
-
-          true ->
-            answer(callback, "Действие недоступно")
-        end
-
-      :error ->
-        Telegram.call("answerWidgetQuery", %{
-          widget_query_id: query["id"],
-          data: "Карточка устарела или нет доступа. Откройте /sites."
+    delivery =
+      if Telegram.webhook?() do
+        Telegram.call("setWebhook", %{
+          url: Telegram.webhook_url(),
+          secret_token: Telegram.webhook_secret(),
+          allowed_updates: Telegram.allowed_updates(),
+          max_connections: 1
         })
+      else
+        Telegram.call("deleteWebhook", %{})
+      end
+
+    with {:ok, _} <- delivery,
+         {:ok, _} <- Telegram.call("setMyCommands", %{commands: @commands}) do
+      :ok
     end
   end
 
-  def handle_update(%{"callback_query" => %{"message" => %{"chat" => chat}} = query}) do
+  def handle_update(%{"callback_query" => %{"message" => %{"chat" => chat}} = query} = update) do
+    query = Map.put(query, "acknowledged", update["_telegram_acknowledged"] == true)
+
     if Telegram.allowed_chat?(chat["id"]),
       do: handle_callback(query),
       else: answer(query, "Нет доступа")
@@ -102,14 +81,6 @@ defmodule Bastion.Telegram.Bot do
   defp notify?(%{action: action}) when action in @notify_actions, do: true
   defp notify?(%{action: "logs", requested_by: "telegram" <> _}), do: true
   defp notify?(_command), do: false
-
-  defp update_card({:widget, chat_id, message_id}, command) do
-    if instance = Instances.get_instance(command.instance_id) do
-      notice = if command.status in ["ok", "error"], do: Screens.notice(command)
-      Widget.edit(chat_id, message_id, instance, notice)
-      if notice, do: Cards.delete(command.id)
-    end
-  end
 
   defp update_card({chat_id, message_id} = card, command) do
     with %{} = instance <- Instances.get_instance(command.instance_id) do
@@ -274,7 +245,18 @@ defmodule Bastion.Telegram.Bot do
   defp run(query, _instance, action) when action not in ~w(update start stop restart backup logs),
     do: answer(query, "Действие недоступно")
 
-  defp run(%{"message" => message} = query, instance, action) do
+  defp run(query, instance, action) do
+    case Instances.running_command(instance.id) do
+      nil ->
+        dispatch(query, instance, action)
+
+      _command ->
+        answer(query, "Уже выполняется команда. Дождитесь результата.")
+        edit(query, Screens.instance(instance))
+    end
+  end
+
+  defp dispatch(%{"message" => message} = query, instance, action) do
     requested_by = requester(query["from"])
 
     sent =
@@ -287,9 +269,7 @@ defmodule Bastion.Telegram.Bot do
 
     case sent do
       {:ok, command} ->
-        if message["widget"],
-          do: Cards.put_widget(command.id, message["chat"]["id"], message["message_id"]),
-          else: Cards.put(command.id, message["chat"]["id"], message["message_id"])
+        Cards.put(command.id, message["chat"]["id"], message["message_id"])
 
         answer(query)
 
@@ -313,23 +293,19 @@ defmodule Bastion.Telegram.Bot do
   end
 
   defp show(query, screen) do
+    answer(query)
+
     case edit(query, screen) do
       {:error, reason} -> answer(query, "Telegram: #{reason}")
-      _ -> answer(query)
+      result -> result
     end
   end
 
-  defp show_instance(query, instance) do
-    case Widget.send(instance, query["message"]["chat"]["id"]) do
-      {:ok, _} -> answer(query)
-      _ -> show(query, Screens.instance(instance))
-    end
-  end
+  defp show_instance(query, instance), do: show(query, Screens.instance(instance))
 
   defp answer(query, text \\ nil)
 
-  defp answer(%{"widget_request" => true} = query, text),
-    do: Telegram.call("answerWidgetQuery", %{widget_query_id: query["id"], data: text || ""})
+  defp answer(%{"acknowledged" => true}, nil), do: :ok
 
   defp answer(query, text) do
     params =
@@ -337,34 +313,25 @@ defmodule Bastion.Telegram.Bot do
         do: %{callback_query_id: query["id"], text: String.slice(text, 0, 200)},
         else: %{callback_query_id: query["id"]}
 
-    Telegram.call("answerCallbackQuery", params)
-  end
-
-  defp edit(%{"widget_instance" => id, "message" => message}, _screen),
-    do: Widget.edit(message["chat"]["id"], message["message_id"], Instances.get_instance(id))
-
-  defp edit(%{"message" => %{"widget" => _} = message}, _screen) do
-    case Cards.session(message["chat"]["id"], message["message_id"]) do
-      %{instance_id: id} ->
-        Widget.edit(message["chat"]["id"], message["message_id"], Instances.get_instance(id))
-
-      _ ->
-        :ignored
-    end
+    Telegram.call("answerCallbackQuery", params, @interactive)
   end
 
   defp edit(%{"message" => message}, screen),
     do: edit({message["chat"]["id"], message["message_id"]}, screen)
 
   defp edit({chat_id, message_id}, {text, buttons}) do
-    case Telegram.call("editMessageText", %{
-           chat_id: chat_id,
-           message_id: message_id,
-           text: text,
-           parse_mode: "HTML",
-           reply_markup: Telegram.keyboard(buttons),
-           link_preview_options: %{is_disabled: true}
-         }) do
+    case Telegram.call(
+           "editMessageText",
+           %{
+             chat_id: chat_id,
+             message_id: message_id,
+             text: text,
+             parse_mode: "HTML",
+             reply_markup: Telegram.keyboard(buttons),
+             link_preview_options: %{is_disabled: true}
+           },
+           @interactive
+         ) do
       {:error, "Bad Request: message is not modified" <> _} -> {:ok, :not_modified}
       {:error, reason} -> log_failure("editMessageText", reason, text)
       result -> result
@@ -380,20 +347,21 @@ defmodule Bastion.Telegram.Bot do
   end
 
   defp edit_buttons(%{"message" => message}, buttons) do
-    Telegram.call("editMessageReplyMarkup", %{
-      chat_id: message["chat"]["id"],
-      message_id: message["message_id"],
-      reply_markup: Telegram.keyboard(buttons)
-    })
+    Telegram.call(
+      "editMessageReplyMarkup",
+      %{
+        chat_id: message["chat"]["id"],
+        message_id: message["message_id"],
+        reply_markup: Telegram.keyboard(buttons)
+      },
+      @interactive
+    )
   end
 
   defp send_screen(screen, chat_id, params \\ %{})
 
   defp send_screen({:instance, instance}, chat_id, params) do
-    case Widget.send(instance, chat_id, params) do
-      {:ok, _} = result -> result
-      _ -> send_screen(Screens.instance(instance), chat_id, params)
-    end
+    send_screen(Screens.instance(instance), chat_id, params)
   end
 
   defp send_screen({text, buttons}, chat_id, params) do
@@ -405,7 +373,8 @@ defmodule Bastion.Telegram.Bot do
              parse_mode: "HTML",
              reply_markup: Telegram.keyboard(buttons),
              link_preview_options: %{is_disabled: true}
-           })
+           }),
+           @interactive
          ) do
       {:error, reason} -> log_failure("sendMessage", reason, text)
       result -> result

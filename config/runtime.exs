@@ -106,6 +106,17 @@ if config_env() == :prod do
 
   host = System.get_env("PHX_HOST") || "example.com"
 
+  transport =
+    case System.get_env("TELEGRAM_TRANSPORT", "webhook") do
+      "webhook" -> :webhook
+      "polling" -> :polling
+      value -> raise "unsupported TELEGRAM_TRANSPORT: #{inspect(value)}"
+    end
+
+  config :bastion,
+    telegram_transport: transport,
+    telegram_webhook_url: "https://#{host}/telegram/webhook"
+
   config :bastion, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")
 
   config :bastion, BastionWeb.Endpoint,

@@ -1,12 +1,12 @@
 defmodule Bastion.Telegram.Server do
-  @moduledoc "Long polls the bot updates and reports finished commands to the chat."
+  @moduledoc "Registers the bot transport and queues updates and command notifications."
 
   use GenServer
 
   require Logger
 
   alias Bastion.{Instances, Telegram}
-  alias Bastion.Telegram.Bot
+  alias Bastion.Telegram.{Bot, UpdateWorker}
 
   @poll_timeout 25
   @retry_ms 5_000
@@ -22,8 +22,15 @@ defmodule Bastion.Telegram.Server do
 
   @impl true
   def handle_info(:setup, state) do
-    Bot.setup()
-    {:noreply, poll(state)}
+    case Bot.setup() do
+      :ok ->
+        {:noreply, poll(state)}
+
+      {:error, _reason} ->
+        Logger.warning("telegram transport setup failed; retrying")
+        Process.send_after(self(), :setup, @retry_ms)
+        {:noreply, state}
+    end
   end
 
   def handle_info(:poll, state), do: {:noreply, poll(state)}
@@ -33,36 +40,56 @@ defmodule Bastion.Telegram.Server do
 
     case result do
       {:ok, updates} when is_list(updates) ->
-        offset = Enum.reduce(updates, state.offset, &handle_update/2)
-        {:noreply, poll(%{state | poll: nil, offset: offset})}
+        case enqueue_updates(updates, state.offset) do
+          {:ok, offset} -> {:noreply, poll(%{state | poll: nil, offset: offset})}
+          {:error, offset} -> {:noreply, retry(%{state | offset: offset})}
+        end
 
-      error ->
-        Logger.warning("telegram polling failed: #{inspect(error)}")
+      _error ->
+        Logger.warning("telegram polling failed; retrying")
         {:noreply, retry(state)}
     end
   end
 
-  def handle_info({:DOWN, ref, :process, _pid, reason}, %{poll: %Task{ref: ref}} = state) do
-    Logger.warning("telegram polling crashed: #{inspect(reason)}")
+  def handle_info({:DOWN, ref, :process, _pid, _reason}, %{poll: %Task{ref: ref}} = state) do
+    Logger.warning("telegram polling task exited; retrying")
     {:noreply, retry(state)}
   end
 
   def handle_info({:command_updated, command}, state) do
-    safely(fn -> Bot.command_updated(command) end)
+    case UpdateWorker.enqueue_command(command) do
+      {:ok, _job} -> :ok
+      {:error, _reason} -> Logger.error("telegram command notification enqueue failed")
+    end
+
     {:noreply, state}
   end
 
   def handle_info(_message, state), do: {:noreply, state}
 
-  defp handle_update(update, _offset) do
-    safely(fn -> Bot.handle_update(update) end)
-    update["update_id"] + 1
+  defp enqueue_updates(updates, offset) do
+    Enum.reduce_while(updates, {:ok, offset}, fn
+      %{"update_id" => id} = update, {:ok, offset} when is_integer(id) ->
+        case UpdateWorker.enqueue_update(update) do
+          {:ok, _job} -> {:cont, {:ok, max(id + 1, offset || 0)}}
+          {:error, _reason} -> {:halt, {:error, offset}}
+        end
+
+      _, {:ok, offset} ->
+        {:halt, {:error, offset}}
+    end)
   end
 
+  defp poll(%{poll: %Task{}} = state), do: state
+
   defp poll(state) do
+    if Telegram.polling?(), do: start_poll(state), else: state
+  end
+
+  defp start_poll(state) do
     params = %{
       timeout: @poll_timeout,
-      allowed_updates: ["message", "callback_query", "widget_query"]
+      allowed_updates: Telegram.allowed_updates()
     }
 
     params = if state.offset, do: Map.put(params, :offset, state.offset), else: params
@@ -81,12 +108,5 @@ defmodule Bastion.Telegram.Server do
   defp retry(state) do
     Process.send_after(self(), :poll, @retry_ms)
     %{state | poll: nil}
-  end
-
-  defp safely(fun) do
-    fun.()
-  rescue
-    error ->
-      Logger.error("telegram bot failed: " <> Exception.format(:error, error, __STACKTRACE__))
   end
 end
