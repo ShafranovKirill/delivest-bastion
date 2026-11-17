@@ -5,7 +5,7 @@ defmodule Bastion.Telegram.Bot do
   """
 
   alias Bastion.{Alerts, Backups, CrmAlerts, Instances, Telegram, Updates}
-  alias Bastion.Telegram.{Cards, Screens}
+  alias Bastion.Telegram.{Cards, Screens, Widget}
 
   require Logger
 
@@ -15,6 +15,45 @@ defmodule Bastion.Telegram.Bot do
   def setup do
     Telegram.call("deleteWebhook", %{})
     Telegram.call("setMyCommands", %{commands: @commands})
+  end
+
+  def handle_update(%{"widget_query" => query}) do
+    case Widget.resolve(query) do
+      {:ok, instance, action, confirmation} ->
+        message = %{"chat" => query["chat"], "message_id" => query["message_id"], "widget" => %{}}
+
+        callback =
+          Map.merge(query, %{
+            "message" => message,
+            "widget_request" => true,
+            "widget_instance" => instance.id
+          })
+
+        cond do
+          action in ["refresh", "cancel"] ->
+            answer(callback)
+            Widget.edit(query["chat"]["id"], query["message_id"], instance)
+
+          action == "confirm" and confirmation in ~w(update stop restart) ->
+            run(callback, instance, confirmation)
+
+          Screens.confirm?(action) ->
+            answer(callback)
+            Widget.edit(query["chat"]["id"], query["message_id"], instance, nil, action)
+
+          action in ~w(update start stop restart backup) ->
+            run(callback, instance, action)
+
+          true ->
+            answer(callback, "Действие недоступно")
+        end
+
+      :error ->
+        Telegram.call("answerWidgetQuery", %{
+          widget_query_id: query["id"],
+          data: "Карточка устарела или нет доступа. Откройте /sites."
+        })
+    end
   end
 
   def handle_update(%{"callback_query" => %{"message" => %{"chat" => chat}} = query}) do
@@ -63,6 +102,14 @@ defmodule Bastion.Telegram.Bot do
   defp notify?(%{action: action}) when action in @notify_actions, do: true
   defp notify?(%{action: "logs", requested_by: "telegram" <> _}), do: true
   defp notify?(_command), do: false
+
+  defp update_card({:widget, chat_id, message_id}, command) do
+    if instance = Instances.get_instance(command.instance_id) do
+      notice = if command.status in ["ok", "error"], do: Screens.notice(command)
+      Widget.edit(chat_id, message_id, instance, notice)
+      if notice, do: Cards.delete(command.id)
+    end
+  end
 
   defp update_card({chat_id, message_id} = card, command) do
     with %{} = instance <- Instances.get_instance(command.instance_id) do
@@ -114,7 +161,7 @@ defmodule Bastion.Telegram.Bot do
       end)
 
     case matches do
-      [instance] -> Screens.instance(instance)
+      [instance] -> {:instance, instance}
       [] -> Screens.not_found(String.trim(text))
       matches -> Screens.instances(matches, "Найдено")
     end
@@ -126,7 +173,13 @@ defmodule Bastion.Telegram.Bot do
         show(query, Screens.instances())
 
       ["i", id] ->
-        with_instance(query, id, &show(query, Screens.instance(&1)))
+        with_instance(query, id, &show_instance(query, &1))
+
+      ["f", id] ->
+        with_instance(query, id, fn instance ->
+          answer(query)
+          send_screen(Screens.instance(instance), query["message"]["chat"]["id"])
+        end)
 
       ["o", id] ->
         with_instance(query, id, &open(query, &1))
@@ -173,7 +226,7 @@ defmodule Bastion.Telegram.Bot do
   defp open(%{"message" => message} = query, instance) do
     answer(query)
 
-    send_screen(Screens.instance(instance), message["chat"]["id"], %{
+    send_screen({:instance, instance}, message["chat"]["id"], %{
       reply_parameters: %{message_id: message["message_id"], allow_sending_without_reply: true}
     })
   end
@@ -218,6 +271,9 @@ defmodule Bastion.Telegram.Bot do
       else: run(query, instance, action)
   end
 
+  defp run(query, _instance, action) when action not in ~w(update start stop restart backup logs),
+    do: answer(query, "Действие недоступно")
+
   defp run(%{"message" => message} = query, instance, action) do
     requested_by = requester(query["from"])
 
@@ -231,7 +287,10 @@ defmodule Bastion.Telegram.Bot do
 
     case sent do
       {:ok, command} ->
-        Cards.put(command.id, message["chat"]["id"], message["message_id"])
+        if message["widget"],
+          do: Cards.put_widget(command.id, message["chat"]["id"], message["message_id"]),
+          else: Cards.put(command.id, message["chat"]["id"], message["message_id"])
+
         answer(query)
 
       {:error, :offline} ->
@@ -260,13 +319,38 @@ defmodule Bastion.Telegram.Bot do
     end
   end
 
-  defp answer(query, text \\ nil) do
+  defp show_instance(query, instance) do
+    case Widget.send(instance, query["message"]["chat"]["id"]) do
+      {:ok, _} -> answer(query)
+      _ -> show(query, Screens.instance(instance))
+    end
+  end
+
+  defp answer(query, text \\ nil)
+
+  defp answer(%{"widget_request" => true} = query, text),
+    do: Telegram.call("answerWidgetQuery", %{widget_query_id: query["id"], data: text || ""})
+
+  defp answer(query, text) do
     params =
       if text,
         do: %{callback_query_id: query["id"], text: String.slice(text, 0, 200)},
         else: %{callback_query_id: query["id"]}
 
     Telegram.call("answerCallbackQuery", params)
+  end
+
+  defp edit(%{"widget_instance" => id, "message" => message}, _screen),
+    do: Widget.edit(message["chat"]["id"], message["message_id"], Instances.get_instance(id))
+
+  defp edit(%{"message" => %{"widget" => _} = message}, _screen) do
+    case Cards.session(message["chat"]["id"], message["message_id"]) do
+      %{instance_id: id} ->
+        Widget.edit(message["chat"]["id"], message["message_id"], Instances.get_instance(id))
+
+      _ ->
+        :ignored
+    end
   end
 
   defp edit(%{"message" => message}, screen),
@@ -303,7 +387,16 @@ defmodule Bastion.Telegram.Bot do
     })
   end
 
-  defp send_screen({text, buttons}, chat_id, params \\ %{}) do
+  defp send_screen(screen, chat_id, params \\ %{})
+
+  defp send_screen({:instance, instance}, chat_id, params) do
+    case Widget.send(instance, chat_id, params) do
+      {:ok, _} = result -> result
+      _ -> send_screen(Screens.instance(instance), chat_id, params)
+    end
+  end
+
+  defp send_screen({text, buttons}, chat_id, params) do
     case Telegram.call(
            "sendMessage",
            Map.merge(params, %{

@@ -60,7 +60,11 @@ defmodule Bastion.Telegram.Server do
   end
 
   defp poll(state) do
-    params = %{timeout: @poll_timeout, allowed_updates: ["message", "callback_query"]}
+    params = %{
+      timeout: @poll_timeout,
+      allowed_updates: ["message", "callback_query", "widget_query"]
+    }
+
     params = if state.offset, do: Map.put(params, :offset, state.offset), else: params
 
     task =

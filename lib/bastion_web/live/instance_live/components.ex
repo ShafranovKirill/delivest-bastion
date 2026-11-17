@@ -86,26 +86,21 @@ defmodule BastionWeb.InstanceLive.Components do
   attr :instance, :any, required: true
 
   def site_version(assigns) do
-    services =
-      for service <- ["server", "client"],
-          {current, available} = Bastion.Images.versions(assigns.instance, service),
-          current != nil,
-          do: %{name: service, current: current, available: available}
+    {current, available} = Bastion.Images.site_versions(assigns.instance)
 
     assigns =
-      assign(assigns, services: services, state: Bastion.Images.up_to_date?(assigns.instance))
+      assign(assigns,
+        current: current,
+        available: available,
+        state: Bastion.Images.up_to_date?(assigns.instance)
+      )
 
     ~H"""
     <div class="space-y-1 text-xs tabular-nums">
-      <div :for={service <- @services}>
-        <span :if={length(@services) > 1} class="text-base-content/50">{if service.name == "server",
-          do: "Сервер",
-          else: "Клиент"} · </span>
-        <span class="font-medium">{service.current}</span>
-        <span :if={service.available} class="text-primary"> → {service.available}</span>
-      </div>
-      <span :if={@services == []} class="text-base-content/40">Версия неизвестна</span>
-      <div class="text-base-content/50">
+      <div :if={@current} class="font-medium">{@current}</div>
+      <span :if={!@current} class="text-base-content/40">Версия неизвестна</span>
+      <div :if={@available} class="text-primary">Доступна {@available}</div>
+      <div :if={!@available} class="text-base-content/50">
         <%= case @state do %>
           <% true -> %>
             Актуальна
@@ -116,6 +111,63 @@ defmodule BastionWeb.InstanceLive.Components do
         <% end %>
       </div>
     </div>
+    """
+  end
+
+  attr :instance, :any, required: true
+  attr :level, :atom, required: true
+
+  def site_status(assigns) do
+    external = assigns.instance.external || %{}
+
+    assigns =
+      assign(assigns,
+        unavailable?: get_in(external, ["site", "ok"]) == false
+      )
+
+    ~H"""
+    <span :if={@instance.stopped_at} class="badge badge-info whitespace-nowrap">Выключен</span>
+    <span :if={!@instance.stopped_at && @unavailable?} class="badge badge-error whitespace-nowrap">Недоступен</span>
+    <.health_badge :if={!@instance.stopped_at && !@unavailable? && @level != :ok} level={@level} />
+    """
+  end
+
+  attr :id, :string, required: true
+  attr :title, :string, required: true
+  attr :hint, :string, required: true
+  attr :icon, :string, required: true
+  attr :open, :boolean, default: false
+  slot :inner_block, required: true
+
+  def module_panel(assigns) do
+    ~H"""
+    <details
+      id={"module-" <> @id}
+      open={@open}
+      class="group/module rounded-xl border border-base-300 bg-base-100"
+    >
+      <summary
+        id={"tab-" <> @id}
+        phx-click="toggle_module"
+        phx-value-module={@id}
+        aria-controls={"module-content-" <> @id}
+        aria-expanded={@open}
+        class="flex cursor-pointer list-none items-center gap-3 rounded-xl px-4 py-4 transition-colors hover:bg-base-200/50 focus-visible:outline-2 focus-visible:outline-primary sm:px-5"
+      >
+        <span class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-base-200 text-base-content/60"><.icon
+          name={@icon}
+          class="size-5"
+        /></span>
+        <span class="min-w-0 flex-1"><span class="block font-semibold">{@title}</span><span class="block text-xs text-base-content/60">{@hint}</span></span>
+        <.icon
+          name="hero-chevron-down"
+          class="size-4 shrink-0 text-base-content/50 transition-transform group-open/module:rotate-180"
+        />
+      </summary>
+      <div id={"module-content-" <> @id} class="space-y-4 border-t border-base-200 p-4 sm:p-5">
+        {render_slot(@inner_block)}
+      </div>
+    </details>
     """
   end
 
