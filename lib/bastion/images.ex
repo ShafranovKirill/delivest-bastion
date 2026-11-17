@@ -66,6 +66,13 @@ defmodule Bastion.Images do
 
   def versions(_instance, _service), do: {nil, nil}
 
+  @doc "One application release, with the server as the source and client as fallback."
+  def site_versions(instance) do
+    {server, server_available} = versions(instance, "server")
+    {client, client_available} = versions(instance, "client")
+    {server || client, server_available || client_available}
+  end
+
   defp short(revision) when is_binary(revision), do: String.slice(revision, 0, 7)
   defp short(_revision), do: nil
 

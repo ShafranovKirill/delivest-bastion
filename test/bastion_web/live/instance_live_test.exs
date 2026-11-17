@@ -60,13 +60,13 @@ defmodule BastionWeb.InstanceLiveTest do
 
     assert has_element?(
              lv,
-             "#instances tbody[phx-update='stream'] #instance-#{instance.id} > td:nth-child(4)",
+             "#instances tbody[phx-update='stream'] #instance-#{instance.id} > td:nth-child(3)",
              "Админка"
            )
 
     assert has_element?(
              lv,
-             "#instances tbody[phx-update='stream'] #instance-#{instance.id} > td:nth-child(5)",
+             "#instances tbody[phx-update='stream'] #instance-#{instance.id} > td:nth-child(4)",
              "Сайт"
            )
 
@@ -159,7 +159,7 @@ defmodule BastionWeb.InstanceLiveTest do
     assert has_element?(lv, "#tab-state-panel > #uptime:first-child")
     assert has_element?(lv, "#tab-state-panel > #load:nth-child(2)")
     refute has_element?(lv, "#instance-start")
-    refute has_element?(lv, "#instance-restart")
+    assert has_element?(lv, "#module-settings:not([open]) #instance-restart")
 
     lv |> element("#instance-actions button", "Обновить") |> render_click()
     assert_receive {:agent_got, "update", %{}}
@@ -224,10 +224,10 @@ defmodule BastionWeb.InstanceLiveTest do
 
     assert has_element?(
              lv,
-             "#tab-state-panel > #technical-details:last-child:not([open]) #checks"
+             "#module-logs:not([open]) #technical-details:not([open]) #checks"
            )
 
-    refute has_element?(lv, "#latest-errors")
+    assert has_element?(lv, "#module-errors:not([open]) #latest-errors")
 
     lv |> element("#tab-errors") |> render_click()
     assert has_element?(lv, "#latest-errors", "boom")
@@ -255,7 +255,7 @@ defmodule BastionWeb.InstanceLiveTest do
   test "maintenance starts and finishes from the instance page", %{conn: conn} do
     instance = instance_fixture()
     {:ok, lv, _} = live(log_in(conn), ~p"/instances/#{instance.id}")
-    refute has_element?(lv, "#instance-stop")
+    assert has_element?(lv, "#module-settings:not([open]) #instance-stop")
     refute has_element?(lv, "#maintenance-form")
 
     lv |> element("#maintenance-open") |> render_click()
@@ -304,7 +304,7 @@ defmodule BastionWeb.InstanceLiveTest do
     timestamp = Calendar.strftime(now, "%d.%m.%Y %H:%M:%S UTC")
 
     refute has_element?(lv, "#recent-operations")
-    assert has_element?(lv, "#instance-tools:not([open])")
+    assert has_element?(lv, "#module-settings:not([open])")
 
     lv |> element("#tab-history") |> render_click()
 
@@ -498,7 +498,7 @@ defmodule BastionWeb.InstanceLiveTest do
   } do
     instance = instance_fixture()
     {:ok, lv, _} = live(log_in(conn), ~p"/instances/#{instance.id}")
-    assert has_element?(lv, "#instance-tools:not([open])")
+    assert has_element?(lv, "#module-settings:not([open])")
     refute has_element?(lv, "#instance-actions #instance-backup")
     refute has_element?(lv, "#instance-actions #maintenance-open")
     lv |> element("#edit-client") |> render_click()
@@ -542,13 +542,14 @@ defmodule BastionWeb.InstanceLiveTest do
 
     {:ok, list, _} = live(log_in(build_conn()), ~p"/")
 
+    refute has_element?(list, "#subscription-#{instance.id}")
+    refute has_element?(list, "#instances th", "Подписка")
+
     assert has_element?(
-             list,
-             "#subscription-#{instance.id}",
+             lv,
+             "#module-settings #client-payment",
              Calendar.strftime(due_on, "%d.%m.%Y")
            )
-
-    assert has_element?(list, "#subscription-#{instance.id}", "Осталось 5 дн.")
   end
 
   test "invalid contacts and dates cannot replace saved client data", %{conn: conn} do
@@ -592,6 +593,72 @@ defmodule BastionWeb.InstanceLiveTest do
     {:ok, lv, _} = live(log_in(conn), ~p"/")
     assert has_element?(lv, "#version-#{instance.id}", "1.0.0")
     assert has_element?(lv, "#version-#{instance.id}", "2.0.0")
-    assert has_element?(lv, "#version-#{instance.id}", "Есть обновление")
+    assert has_element?(lv, "#version-#{instance.id}", "Доступна 2.0.0")
+    refute has_element?(lv, "#version-#{instance.id}", "Сервер")
+    refute has_element?(lv, "#version-#{instance.id}", "Клиент")
+  end
+
+  test "external site failures are visible even when the agent has no fresh data", %{conn: conn} do
+    instance = instance_fixture()
+    Instances.record_heartbeat(instance.id, healthy_status())
+
+    instance =
+      instance
+      |> Ecto.Changeset.change(
+        last_seen_at: DateTime.add(DateTime.utc_now() |> DateTime.truncate(:second), -300)
+      )
+      |> Bastion.Repo.update!()
+
+    {:ok, lv, _} = live(log_in(conn), ~p"/")
+
+    Instances.update_checks(
+      instance,
+      %{"site" => %{"ok" => false, "error" => "timeout"}},
+      :offline
+    )
+
+    assert has_element?(lv, "#problem-#{instance.id} .badge-error", "Недоступен")
+    refute has_element?(lv, "#instance-#{instance.id}", "timeout")
+
+    Instances.update_checks(instance, %{"site" => %{"ok" => true, "status" => 200}}, :ok)
+    refute has_element?(lv, "#problem-#{instance.id} .badge-error")
+    assert has_element?(lv, "#problem-#{instance.id}", "Нет свежих данных")
+  end
+
+  test "an API failure does not label the responding public site unavailable", %{conn: conn} do
+    instance = instance_fixture()
+    Instances.record_heartbeat(instance.id, healthy_status())
+
+    Instances.update_checks(
+      instance,
+      %{"site" => %{"ok" => true}, "api" => %{"ok" => false}},
+      :down
+    )
+
+    {:ok, lv, _} = live(log_in(conn), ~p"/")
+    refute has_element?(lv, "#problem-#{instance.id}", "Недоступен")
+    assert has_element?(lv, "#problem-#{instance.id}", "Ошибки")
+  end
+
+  test "modules start closed and can be opened independently", %{conn: conn} do
+    instance = instance_fixture()
+    {:ok, lv, _} = live(log_in(conn), ~p"/instances/#{instance.id}")
+    assert has_element?(lv, "#instance-modules")
+
+    for id <- ~w(errors updates state backups logs history settings) do
+      assert has_element?(lv, "#module-#{id}:not([open])")
+    end
+
+    refute has_element?(lv, "#instance-modules > details[open]")
+
+    lv |> element("#tab-errors") |> render_click()
+    lv |> element("#tab-settings") |> render_click()
+    assert has_element?(lv, "#module-errors[open]")
+    assert has_element?(lv, "#module-settings[open]")
+    Instances.record_heartbeat(instance.id, healthy_status())
+    assert has_element?(lv, "#module-settings[open]")
+    lv |> element("#tab-errors") |> render_click()
+    assert has_element?(lv, "#module-errors:not([open])")
+    assert has_element?(lv, "#module-settings[open]")
   end
 end

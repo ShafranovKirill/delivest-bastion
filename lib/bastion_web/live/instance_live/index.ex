@@ -178,7 +178,6 @@ defmodule BastionWeb.InstanceLive.Index do
           <thead class="hidden sm:table-header-group">
             <tr>
               <th class="px-5 py-3 text-xs font-medium text-base-content/50">Франшиза</th>
-              <th class="px-5 py-3 text-xs font-medium text-base-content/50">Подписка</th>
               <th class="px-5 py-3 text-xs font-medium text-base-content/50">Версия сайта</th>
               <th class="px-5 py-3 text-xs font-medium text-base-content/50">Админка</th>
               <th class="px-5 py-3 text-xs font-medium text-base-content/50">Сайт</th>
@@ -198,16 +197,15 @@ defmodule BastionWeb.InstanceLive.Index do
                   {instance.name}
                 </.link>
                 <div
-                  :if={@health[instance.id].level != :ok}
+                  :if={
+                    @health[instance.id].level != :ok ||
+                      get_in(instance.external || %{}, ["site", "ok"]) == false
+                  }
                   id={"problem-#{instance.id}"}
                   class="mt-1 text-xs"
                 >
-                  <.health_badge level={@health[instance.id].level} />
+                  <.site_status instance={instance} level={@health[instance.id].level} />
                 </div>
-              </td>
-              <td class="p-0 sm:table-cell sm:px-5 sm:py-4" id={"subscription-#{instance.id}"}>
-                <div class="mb-1 text-xs text-base-content/50 sm:hidden">Подписка</div>
-                <.payment_date date={instance.payment_due_on} />
               </td>
               <td class="p-0 sm:table-cell sm:px-5 sm:py-4" id={"version-#{instance.id}"}>
                 <div class="mb-1 text-xs text-base-content/50 sm:hidden">Версия сайта</div>
