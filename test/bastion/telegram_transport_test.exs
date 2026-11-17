@@ -34,6 +34,16 @@ defmodule Bastion.TelegramTransportTest do
     :ok
   end
 
+  test "requests close the connection instead of leaving a proxy tunnel for reuse" do
+    Req.Test.stub(Bastion.Http, fn conn ->
+      assert Plug.Conn.get_req_header(conn, "connection") == ["close"]
+      Req.Test.json(conn, %{"ok" => true, "result" => true})
+    end)
+
+    assert {:ok, true} = Telegram.call("getMe", %{})
+    assert {:ok, true} = Telegram.call("getUpdates", %{timeout: 10}, retry: false)
+  end
+
   test "worker dispatches inbound messages and surfaces delivery errors" do
     update = %{"update_id" => 1, "message" => %{"chat" => %{"id" => 99}, "text" => "/sites"}}
     assert :ok = perform_job(UpdateWorker, %{kind: "update", id: 1, update: update})

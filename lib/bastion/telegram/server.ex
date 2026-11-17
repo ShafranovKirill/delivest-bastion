@@ -8,8 +8,8 @@ defmodule Bastion.Telegram.Server do
   alias Bastion.{Instances, Telegram}
   alias Bastion.Telegram.{Bot, UpdateWorker}
 
-  @poll_timeout 25
-  @retry_ms 5_000
+  @poll_timeout 10
+  @retry_ms 1_000
 
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
 
@@ -98,7 +98,7 @@ defmodule Bastion.Telegram.Server do
       Task.Supervisor.async_nolink(Bastion.TaskSupervisor, fn ->
         Telegram.call("getUpdates", params,
           retry: false,
-          receive_timeout: (@poll_timeout + 10) * 1000
+          receive_timeout: (@poll_timeout + 5) * 1000
         )
       end)
 
