@@ -7,8 +7,28 @@ defmodule Bastion.Telegram do
   def configured?, do: is_binary(token()) and not is_nil(chat_id())
 
   # Without a chat id the bot still runs, so it can tell the chat id to whoever writes to it.
-  def polling?,
+  def enabled?,
     do: is_binary(token()) and Application.get_env(:bastion, :telegram_polling, true)
+
+  def polling?, do: enabled?() and not webhook?()
+  def webhook?, do: Application.get_env(:bastion, :telegram_transport, :polling) == :webhook
+  def webhook_url, do: Application.fetch_env!(:bastion, :telegram_webhook_url)
+  def allowed_updates, do: ["message", "callback_query"]
+
+  def webhook_secret do
+    secret =
+      Application.fetch_env!(:bastion, BastionWeb.Endpoint)
+      |> Keyword.fetch!(:secret_key_base)
+
+    :crypto.mac(:hmac, :sha256, secret, "telegram-webhook:" <> token())
+    |> Base.url_encode64(padding: false)
+  end
+
+  def authenticate_webhook?(supplied) when is_binary(supplied) do
+    is_binary(token()) and Plug.Crypto.secure_compare(webhook_secret(), supplied)
+  end
+
+  def authenticate_webhook?(_), do: false
 
   def allowed_chat?(chat_id), do: chat_id() != nil and to_string(chat_id) == to_string(chat_id())
 
@@ -40,7 +60,13 @@ defmodule Bastion.Telegram do
 
   # Pooled connections to Telegram go stale while the bastion is idle and a request sent
   # into one only times out, so a request is sent again over a fresh connection.
-  @retry [retry: :transient, max_retries: 2, retry_delay: 500, receive_timeout: 10_000]
+  @retry [
+    retry: :transient,
+    max_retries: 2,
+    retry_delay: 500,
+    receive_timeout: 10_000,
+    connect_options: [timeout: 3_000]
+  ]
 
   def call(method, params, opts \\ []) do
     case token() do
