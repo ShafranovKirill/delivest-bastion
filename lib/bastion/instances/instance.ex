@@ -6,6 +6,12 @@ defmodule Bastion.Instances.Instance do
   @foreign_key_type :binary_id
 
   schema "instances" do
+    field :contact_phone, :string
+    field :social_links, :string
+    field :payment_due_on, :date
+    field :admin_login, :string
+    field :admin_password, :string, virtual: true, redact: true
+    field :admin_password_encrypted, :string, redact: true
     field :name, :string
     field :hosts, :map, default: %{}
     field :agent_version, :string
@@ -30,6 +36,20 @@ defmodule Bastion.Instances.Instance do
     has_many :maintenance_windows, Bastion.Maintenance.Window
 
     timestamps(type: :utc_datetime)
+  end
+
+  def client_changeset(instance, attrs) do
+    instance
+    |> cast(attrs, [:contact_phone, :social_links, :payment_due_on, :admin_login, :admin_password])
+    |> validate_length(:contact_phone, max: 80)
+    |> validate_length(:social_links, max: 2000)
+    |> validate_length(:admin_login, max: 255)
+    |> validate_length(:admin_password, max: 1024)
+    |> validate_change(:social_links, fn :social_links, links ->
+      if Enum.all?(String.split(links, ~r/\s+/, trim: true), &Bastion.Credentials.safe_link?/1),
+        do: [],
+        else: [social_links: "Укажите ссылки https:// или http://, каждую с новой строки"]
+    end)
   end
 
   def register_changeset(instance, attrs) do

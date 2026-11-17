@@ -72,6 +72,24 @@ defmodule Bastion.ImagesTest do
     assert Images.versions(up_to_date, "server") == {"1.3.2", nil}
   end
 
+  test "one application version prefers server and falls back to client" do
+    Images.put("ghcr.io/test/site-client:latest", "next", "2.0.0")
+    server = %{"service" => "server", "version" => "1.0.0"}
+
+    client = %{
+      "service" => "client",
+      "version" => "0.9.0",
+      "image" => "ghcr.io/test/site-client:latest",
+      "revision" => "old"
+    }
+
+    assert Images.site_versions(%{status: %{"containers" => [client, server]}}) ==
+             {"1.0.0", "2.0.0"}
+
+    assert Images.site_versions(%{status: %{"containers" => [client]}}) == {"0.9.0", "2.0.0"}
+    assert Images.site_versions(%{}) == {nil, nil}
+  end
+
   test "registry errors are reported" do
     Req.Test.stub(Bastion.Http, &Plug.Conn.send_resp(&1, 401, "denied"))
     assert {:error, "HTTP 401"} = Images.fetch_revision("ghcr.io/owner/private:latest")

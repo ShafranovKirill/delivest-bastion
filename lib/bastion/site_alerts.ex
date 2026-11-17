@@ -191,8 +191,8 @@ defmodule Bastion.SiteAlerts do
           notify(
             instance,
             "💥 #{instance.name}: контейнер #{service} упал и перезапустился (всего #{restarts} раз). " <>
-              "Посмотрите его логи.",
-            buttons: [[{"📜 Логи", "logs:" <> instance.id}]]
+              "Логи доступны в разделе «Диагностика» панели Бастиона.",
+            []
           )
         end
 

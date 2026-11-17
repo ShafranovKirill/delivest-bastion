@@ -25,7 +25,10 @@ defmodule Bastion.TelegramTest do
         end
 
       send(test_pid, {:telegram, List.last(conn.path_info), body})
-      Req.Test.json(conn, %{"ok" => true, "result" => %{"message_id" => 100}})
+
+      if List.last(conn.path_info) == "sendWidget",
+        do: Req.Test.json(conn, %{"ok" => false, "description" => "Not Found: method not found"}),
+        else: Req.Test.json(conn, %{"ok" => true, "result" => %{"message_id" => 100}})
     end)
 
     on_exit(fn ->
@@ -161,6 +164,9 @@ defmodule Bastion.TelegramTest do
       send(test_pid, {:telegram, List.last(conn.path_info), Jason.decode!(body)})
 
       case List.last(conn.path_info) do
+        "sendWidget" ->
+          Req.Test.json(conn, %{"ok" => false, "description" => "Not Found"})
+
         "editMessageText" ->
           conn
           |> Plug.Conn.put_status(400)
@@ -177,7 +183,7 @@ defmodule Bastion.TelegramTest do
                      %{"text" => "Telegram: Bad Request: BUTTON_URL_INVALID"}}
   end
 
-  test "the card of an online site that can roll back offers the rollback" do
+  test "the compact card omits rollback, logs and details" do
     instance = healthy(%{"name" => "Pizza"})
 
     {:ok, _} =
@@ -190,7 +196,10 @@ defmodule Bastion.TelegramTest do
 
     press("i:" <> instance.id)
     assert_received {:telegram, "editMessageText", card}
-    assert {"⏪ Откатить", "a:rollback:" <> instance.id} in buttons(card)
+
+    refute Enum.any?(buttons(card), fn {label, _} ->
+             label in ["⏪ Откатить", "📜 Логи", "ℹ️ Подробнее"]
+           end)
   end
 
   test "a restart from the card shows its progress and result in the card" do
@@ -370,6 +379,7 @@ defmodule Bastion.TelegramTest do
     assert_receive {:telegram, "setMyCommands", %{"commands" => [%{"command" => "sites"}]}}
     assert_receive {:telegram, "sendMessage", %{"chat_id" => @chat, "text" => text}}
     assert text =~ "Пока ни один агент"
-    assert_receive {:telegram, "getUpdates", %{"offset" => 2}}
+    assert_receive {:telegram, "getUpdates", %{"offset" => 2, "allowed_updates" => allowed}}
+    assert "widget_query" in allowed
   end
 end

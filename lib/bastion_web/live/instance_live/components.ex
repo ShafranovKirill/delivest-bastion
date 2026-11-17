@@ -46,11 +46,128 @@ defmodule BastionWeb.InstanceLive.Components do
       target="_blank"
       rel="noopener noreferrer"
       aria-label={"Открыть #{@label} #{@instance_name} в новой вкладке"}
-      class="inline-flex min-h-9 items-center justify-center rounded-lg bg-emerald-700 px-3 text-sm font-semibold text-white transition-colors hover:bg-emerald-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700"
+      class="inline-flex min-h-9 items-center gap-1 text-sm font-medium text-base-content/70 transition-colors hover:text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
     >
-      Открыть <.icon name="hero-arrow-up-right" class="ml-1.5 size-4" />
+      {if @kind == "server", do: "Админка", else: "Сайт"}
+      <.icon name="hero-arrow-up-right" class="ml-1.5 size-4" />
     </a>
     <span :if={!@url} id={@id} class="text-sm text-base-content/50">Не настроен</span>
+    """
+  end
+
+  attr :date, :any, required: true
+
+  def payment_date(assigns) do
+    assigns =
+      assign(
+        assigns,
+        :days,
+        assigns.date && Date.diff(assigns.date, Bastion.PaymentReminderWorker.today())
+      )
+
+    ~H"""
+    <div :if={@date} class="space-y-0.5 tabular-nums">
+      <div class="text-sm font-medium">До {Calendar.strftime(@date, "%d.%m.%Y")}</div>
+      <div class={["text-xs", if(@days <= 0, do: "text-error", else: "text-base-content/50")]}>
+        <%= cond do %>
+          <% @days == 0 -> %>
+            Оплата сегодня
+          <% @days < 0 -> %>
+            Просрочено: {abs(@days)} дн.
+          <% true -> %>
+            Осталось {@days} дн.
+        <% end %>
+      </div>
+    </div>
+    <span :if={!@date} class="text-sm text-base-content/40">Дата не указана</span>
+    """
+  end
+
+  attr :instance, :any, required: true
+
+  def site_version(assigns) do
+    {current, available} = Bastion.Images.site_versions(assigns.instance)
+
+    assigns =
+      assign(assigns,
+        current: current,
+        available: available,
+        state: Bastion.Images.up_to_date?(assigns.instance)
+      )
+
+    ~H"""
+    <div class="space-y-1 text-xs tabular-nums">
+      <div :if={@current} class="font-medium">{@current}</div>
+      <span :if={!@current} class="text-base-content/40">Версия неизвестна</span>
+      <div :if={@available} class="text-primary">Доступна {@available}</div>
+      <div :if={!@available} class="text-base-content/50">
+        <%= case @state do %>
+          <% true -> %>
+            Актуальна
+          <% false -> %>
+            <span class="text-primary">Есть обновление</span>
+          <% :unknown -> %>
+            Нет результата проверки
+        <% end %>
+      </div>
+    </div>
+    """
+  end
+
+  attr :instance, :any, required: true
+  attr :level, :atom, required: true
+
+  def site_status(assigns) do
+    external = assigns.instance.external || %{}
+
+    assigns =
+      assign(assigns,
+        unavailable?: get_in(external, ["site", "ok"]) == false
+      )
+
+    ~H"""
+    <span :if={@instance.stopped_at} class="badge badge-info whitespace-nowrap">Выключен</span>
+    <span :if={!@instance.stopped_at && @unavailable?} class="badge badge-error whitespace-nowrap">Недоступен</span>
+    <.health_badge :if={!@instance.stopped_at && !@unavailable? && @level != :ok} level={@level} />
+    """
+  end
+
+  attr :id, :string, required: true
+  attr :title, :string, required: true
+  attr :hint, :string, required: true
+  attr :icon, :string, required: true
+  attr :open, :boolean, default: false
+  slot :inner_block, required: true
+
+  def module_panel(assigns) do
+    ~H"""
+    <details
+      id={"module-" <> @id}
+      open={@open}
+      class="group/module rounded-xl border border-base-300 bg-base-100"
+    >
+      <summary
+        id={"tab-" <> @id}
+        phx-click="toggle_module"
+        phx-value-module={@id}
+        aria-controls={"module-content-" <> @id}
+        aria-expanded={@open}
+        class="flex cursor-pointer list-none items-center gap-3 rounded-xl px-4 py-4 transition-colors hover:bg-base-200/50 focus-visible:outline-2 focus-visible:outline-primary sm:px-5"
+      >
+        <span class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-base-200 text-base-content/60"><.icon
+          name={@icon}
+          class="size-5"
+        /></span>
+        <span class="min-w-0 flex-1"><span class="block font-semibold">{@title}</span><span class="block text-xs text-base-content/60">{@hint}</span></span>
+        <.icon
+          name="hero-chevron-down"
+          class="size-4 shrink-0 text-base-content/50 transition-transform group-open/module:rotate-180"
+        />
+      </summary>
+      <div id={"module-content-" <> @id} class="space-y-4 border-t border-base-200 p-4 sm:p-5">
+        {render_slot(@inner_block)}
+      </div>
+    </details>
     """
   end
 

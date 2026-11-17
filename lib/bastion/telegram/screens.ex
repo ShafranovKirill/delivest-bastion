@@ -81,6 +81,7 @@ defmodule Bastion.Telegram.Screens do
     health = Health.evaluate(instance)
     running = Instances.running_command(instance.id)
     outdated = if instance.online, do: Images.outdated(instance), else: []
+    {current, available} = Images.site_versions(instance)
 
     text =
       [
@@ -89,7 +90,7 @@ defmodule Bastion.Telegram.Screens do
         running && "⏳ #{Instances.action_label(running.action)}…",
         Alerts.muted?(instance) && "🔕 Без уведомлений до #{time(instance.muted_until)}",
         problems(health.problems),
-        outdated != [] && "⬆️ Есть новая версия: #{escape(Enum.join(outdated, ", "))}",
+        "Версия сайта: #{escape(current || "—")}#{if available, do: " → #{escape(available)}", else: ""}",
         facts(instance, health)
       ]
       |> Enum.reject(&(&1 in [nil, false, ""]))
@@ -187,38 +188,37 @@ defmodule Bastion.Telegram.Screens do
     "#{String.trim(slug, "-")}-logs-#{stamp}.txt"
   end
 
+  def action_label(action) do
+    %{
+      "update" => "⬆️ Обновить",
+      "start" => "▶️ Включить",
+      "stop" => "⏸ Выключить",
+      "restart" => "♻️ Перезапустить",
+      "backup" => "💾 Бэкап"
+    }[action]
+  end
+
   def emoji(level), do: @levels |> Map.fetch!(level) |> elem(0)
   def label(level), do: @levels |> Map.fetch!(level) |> elem(1)
 
-  defp instance_buttons(%Instance{id: id} = instance, running, outdated) do
-    main =
-      cond do
-        not instance.online or running -> []
-        instance.stopped_at -> [{"▶️ Включить", "a:start:" <> id}]
-        outdated != [] -> [{"⬆️ Обновить", "a:update:" <> id}]
-        true -> []
-      end
-
-    main =
-      if rollback?(instance) and is_nil(running),
-        do: main ++ [{"⏪ Откатить", "a:rollback:" <> id}],
-        else: main
-
+  defp instance_buttons(%Instance{id: id} = instance, running, _outdated) do
     actions =
-      cond do
-        not instance.online -> [{"ℹ️ Подробнее", "x:" <> id}, mute_button(instance)]
-        running -> [{"ℹ️ Подробнее", "x:" <> id}]
-        true -> [{"📜 Логи", "a:logs:" <> id}, {"ℹ️ Подробнее", "x:" <> id}, {"⋯ Ещё", "e:" <> id}]
+      if instance.online and is_nil(running) do
+        power = if instance.stopped_at, do: "start", else: "stop"
+
+        ["update", power, "restart", "backup"]
+        |> Enum.filter(
+          &(&1 in instance.actions and (&1 != "backup" or Backups.supported?(instance)))
+        )
+        |> Enum.map(&{action_label(&1), "a:#{&1}:#{id}"})
+        |> Enum.chunk_every(2)
+      else
+        []
       end
 
-    [main, actions, links(instance), [{"⬅️ Сети", "l"}, {"🔄 Обновить", "i:" <> id}]]
+    (actions ++ [links(instance), [{"⬅️ Сети", "l"}, {"🔄 Статус", "i:" <> id}]])
     |> Enum.reject(&(&1 == []))
   end
-
-  defp rollback?(instance),
-    do:
-      instance.online and "rollback" in instance.actions and
-        is_map((instance.status || %{})["rollback"])
 
   defp mute_button(instance) do
     if Alerts.muted?(instance),
