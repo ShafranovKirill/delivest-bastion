@@ -1,0 +1,16 @@
+---
+const cards = [
+ ['01','Привлечь','Дайте повод попробовать','Разместите промокод в соцсетях, рекламе или на листовке. Гость переходит на ваш сайт и получает предложение для первого заказа.','Предложение → знакомство с меню'],
+ ['02','Средний чек','Предложите дополнить заказ','Напиток к пицце, десерт к ужину, подарок от суммы. Рекомендации и подсказки в корзине показывают гостю, чем дополнить покупку.','Блюдо + напиток + десерт'],
+ ['03','Лояльность','Сделайте следующую покупку желанной','Начисляйте звёзды за заказы и отдельные блюда. Гость видит вознаграждение и получает повод вернуться именно к вам.','Покупка → звёзды → новый повод'],
+ ['04','Повторные продажи','Обратитесь к тем, кто уже вас знает','История заказов помогает понять предпочтения гостя. Персональные промокоды и подарки дают повод для нового предложения.','Знакомый вкус. Новая выгода.'],
+];
+---
+<section id="promo" class="night"><div class="wrap">
+ <div class="head"><span class="kicker">Маркетинг вашей доставки</span><h2>Первый заказ важен.<br/><em>Следующий — тоже.</em></h2><p>Вы уже вложились в знакомство с гостем. Используйте бонусы и предложения, чтобы у него была причина выбрать ваш ресторан снова.</p></div>
+ <div class="growth-grid">{cards.map(([n,k,t,p,s])=><article><div class="eyebrow"><span>{k}</span><span>{n}</span></div><h3>{t}</h3><p>{p}</p><div class="mechanic">{s}</div></article>)}</div>
+ <p class="growth-note">Вы выбираете предложение и условия акции. Delivest показывает их гостю на пути к заказу.</p>
+</div></section>
+<style>
+.growth-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:18px}.growth-grid article{border:1px solid var(--night-line);border-radius:24px;padding:32px;background:#ffffff06}.eyebrow{display:flex;justify-content:space-between;color:var(--gold);font-size:13px;text-transform:uppercase;letter-spacing:.08em;margin-bottom:32px}.growth-grid h3{font-size:28px;max-width:370px}.growth-grid p{max-width:440px;font-size:16px}.mechanic{border-top:1px solid var(--night-line);padding-top:20px;margin-top:26px;color:var(--gold);font-size:15px}.growth-note{margin:28px 0 0;font-size:14px}@media(max-width:650px){.growth-grid{grid-template-columns:1fr}.growth-grid article{padding:24px}.growth-grid h3{font-size:25px}}
+</style>

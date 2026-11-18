@@ -1,0 +1,56 @@
+<section id="integrations" aria-labelledby="integrations-title">
+  <div class="wrap">
+    <div class="head">
+      <span class="kicker">Интеграции</span>
+      <h2 id="integrations-title">Ваша касса, оплата <em>и доставка.</em></h2>
+      <p>Подключите к Delivest сервисы, с которыми уже работают ваши точки.</p>
+    </div>
+    <picture class="integration-picture">
+      <source media="(min-width:901px)" srcset="/franchise/integration-hub-wide.webp" width="1752" height="897" />
+      <img class="integration-network" src="/franchise/integration-hub.webp" alt="Схема интеграций Delivest: POS-системы, доставка, лояльность и платежи" width="1225" height="1284" loading="lazy" decoding="async" />
+    </picture>
+  </div>
+</section>
+<style>
+  #integrations { color:#310812; padding-block:clamp(44px,7vw,96px); }
+  .head { max-width:760px; margin-bottom:32px; }
+  .head h2 { font-size:clamp(32px,4.8vw,68px); }
+  .head h2 em { color:#9e1c36; }
+  .head p, .kicker { color:#7d6366; }
+  .integration-picture { display:block; width:100%; max-width:860px; margin-inline:auto; }
+  .integration-network { display:block; width:100%; height:auto; }
+  @media(min-width:901px) {
+    .head, .integration-picture {
+      max-width:1040px;
+      margin-inline:auto;
+    }
+  }
+  @media(max-width:650px) {
+    .head { margin-bottom:24px; }
+    .head p { font-size:15px; }
+  }
+  .integration-picture.reveal-ready {
+    opacity:0;
+    transform:translateY(10px);
+    transition:opacity .4s ease-out, transform .48s var(--ease);
+  }
+  .integration-picture.reveal-ready.is-visible { opacity:1; transform:none; }
+  @media(prefers-reduced-motion:reduce) {
+    .integration-picture.reveal-ready { opacity:1; transform:none; transition:none; }
+  }
+</style>
+<script>
+  const diagram = document.querySelector<HTMLElement>('.integration-picture');
+  if (diagram && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    diagram.classList.add('reveal-ready');
+    const observer = new IntersectionObserver(async ([entry]) => {
+      if (!entry.isIntersecting) return;
+      observer.disconnect();
+      // Start with the decoded artwork, so lazy loading cannot swallow the reveal.
+      const artwork = diagram.querySelector('img');
+      if (artwork) await artwork.decode().catch(() => {});
+      requestAnimationFrame(() => diagram.classList.add('is-visible'));
+    }, {threshold:.16, rootMargin:'0px 0px -48px 0px'});
+    observer.observe(diagram);
+  }
+</script>

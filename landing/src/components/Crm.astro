@@ -1,0 +1,79 @@
+---
+import Shot from './Shot.astro';
+
+const cards = [
+  ['Заказы без ручного ввода', 'Заказ сразу попадает в CRM со всеми деталями: состав, адрес, время, оплата, скидки.'],
+  ['Статусы в обе стороны', 'Кухня меняет статус в CRM, гость видит его на сайте.'],
+  ['Меню и цены совпадают', 'Регулярно сверяем меню на сайте и в CRM и сразу показываем, где есть разница.'],
+  ['Ни один заказ не потеряется', 'Если CRM недоступна или смена закрыта, заказ уйдёт сам, как только всё заработает. О сбое мы узнаём первыми.'],
+];
+---
+<section id="crm">
+  <div class="wrap">
+    <div class="head reveal">
+      <span class="kicker">Интеграции</span>
+      <h2>Работаем с вашей CRM <em>или без неё</em></h2>
+      <p>Если у вас есть CRM, подключим сайт к ней: заказы, статусы, меню и цены будут одинаковыми везде, ничего не нужно переносить руками. Если CRM нет, всё ведётся прямо в панели Delivest.</p>
+    </div>
+
+    <div class="flow reveal" aria-label="Сайт передаёт заказ в Delivest, Delivest в CRM, статус возвращается обратно">
+      <div class="node"><b>Сайт и оператор</b><span>оформление заказа</span></div>
+      <div class="wire"><i class="pkt"></i><i class="pkt late"></i><small>заказ</small></div>
+      <div class="node mid"><b>Delivest</b><span>следит, чтобы всё совпадало</span></div>
+      <div class="wire both"><i class="pkt"></i><i class="pkt back"></i><small>заказ · статус</small></div>
+      <div class="node"><b>Ваша CRM</b><span>iiko, r_keeper, Frontpad и другие</span></div>
+    </div>
+
+    <div class="grid">
+      <div class="cards">
+        {cards.map(([t, p], i) => <div class="card reveal" style={`--d:${i}`}><h3>{t}</h3><p>{p}</p></div>)}
+      </div>
+      <div class="browser reveal" style="--d:2">
+        <div class="browser-bar"><i></i><i></i><i></i><span class="url">Панель управления · Интеграции</span></div>
+        <div class="view"><Shot name="admin-frontpad" alt="Настройки интеграции с CRM" widths={[600, 1000, 1710]} sizes="(max-width: 1020px) 92vw, 600px" /></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .flow { display: grid; grid-template-columns: 1fr minmax(90px, .7fr) 1fr minmax(90px, .7fr) 1fr; align-items: center; margin-bottom: clamp(40px, 6vw, 64px); }
+  .node { background: var(--card); border: 1.5px solid var(--edge); border-radius: 16px; padding: 18px 16px; text-align: center; position: relative; z-index: 1; }
+  .node b { display: block; font-size: 19px; letter-spacing: -.01em; }
+  .node span { font-size: 13.5px; color: var(--muted); }
+  .node.mid { background: var(--night); color: var(--on-night); border-color: var(--night); box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 40%, transparent); animation: pulse 2.8s ease-out infinite; }
+  .node.mid span { color: var(--night-text); }
+  @keyframes pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 35%, transparent); } 70%, 100% { box-shadow: 0 0 0 14px transparent; } }
+
+  .wire { position: relative; height: 2px; background: repeating-linear-gradient(90deg, var(--muted) 0 6px, transparent 6px 12px); margin: 0 -1px; }
+  .wire small { position: absolute; left: 0; right: 0; top: 12px; text-align: center; font-size: 12px; color: var(--muted); white-space: nowrap; }
+  .pkt { position: absolute; top: -4px; left: 0; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 20%, transparent); animation: run 2.8s var(--ease) infinite; }
+  .pkt.late { animation-delay: 1.4s; }
+  .both .pkt { animation-delay: .9s; }
+  .pkt.back { background: var(--ok); box-shadow: 0 0 0 4px color-mix(in srgb, var(--ok) 20%, transparent); animation-name: run-back; animation-delay: 2.2s; }
+  @keyframes run { 0% { left: 0; opacity: 0; } 10%, 85% { opacity: 1; } 100% { left: calc(100% - 10px); opacity: 0; } }
+  @keyframes run-back { 0% { left: calc(100% - 10px); opacity: 0; } 10%, 85% { opacity: 1; } 100% { left: 0; opacity: 0; } }
+
+  .grid { display: grid; grid-template-columns: 1fr 1.15fr; gap: clamp(28px, 4vw, 56px); align-items: start; }
+  .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 20px; transition: border-color .2s, transform .2s var(--ease); }
+  .card:hover { border-color: var(--accent); transform: translateY(-2px); }
+  .card h3 { font-size: 17px; }
+  .card p { margin: 0; color: var(--ink-2); font-size: 15px; }
+  .view { aspect-ratio: 1710 / 1053; overflow: hidden; background: var(--paper-2); }
+  .view img { width: 100%; height: 100%; object-fit: cover; object-position: top left; }
+  .browser { box-shadow: 12px 12px 0 var(--accent); }
+
+  @media (max-width: 1020px) { .grid { grid-template-columns: 1fr; } }
+  @media (max-width: 720px) {
+    .flow { grid-template-columns: 1fr; max-width: 360px; margin-inline: auto; }
+    .wire { width: 2px; height: 56px; margin: 0 auto; background: repeating-linear-gradient(180deg, var(--muted) 0 6px, transparent 6px 12px); }
+    .wire small { top: 50%; left: 16px; right: auto; transform: translateY(-50%); }
+    .pkt { left: -4px; top: 0; animation-name: run-v; }
+    .pkt.back { animation-name: run-v-back; }
+    @keyframes run-v { 0% { top: 0; opacity: 0; } 10%, 85% { opacity: 1; } 100% { top: calc(100% - 10px); opacity: 0; } }
+    @keyframes run-v-back { 0% { top: calc(100% - 10px); opacity: 0; } 10%, 85% { opacity: 1; } 100% { top: 0; opacity: 0; } }
+    .cards { grid-template-columns: 1fr; }
+    .browser { box-shadow: 7px 7px 0 var(--accent); }
+  }
+</style>

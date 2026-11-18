@@ -1,0 +1,176 @@
+---
+// One dialog for the whole page; any element with [data-lead] opens it
+---
+<dialog class="lead" id="lead" aria-labelledby="lead-title">
+  <button class="close" type="button" data-close aria-label="Закрыть">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+  </button>
+
+  <form class="form" novalidate>
+    <h2 id="lead-title">Обсудим <em>подключение</em></h2>
+    <p class="sub">Первые 2 месяца подписки бесплатно с запуска сайта. Оставьте телефон или почту — обсудим вашу сеть.</p>
+
+    <label class="field">
+      <span>Телефон или почта</span>
+      <input name="contact" type="text" autocomplete="email" required maxlength="120" placeholder="+7 900 000-00-00 или почта">
+    </label>
+    <label class="field">
+      <span>Имя <small>по желанию</small></span>
+      <input name="name" type="text" autocomplete="name" maxlength="80" placeholder="Как к вам обращаться">
+    </label>
+    <input name="intent" type="hidden" value="demo">
+    <label class="trap" aria-hidden="true">Сайт <input name="website" type="text" tabindex="-1" autocomplete="off"></label>
+
+    <p class="error" role="alert" hidden></p>
+    <button class="btn btn-ink submit" type="submit">Обсудить подключение</button>
+    <p class="fine">Нажимая кнопку, вы соглашаетесь на обработку контактных данных для связи с вами.</p>
+  </form>
+
+  <div class="done" hidden>
+    <div class="check" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div>
+    <h2>Заявка <em>отправлена</em></h2>
+    <p class="sub">Спасибо! Свяжемся с вами в рабочее время.</p>
+    <button class="btn btn-line" type="button" data-close>Хорошо</button>
+  </div>
+  <div class="direct-contact">
+    <p>Или свяжитесь с нами напрямую</p>
+    <div class="messengers">
+      <a href="https://t.me/shafranov_ex" target="_blank" rel="noopener">Написать в Telegram ↗</a>
+      <a href="https://vk.ru/shafranov_kirill" target="_blank" rel="noopener">Написать в ВК ↗</a>
+    </div>
+    <a class="direct-phone" href="tel:+79255355278">+7 925 535-52-78</a>
+  </div>
+</dialog>
+
+<style>
+  .lead {
+    width: min(460px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); padding: 0; overflow: auto;
+    border: 1.5px solid var(--edge); border-radius: 24px; background: var(--card); color: var(--ink);
+    box-shadow: 12px 12px 0 var(--accent);
+    opacity: 0; transform: translateY(16px) scale(.98);
+    transition: opacity .3s var(--ease), transform .35s var(--ease), overlay .3s allow-discrete, display .3s allow-discrete;
+  }
+  .lead[open] { opacity: 1; transform: none; }
+  @starting-style { .lead[open] { opacity: 0; transform: translateY(16px) scale(.98); } }
+  .lead::backdrop { background: rgb(20 4 8 / 0); backdrop-filter: blur(0); transition: background .3s, backdrop-filter .3s, overlay .3s allow-discrete, display .3s allow-discrete; }
+  .lead[open]::backdrop { background: rgb(20 4 8 / .55); backdrop-filter: blur(4px); }
+  @starting-style { .lead[open]::backdrop { background: rgb(20 4 8 / 0); backdrop-filter: blur(0); } }
+
+  .form, .done { padding: clamp(28px, 5vw, 40px); }
+  h2 { font-size: clamp(28px, 4vw, 36px); margin: 0 0 8px; padding-right: 20px; overflow-wrap: anywhere; }
+  .sub { margin: 0 0 24px; color: var(--ink-2); font-size: 16px; }
+  .close { position: absolute; top: 14px; right: 14px; width: 38px; height: 38px; display: grid; place-items: center; border-radius: 50%; border: 0; background: transparent; color: var(--muted); cursor: pointer; transition: background .15s, color .15s; }
+  .close:hover { background: var(--paper-2); color: var(--ink); }
+  .close svg { width: 20px; height: 20px; }
+
+  .field { display: block; margin-bottom: 14px; }
+  .field span { display: block; font-size: 14px; font-weight: 600; margin-bottom: 6px; }
+  .field small { font-weight: 400; color: var(--muted); margin-left: 4px; }
+  .field input {
+    width: 100%; height: 52px; padding: 0 16px; border-radius: 14px; border: 1.5px solid var(--line);
+    background: var(--paper); color: var(--ink); font: 400 16px "Onest", sans-serif;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .field input::placeholder { color: var(--muted); opacity: .8; }
+  .field input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 15%, transparent); }
+  .field input[aria-invalid="true"] { border-color: var(--accent); }
+  .trap { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+
+  .error { margin: 0 0 12px; color: var(--accent); font-size: 14.5px; }
+  .error a { font-weight: 600; }
+  .submit { width: 100%; margin-top: 6px; }
+  .submit[disabled] { opacity: .7; cursor: progress; transform: none; }
+  .fine { margin: 14px 0 0; font-size: 12.5px; color: var(--muted); line-height: 1.45; }
+
+  .direct-contact {
+    margin: 0 clamp(28px, 5vw, 40px) 28px;
+    padding-top: 20px;
+    border-top: 1px solid var(--line);
+  }
+  .direct-contact p { margin: 0 0 12px; font-size: 14px; color: var(--ink-2); }
+  .messengers { display: grid; gap: 8px; }
+  .messengers a {
+    display: block; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px;
+    font-size: 14px; font-weight: 600; text-decoration: none; color: var(--brand);
+  }
+  .messengers a:hover { background: var(--paper-2); }
+  .direct-phone { display: inline-block; margin-top: 16px; font-weight: 600; color: var(--brand); }
+  .done { text-align: center; }
+  .done .btn { margin-top: 4px; min-width: 160px; }
+  .check { width: 64px; height: 64px; margin: 0 auto 18px; border-radius: 50%; display: grid; place-items: center; background: color-mix(in srgb, var(--ok) 15%, transparent); color: var(--ok); }
+  .check svg { width: 32px; height: 32px; stroke-dasharray: 30; stroke-dashoffset: 30; }
+  .done:not([hidden]) .check svg { animation: draw .5s var(--ease) .15s forwards; }
+  @keyframes draw { to { stroke-dashoffset: 0; } }
+
+  @media (max-width: 720px) { .lead { box-shadow: 7px 7px 0 var(--accent); } }
+</style>
+
+<script>
+  const dialog = document.getElementById('lead') as HTMLDialogElement;
+  const form = dialog.querySelector('form')!;
+  const done = dialog.querySelector<HTMLElement>('.done')!;
+  const error = dialog.querySelector<HTMLElement>('.error')!;
+  const submit = dialog.querySelector<HTMLButtonElement>('.submit')!;
+  const contact = form.elements.namedItem('contact') as HTMLInputElement;
+
+  const fail = (html: string) => { error.innerHTML = html; error.hidden = false; };
+  const tg = '<a href="https://t.me/shafranov_ex" target="_blank" rel="noopener">@shafranov_ex</a>';
+
+  const title = dialog.querySelector<HTMLElement>('#lead-title')!;
+  const intro = form.querySelector<HTMLElement>('.sub')!;
+  const intent = form.elements.namedItem('intent') as HTMLInputElement;
+  const requestCopy = {
+    demo: { title: 'Delivest', emphasis: 'в деле', intro: 'Оставьте телефон или почту — свяжемся и обсудим вашу сеть.', button: 'Обсудить подключение' },
+    pricing: { title: 'Первые 2 месяца', emphasis: 'бесплатно', intro: 'Бесплатный период начинается с запуска сайта. Оставьте телефон или почту — обсудим вашу сеть и стоимость после пробного периода.', button: 'Обсудить подключение' },
+  };
+  let selected: keyof typeof requestCopy = 'demo';
+  const open = (kind: string | undefined) => {
+    if (!done.hidden) { form.reset(); form.hidden = false; done.hidden = true; }
+    selected = kind === 'pricing' ? 'pricing' : 'demo';
+    const copy = requestCopy[selected];
+    const emphasis = document.createElement('em');
+    emphasis.textContent = copy.emphasis;
+    title.replaceChildren(`${copy.title} `, emphasis);
+    intro.textContent = copy.intro;
+    submit.textContent = copy.button;
+    intent.value = selected;
+    error.hidden = true;
+    contact.removeAttribute('aria-invalid');
+    dialog.showModal();
+    document.body.style.overflow = 'hidden';
+  };
+  document.querySelectorAll<HTMLElement>('[data-lead]').forEach(el => el.addEventListener('click', e => { e.preventDefault(); open(el.dataset.lead); }));
+  dialog.querySelectorAll('[data-close]').forEach(el => el.addEventListener('click', () => dialog.close()));
+  dialog.addEventListener('close', () => { document.body.style.overflow = ''; });
+  // Click on the backdrop closes the dialog
+  dialog.addEventListener('click', e => {
+    const r = dialog.getBoundingClientRect();
+    if (e.target === dialog && (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom)) dialog.close();
+  });
+
+  form.addEventListener('submit', async e => {
+    e.preventDefault();
+    const data = Object.fromEntries(new FormData(form)) as Record<string, string>;
+    if (data.contact.trim().length < 5) {
+      contact.setAttribute('aria-invalid', 'true');
+      contact.focus();
+      return fail('Укажите телефон или почту, чтобы мы могли связаться.');
+    }
+    contact.removeAttribute('aria-invalid');
+    error.hidden = true;
+    submit.disabled = true;
+    submit.textContent = 'Отправляем…';
+    try {
+      const r = await fetch('/api/lead', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+      if (r.status === 429) return fail(`Слишком много заявок подряд. Попробуйте позже или напишите в Telegram ${tg}.`);
+      if (!r.ok) throw new Error(String(r.status));
+      form.hidden = true;
+      done.hidden = false;
+    } catch {
+      fail(`Не получилось отправить. Напишите нам в Telegram ${tg} или позвоните +7 925 535-52-78.`);
+    } finally {
+      submit.disabled = false;
+      submit.textContent = requestCopy[selected].button;
+    }
+  });
+</script>

@@ -1,0 +1,91 @@
+---
+const demo = 'https://delivest-client.shafranov.tech/kovrov';
+---
+<section id="contacts">
+  <div class="wrap">
+    <div class="box">
+      <div>
+        <span class="kicker">Посмотрите перед решением</span>
+        <h2>Представьте здесь<br/><em>ваш ресторан.</em></h2>
+        <p>Покажем, как гость заказывает, команда работает, а вы управляете доставкой. Разберём ваши задачи, подключения и стоимость запуска.</p>
+        <div class="actions">
+          <button class="btn lead-btn" type="button" data-lead="demo">Записаться на демо</button>
+          <a class="demo-url" href={demo} target="_blank" rel="noopener">Сайт глазами гостя <span>↗</span></a>
+        </div>
+        <p class="next-step">Сначала знакомство с продуктом. Решение о подключении — после.</p>
+      </div>
+      <div class="reach">
+        <a class="phone-num" href="tel:+79255355278">+7 925 535-52-78</a>
+        <a class="social" href="https://t.me/shafranov_ex" target="_blank" rel="noopener">
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M21.94 4.3a1 1 0 0 0-1.36-1.05L2.7 10.2a.9.9 0 0 0 .05 1.7l4.3 1.4 1.65 5.3a.9.9 0 0 0 1.48.38l2.43-2.26 4.56 3.36a1 1 0 0 0 1.57-.6L21.94 4.3ZM9.6 14.1l-.4 3.3-1.2-4 9.3-6.1-7.7 6.8Z"/></svg>
+          <span><b>Telegram</b><small>@shafranov_ex</small></span><span class="go">→</span>
+        </a>
+        <a class="social" href="https://vk.ru/shafranov_kirill" target="_blank" rel="noopener">
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12.8 18c-6.2 0-9.7-4.2-9.8-11.3h3.1c.1 5.2 2.4 7.4 4.2 7.9V6.7h2.9v4.5c1.8-.2 3.7-2.2 4.3-4.5h2.9c-.5 2.8-2.5 4.8-4 5.6 1.5.7 3.8 2.4 4.7 5.7h-3.2c-.7-2.2-2.4-3.9-4.7-4.1V18h-.4Z"/></svg>
+          <span><b>ВКонтакте</b><small>vk.ru/shafranov_kirill</small></span><span class="go">→</span>
+        </a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <span>© 2026 Delivest</span>
+    <a href="#top">Наверх ↑</a>
+  </div>
+</footer>
+
+<style>
+  .box {
+    position: relative; overflow: hidden; display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: clamp(32px, 5vw, 64px); align-items: center;
+    background: var(--brand); color: var(--on-night); border: 1.5px solid var(--edge); border-radius: 28px;
+    padding: clamp(32px, 6vw, 72px); box-shadow: 12px 12px 0 var(--gold);
+  }
+  /* Soft circles echo the brand OG image */
+  .box::before, .box::after { content: ""; position: absolute; border-radius: 50%; background: #ffffff0d; pointer-events: none; }
+  .box::before { width: 360px; height: 360px; right: -120px; top: -160px; animation: drift 14s ease-in-out infinite; }
+  .box::after { width: 260px; height: 260px; left: -90px; bottom: -140px; animation: drift 18s ease-in-out infinite reverse; }
+  @keyframes drift { 50% { transform: translate(-24px, 18px); } }
+  .box > * { position: relative; z-index: 1; }
+  .kicker { color: var(--night-text); }
+  .kicker::before { background: var(--gold); }
+  h2 { color: var(--on-night); }
+  h2 em { color: var(--gold); }
+  p { margin: 0 0 24px; font-size: 17.5px; color: var(--night-text); }
+
+  .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+  .lead-btn { background: var(--gold); border-color: var(--gold); color: #2A0007; min-height: 54px; font-size: 17px; }
+  .lead-btn:hover { background: var(--on-night); border-color: var(--on-night); }
+  .demo-url { display: flex; justify-content: space-between; gap: 12px; font-family: "JetBrains Mono", monospace; font-size: clamp(13px, 1.4vw, 16px); background: var(--on-night); color: #2A0007; border-radius: 14px; padding: 16px 20px; text-decoration: none; border: 1.5px solid var(--on-night); transition: background .2s, color .2s; overflow: hidden; }
+  .demo-url span { transition: transform .2s var(--ease); }
+  .demo-url:hover { background: transparent; color: var(--on-night); }
+  .demo-url:hover span { transform: translate(3px, -3px); }
+
+  .next-step { margin: 16px 0 0; font-size: 13px; line-height: 1.5; }
+  .reach { display: grid; gap: 12px; }
+  .phone-num { font-size: clamp(30px, 3.6vw, 46px); font-weight: 700; letter-spacing: -.03em; line-height: 1.1; text-decoration: none; margin-bottom: 8px; white-space: nowrap; }
+  .phone-num:hover { color: var(--gold); }
+  .social { display: flex; align-items: center; gap: 14px; padding: 14px 18px; border: 1.5px solid #ffffff40; border-radius: 16px; text-decoration: none; transition: background .2s, border-color .2s; }
+  .social:hover { background: #ffffff14; border-color: var(--on-night); }
+  .social svg { width: 26px; height: 26px; flex: none; }
+  .social b { display: block; font-size: 17px; }
+  .social small { display: block; font-size: 13.5px; color: var(--night-text); }
+  .go { margin-left: auto; font-size: 20px; transition: transform .2s var(--ease); }
+  .social:hover .go { transform: translateX(4px); }
+
+  footer { padding: 28px 0 40px; font-size: 14px; color: var(--muted); }
+  footer .wrap { display: flex; justify-content: space-between; gap: 12px; }
+  footer a { text-decoration: none; }
+  footer a:hover { color: var(--ink); }
+
+  @media (max-width: 1020px) { .box { grid-template-columns: 1fr; } }
+  @media (max-width: 720px) {
+    .box { padding: 24px; border-radius: 22px; box-shadow: 7px 7px 0 var(--gold); }
+    .phone-num { font-size: clamp(22px, 6.5vw, 36px); }
+    .actions { display: grid; }
+    .lead-btn { font-size: 16px; }
+    .social { padding: 12px; gap: 10px; }
+    .social small { overflow-wrap: anywhere; }
+  }
+</style>

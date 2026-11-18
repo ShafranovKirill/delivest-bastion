@@ -1,0 +1,43 @@
+---
+// A screenshot in both themes: name.webp is light, name-d.webp is dark (optional).
+// CSS selects the screenshot matching the active site theme.
+import { getImage } from 'astro:assets';
+import type { ImageMetadata } from 'astro';
+
+const screens = import.meta.glob<{ default: ImageMetadata }>('../assets/screens/*.webp', { eager: true });
+const pick = (name: string) => screens[`../assets/screens/${name}.webp`]?.default;
+
+interface Props {
+  name: string;
+  alt: string;
+  widths: number[];
+  sizes: string;
+  class?: string;
+}
+const { name, alt, widths, sizes, class: cls } = Astro.props;
+
+const light = pick(name);
+if (!light) throw new Error(`Screenshot "${name}" is missing in src/assets/screens`);
+const dark = pick(`${name}-d`);
+
+const build = (src: ImageMetadata) =>
+  getImage({ src, format: 'webp', quality: 94, widths: [...new Set([...widths, src.width].map(w => Math.min(w, src.width)))] });
+
+const variants = [
+  { img: await build(light), theme: dark ? 'th-light' : '' },
+  ...(dark ? [{ img: await build(dark), theme: 'th-dark' }] : []),
+];
+---
+{variants.map(({ img, theme }) => (
+  <img
+    class:list={[cls, theme]}
+    src={img.src}
+    srcset={img.srcSet.attribute}
+    sizes={sizes}
+    width={img.attributes.width}
+    height={img.attributes.height}
+    alt={alt}
+    loading="lazy"
+    decoding="async"
+  />
+))}

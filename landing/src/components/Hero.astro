@@ -1,0 +1,119 @@
+---
+import Shot from './Shot.astro';
+
+const demo = 'https://delivest-client.shafranov.tech/kovrov';
+const phoneScreens = [{ name: 'current-menu', alt: 'Актуальное меню Delivest' }, { name: 'current-product', alt: 'Блюдо со звёздами за покупку' }, { name: 'current-cart', alt: 'Корзина с бонусами и рекомендациями' }];
+const toasts = [{ tone: 'gold', title: 'Повод вернуться', sub: 'Звёзды за заказы и любимые блюда' }];
+---
+<div class="hero">
+  <div class="wrap grid">
+    <div class="copy">
+      <span class="kicker">Онлайн-заказы для кафе и ресторанов</span>
+      <h1>Доставка<br />под вашим<br /><em>брендом.</em></h1>
+      <p class="lead">Принимайте заказы на своём сайте, возвращайте гостей бонусами и управляйте доставкой в одном месте. Delivest — от выбора блюда до работы вашей команды.</p>
+      <div class="cta">
+        <button class="btn btn-ink" type="button" data-lead="demo">Записаться на демо</button>
+        <a class="btn btn-line" href={demo} target="_blank" rel="noopener">Открыть сайт гостя ↗</a>
+      </div>
+      <p class="note"><span class="live"></span>Покажем продукт и обсудим задачи вашего ресторана</p>
+    </div>
+
+    <div class="stage reveal" style="--d:2">
+      <div class="browser">
+        <div class="browser-bar"><i></i><i></i><i></i><span class="url">ваша доставка онлайн</span></div>
+        <Shot name="current-desktop" alt="Клиентский сайт на компьютере" widths={[700, 1100, 1686]} sizes="(max-width: 1020px) 92vw, 560px" />
+      </div>
+      <div class="float">
+        <div class="phone">
+          <div class="screens" data-cycle="3200">
+            {phoneScreens.map((s, i) => (
+              <div class:list={['scr', i === 0 && 'on']}><Shot {...s} widths={[400, 585]} sizes="200px" /></div>
+            ))}
+          </div>
+        </div>
+      </div>
+      <div class="toasts" aria-hidden="true">
+        {toasts.map((t, i) => (
+          <div class:list={['toast', i === 0 && 'on']} data-tone={t.tone}><i></i><div><b>{t.title}</b><span>{t.sub}</span></div></div>
+        ))}
+      </div>
+    </div>
+  </div>
+  <div class="wrap">
+    <ul class="value-strip" aria-label="Что даёт Delivest вашему ресторану">
+      <li><span>01 / Свой канал</span><b>Гость заказывает у вас</b><p>Ваш домен, ваше меню и оформление. Прямая ссылка на заказ — в соцсетях, рекламе и на упаковке.</p></li>
+      <li><span>02 / Повторные продажи</span><b>Есть повод вернуться</b><p>Бонусные звёзды, подарки и промокоды помогают продолжить знакомство после первой покупки.</p></li>
+      <li><span>03 / Работа команды</span><b>Доставка под контролем</b><p>Заказы, меню, гости и филиалы — в одной системе. Кухне и курьерам — свои приложения.</p></li>
+    </ul>
+  </div>
+</div>
+
+<style>
+  h1 { font-size: clamp(40px, 5vw, 62px); }
+
+  .hero { padding: clamp(40px, 7vw, 84px) 0 clamp(48px, 6vw, 72px); overflow: hidden; }
+  .grid { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); gap: clamp(32px, 5vw, 72px); align-items: center; }
+  .lead { font-size: clamp(17px, 1.6vw, 20px); color: var(--ink-2); max-width: 32em; margin: 0 0 32px; }
+  .cta { display: flex; flex-wrap: wrap; gap: 12px; }
+  .note { margin: 22px 0 0; font-size: 14px; color: var(--muted); display: flex; gap: 10px; align-items: center; }
+  .value-strip { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px; padding: 32px 0 0; margin: clamp(48px, 6vw, 72px) 0 0; border-top: 1px solid var(--line); list-style: none; }
+  .value-strip li > span { display: block; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); margin-bottom: 12px; }
+  .value-strip b { display: block; font-size: 21px; line-height: 1.3; letter-spacing: -.02em; }
+  .value-strip p { margin: 10px 0 0; font-size: 15px; color: var(--ink-2); }
+  .live { width: 8px; height: 8px; border-radius: 50%; background: #3AA66B; position: relative; flex: none; }
+  .live::after { content: ""; position: absolute; inset: 0; border-radius: 50%; background: #3AA66B; animation: ping 2s ease-out infinite; }
+  @keyframes ping { to { transform: scale(3); opacity: 0; } }
+
+  .stage { position: relative; padding: 0 64px 48px 0; }
+  .float { position: absolute; right: 0; bottom: 0; width: 34%; max-width: 200px; transform: rotate(3deg); }
+  .float .phone { border-radius: 16px; padding: 5px; animation: bob 6s ease-in-out infinite; }
+  .float .screens { border-radius: 11px; }
+  @keyframes bob { 50% { transform: translateY(-8px); } }
+
+  .toasts { position: absolute; left: -24px; bottom: 18px; width: 250px; height: 64px; }
+  .toast {
+    position: absolute; inset: 0; display: flex; gap: 12px; align-items: center;
+    padding: 12px 16px; border-radius: 14px; background: var(--card); border: 1.5px solid var(--edge);
+    box-shadow: 0 18px 40px -18px rgba(42, 0, 7, .45);
+    opacity: 0; transform: translateY(14px) scale(.96);
+    transition: opacity .45s var(--ease), transform .45s var(--ease);
+  }
+  .toast.on { opacity: 1; transform: none; }
+  .toast i { width: 10px; height: 10px; border-radius: 50%; flex: none; background: var(--accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 18%, transparent); }
+  .toast[data-tone="gold"] i { background: var(--gold); box-shadow: 0 0 0 4px color-mix(in srgb, var(--gold) 22%, transparent); }
+  .toast[data-tone="ok"] i { background: var(--ok); box-shadow: 0 0 0 4px color-mix(in srgb, var(--ok) 20%, transparent); }
+  .toast b { display: block; font-size: 14px; line-height: 1.3; }
+  .toast span { display: block; font-size: 12.5px; color: var(--muted); line-height: 1.3; }
+
+  @media (max-width: 1020px) {
+    .grid { grid-template-columns: 1fr; }
+    .stage { max-width: 640px; }
+  }
+  @media (max-width: 720px) {
+    .value-strip { grid-template-columns: 1fr; gap: 24px; }
+    .hero { padding-top: 32px; }
+    .cta { display: grid; grid-template-columns: 1fr; max-width: 360px; }
+    .stage { padding: 0 36px 40px 0; }
+    .toasts { left: -6px; bottom: 6px; width: 210px; height: 58px; }
+    .toast { padding: 10px 12px; }
+  }
+</style>
+
+<script>
+  // Rotates children with .on inside every [data-cycle] / toast stack; pauses off-screen and in background tabs
+  const calm = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const rotate = (items: Element[], ms: number, box: Element) => {
+    if (calm || items.length < 2) return;
+    let i = 0, visible = false;
+    new IntersectionObserver(([e]) => { visible = e.isIntersecting; }).observe(box);
+    setInterval(() => {
+      if (!visible || document.hidden) return;
+      items[i].classList.remove('on');
+      i = (i + 1) % items.length;
+      items[i].classList.add('on');
+    }, ms);
+  };
+  document.querySelectorAll<HTMLElement>('.hero [data-cycle]').forEach(el => rotate([...el.children], +el.dataset.cycle!, el));
+  const toasts = document.querySelector('.hero .toasts');
+  if (toasts) rotate([...toasts.children], 2600, toasts);
+</script>

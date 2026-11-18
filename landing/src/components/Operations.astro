@@ -1,0 +1,23 @@
+---
+import Shot from './Shot.astro';
+
+const features=[['01','Порядок в заказах','Сайт и оператор работают с общей лентой заказов. Статусы помогают следить за выполнением.'],['02','Знакомые гости','История покупок и любимые блюда помогают подготовить персональное предложение.'],['03','Каждая точка под контролем','Отдельные меню, цены и часы работы филиалов. Сотрудникам — доступ к нужным точкам.'],['04','Понятные результаты','Выручка, количество заказов и средний чек за выбранный период. Видно, что заказывают чаще.']];
+---
+<section id="management" class="tinted"><div class="wrap"><div class="head"><span class="kicker">Управление доставкой</span><h2>Заказов становится больше.<br/><em>Контроль остаётся у вас.</em></h2><p>Работайте с заказами, меняйте меню и следите за результатами из одной системы. Для одной точки или сети заведений.</p></div><div class="ops">{features.map(([n,t,p])=><article><span>{n}</span><h3>{t}</h3><p>{p}</p></article>)}</div>
+  <figure class="product-proof">
+    <div class="browser"><div class="browser-bar"><i></i><i></i><i></i><span class="url">Delivest · управление меню</span></div><Shot name="admin-products" alt="Управление товарами в Delivest: категории, цены, состав и доступность блюд" widths={[640, 1100, 1716]} sizes="(max-width: 1180px) 92vw, 1100px" /></div>
+    <figcaption><b>Ваше меню — в ваших руках.</b> Категории, цены, фотографии и доступность блюд. На демонстрации покажем, как этим управлять.</figcaption>
+  </figure>
+</div></section>
+<style>
+  .product-proof { margin: 40px 0 0; }
+  .product-proof figcaption { margin-top: 24px; color: var(--ink-2); font-size: 15px; max-width: 700px; }
+  .product-proof figcaption b { color: var(--ink); }
+  .ops { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 24px; }
+  .ops article { border-top: 1px solid var(--line); padding-top: 20px; }
+  .ops article > span { font-size: 14px; color: var(--accent); }
+  .ops h3 { margin-top: 26px; font-size: 23px; }
+  .ops p { font-size: 15px; color: var(--ink-2); }
+  @media (max-width: 850px) { .ops { grid-template-columns: 1fr 1fr; } }
+  @media (max-width: 500px) { .ops { grid-template-columns: 1fr; } .ops h3 { margin-top: 12px; } }
+</style>

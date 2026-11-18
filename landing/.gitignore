@@ -1,0 +1,5 @@
+.env
+originals/
+node_modules/
+dist/
+.astro/

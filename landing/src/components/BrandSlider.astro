@@ -1,0 +1,97 @@
+---
+const brands = [
+  ['brick-burger', 'Brick Burger'],
+  ['forno27', 'Forno27'],
+  ['nori', 'Nori'],
+  ['kroshka', 'Крошка'],
+  ['black-cup', 'Black Cup'],
+  ['lapsha', 'Лапша'],
+  ['green-fork', 'Green Fork'],
+  ['teply-dvor', 'Тёплый двор'],
+  ['taco-loco', 'Taco Loco'],
+  ['sol', 'Соль'],
+  ['wave-poke', 'Wave Poke'],
+  ['mishka-grill', 'Мишка Гриль'],
+];
+---
+
+<section class="brand-slider" aria-labelledby="brand-slider-title">
+  <div class="brand-slider-head">
+    <h2 id="brand-slider-title">Нам доверяют 30+ ресторанов</h2>
+  </div>
+  <div class="brand-frame">
+    <div class="brand-viewport" tabindex="0" aria-label="Примеры брендов ресторанов, прокрутка по горизонтали">
+      <div class="brand-track">
+        <ul class="brand-group">
+          {brands.map(([file, name]) => <li><img src={`/franchise/brands/${file}.webp`} alt={name} width="480" height="240" decoding="async" /></li>)}
+        </ul>
+        <div class="brand-group clone" aria-hidden="true">
+          {brands.map(([file]) => <div class="brand-item"><img src={`/franchise/brands/${file}.webp`} alt="" width="480" height="240" decoding="async" /></div>)}
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="facts-grid" role="region" tabindex="0" aria-label="Delivest в фактах, прокрутка по горизонтали">
+    <article class="fact">
+      <strong class="fact-value">2 месяца</strong>
+      <h3>Бесплатный старт</h3>
+      <p>Два месяца подписки бесплатно с запуска сайта.</p>
+    </article>
+    <article class="fact">
+      <strong class="fact-value">от 3&nbsp;000&nbsp;₽</strong>
+      <h3>Сайт доставки</h3>
+      <p>Базовый тариф в месяц. Стоимость зависит от оборота франшизы.</p>
+    </article>
+    <article class="fact">
+      <strong class="fact-value">Больше прибыли</strong>
+      <h3>Прямые и повторные заказы</h3>
+      <p>Продавайте на своём сайте и возвращайте гостей акциями.</p>
+    </article>
+    <article class="fact">
+      <strong class="fact-value">AI-помощь</strong>
+      <h3>В обоих тарифах</h3>
+      <p>Контент и маркетинговое сопровождение команды.</p>
+    </article>
+  </div>
+</section>
+
+<style>
+  .brand-slider { padding: 32px 0 52px; overflow: hidden; background: #f5eee8; color: #321418; }
+  .brand-slider-head { max-width: 1120px; width: calc(100% - 40px); margin: 0 auto 1px; text-align: center; }
+  h2 { margin: 0; font: 700 clamp(18px, 2vw, 24px)/1.25 Onest, sans-serif; letter-spacing: -.02em; }
+  .brand-frame { position: relative; max-width: 1120px; width: calc(100% - 40px); margin: 0 auto; }
+  .brand-frame::before, .brand-frame::after { content: ''; position: absolute; inset-block: 0; z-index: 1; width: 64px; pointer-events: none; backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px); }
+  .brand-frame::before { left: 0; background: linear-gradient(90deg, var(--story-bg,#f5eee8), transparent); mask-image: linear-gradient(90deg, #000, transparent); -webkit-mask-image: linear-gradient(90deg, #000, transparent); }
+  .brand-frame::after { right: 0; background: linear-gradient(270deg, var(--story-bg,#f5eee8), transparent); mask-image: linear-gradient(270deg, #000, transparent); -webkit-mask-image: linear-gradient(270deg, #000, transparent); }
+  .brand-viewport { overflow: hidden; outline-offset: -3px; }
+  .brand-track { display: flex; width: max-content; animation: glide 24s linear infinite; }
+  .brand-group { display: flex; flex: none; gap: 0; width: max-content; margin: 0; padding: 0; list-style: none; }
+  .brand-group li, .brand-item { display: grid; place-items: center; flex: 0 0 136px; width: 136px; height: 110px; padding: 4px 0; }
+  img { display: block; width:160px; max-width:none; height:100%; object-fit:contain; filter: grayscale(1); opacity: .55; }
+  .facts-grid { max-width: 1120px; width: calc(100% - 40px); margin: 8px auto 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+  .fact { min-width: 0; min-height: 180px; padding: 18px; border-radius: 8px; background: #fffaf5; color:#321418; }
+  .fact:nth-child(2) { background: #48010c; color: #fff6f4; }
+  .fact:nth-child(3) { background: #e8d7cc; }
+  .fact:nth-child(4) { background: #efc07a; }
+  .fact-value { display: block; margin-bottom: 14px; font-size: clamp(20px, 2.2vw, 28px); line-height: 1.05; letter-spacing: -.045em; }
+  .fact h3 { margin: 0 0 7px; font-size: 15px; line-height: 1.25; letter-spacing: -.02em; }
+  .fact p { margin: 0; font-size: 13px; line-height: 1.4; }
+  @media (max-width: 1050px) { .facts-grid { gap: 10px; } .fact { padding: 14px; } .fact-value { font-size: 22px; } .fact h3 { font-size: 14px; } .fact p { font-size: 12px; } }
+  @keyframes glide { to { transform: translateX(-50%); } }
+  @media (max-width: 650px) {
+    .brand-slider { padding-block: 26px 42px; }
+    .brand-slider-head, .brand-frame { width: calc(100% - 32px); }
+    .brand-frame::before, .brand-frame::after { width: 36px; }
+    .brand-group li, .brand-item { flex-basis: 106px; width: 106px; height: 92px; }
+    img { width:125px; }
+    .facts-grid { width:100%; max-width:none; padding-inline:16px; grid-template-columns:none; grid-auto-flow:column; grid-auto-columns:calc((100vw - 28px) / 1.5); gap:12px; overflow-x:auto; scroll-padding-inline:16px; overscroll-behavior-inline: contain; scroll-snap-type: x proximity; scrollbar-width: none; -ms-overflow-style: none; }
+    .facts-grid::-webkit-scrollbar { display: none; width: 0; height: 0; }
+    .fact { min-height:150px; padding:14px; scroll-snap-align:start; }
+    .fact-value { margin-bottom:10px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .brand-viewport { overflow-x: auto; }
+    .brand-track { animation: none; }
+    .clone { display: none; }
+  }
+</style>

@@ -1,0 +1,123 @@
+---
+import Shot from './Shot.astro';
+
+type Row = [label: string, chips: string[], accent?: number];
+const presets: { name: string; type: string; rows: Row[] }[] = [
+  {
+    name: 'Счастливые часы', type: 'Автоматическая',
+    rows: [['Когда', ['пн–пт', '11:00–16:00', 'самовывоз']], ['Что получает', ['−15% на заказ', 'не больше 500 ₽'], 0], ['Ограничения', ['1 раз на гостя', 'до 31 декабря']]],
+  },
+  {
+    name: 'Подарок к заказу', type: 'Автоматическая',
+    rows: [['Когда', ['корзина от 2 500 ₽', 'доставка']], ['Что получает', ['пицца «Барбекю» в подарок'], 0], ['Ограничения', ['суммируется с другими']]],
+  },
+  {
+    name: 'Код для постоянного гостя', type: 'Персональный код',
+    rows: [['Когда', ['любой заказ']], ['Что получает', ['−300 ₽'], 0], ['Ограничения', ['одноразовый', 'привязан к телефону']]],
+  },
+];
+const types = ['Автоматическая', 'Публичный код', 'Персональный код'];
+const kinds = [
+  ['Автоматическая', 'Срабатывает сама, как только выполнены условия. Скидка на товар видна в меню зачёркнутой ценой.'],
+  ['Публичный код', 'Один код для всех: для поста в соцсетях, листовки или рассылки. С лимитом использований.'],
+  ['Персональный код', 'Уникальный для гостя, привязан к номеру телефона. Видно, кому выдан и использован ли.'],
+];
+---
+<section id="promo" class="night">
+  <div class="wrap">
+    <div class="head reveal">
+      <span class="kicker">Конструктор акций</span>
+      <h2>Акции <em>без программиста</em></h2>
+      <p>Акция собирается из условий и вознаграждений: сумма корзины, время, способ получения, товары. Скидка, спеццена или подарок. Лимиты, приоритеты и совместимость с другими акциями.</p>
+    </div>
+
+    <div class="grid">
+      <div class="builder reveal" data-presets>
+        {presets.map((p, i) => (
+          <div class:list={['preset', i === 0 && 'on']}>
+            <div class="b-head"><b>{p.name}</b><span class="status">Включена</span></div>
+            <div class="row"><span>Тип</span><div class="chips">{types.map(t => <span class:list={['chip', t === p.type && 'sel']}>{t}</span>)}</div></div>
+            {p.rows.map(([label, chips, accent]) => (
+              <div class="row"><span>{label}</span><div class="chips">{chips.map((c, n) => <span class:list={['chip', accent === n ? 'acc' : accent === undefined && label === 'Когда' && 'sel']}>{c}</span>)}</div></div>
+            ))}
+          </div>
+        ))}
+        <div class="dots" role="group" aria-label="Примеры акций">
+          {presets.map((p, i) => <button type="button" aria-label={p.name} class:list={[i === 0 && 'on']}></button>)}
+        </div>
+      </div>
+
+      <div class="browser reveal" style="--d:2">
+        <div class="browser-bar"><i></i><i></i><i></i><span class="url">Панель управления · Акции</span></div>
+        <div class="view"><Shot name="admin-promotion" alt="Конструктор акции в панели" widths={[600, 1000, 1506]} sizes="(max-width: 1020px) 92vw, 560px" /></div>
+      </div>
+    </div>
+
+    <div class="kinds">
+      {kinds.map(([tag, text], i) => <div class="kind reveal" style={`--d:${i}`}><span class="tag">{tag}</span><p>{text}</p></div>)}
+    </div>
+  </div>
+</section>
+
+<style>
+  .grid { display: grid; grid-template-columns: 1fr 1.1fr; gap: clamp(28px, 4vw, 56px); align-items: center; }
+
+  .builder { display: grid; background: var(--card); color: var(--ink); border: 1.5px solid var(--on-night); border-radius: 20px; overflow: hidden; box-shadow: 10px 10px 0 var(--gold); }
+  .preset { grid-area: 1 / 1; opacity: 0; visibility: hidden; transition: opacity .5s var(--ease), visibility 0s .5s; }
+  .preset.on { opacity: 1; visibility: visible; transition-delay: 0s; }
+  .preset .chip { opacity: 0; transform: translateY(6px); transition: opacity .35s var(--ease), transform .35s var(--ease), background .3s, color .3s; }
+  .preset.on .chip { opacity: 1; transform: none; }
+  .preset.on .row:nth-child(2) .chip { transition-delay: .05s; }
+  .preset.on .row:nth-child(3) .chip { transition-delay: .12s; }
+  .preset.on .row:nth-child(4) .chip { transition-delay: .19s; }
+  .preset.on .row:nth-child(5) .chip { transition-delay: .26s; }
+  .b-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 18px 22px; border-bottom: 1px solid var(--line); }
+  .b-head b { font-size: 18px; }
+  .status { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; padding: 4px 10px; border-radius: 999px; background: color-mix(in srgb, var(--ok) 16%, transparent); color: var(--ok); white-space: nowrap; }
+  .row { display: grid; grid-template-columns: 120px 1fr; gap: 14px; padding: 14px 22px; border-bottom: 1px dashed var(--line); align-items: start; }
+  .row > span { font-size: 12.5px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); padding-top: 6px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip { background: var(--paper); border: 1px solid var(--line); border-radius: 10px; padding: 5px 11px; font-size: 14.5px; }
+  .chip.sel { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+  .chip.acc { background: var(--accent); color: var(--on-accent); border-color: var(--accent); font-weight: 600; }
+  .dots { grid-area: 2 / 1; display: flex; gap: 8px; justify-content: center; padding: 14px; }
+  .dots button { width: 8px; height: 8px; padding: 0; border-radius: 99px; border: 0; background: var(--line); cursor: pointer; transition: width .3s var(--ease), background .3s; }
+  .dots button.on { width: 26px; background: var(--accent); }
+
+  .browser { border-color: var(--on-night); box-shadow: 10px 10px 0 var(--gold); }
+  .view { aspect-ratio: 1506 / 1320; max-height: 520px; overflow: hidden; background: var(--paper-2); }
+  .view img { width: 100%; height: 100%; object-fit: cover; object-position: top left; }
+
+  .kinds { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: clamp(40px, 6vw, 64px); }
+  .kind { border-top: 1px solid var(--night-line); padding-top: 20px; }
+  .tag { display: inline-block; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: #2A0007; background: var(--gold); padding: 4px 10px; border-radius: 999px; margin-bottom: 12px; font-weight: 600; }
+  .kind p { margin: 0; font-size: 15.5px; }
+
+  @media (max-width: 1020px) { .grid { grid-template-columns: 1fr; } }
+  @media (max-width: 720px) {
+    .row { grid-template-columns: 1fr; gap: 8px; }
+    .row > span { padding-top: 0; }
+    .kinds { grid-template-columns: 1fr; }
+    .builder, .browser { box-shadow: 6px 6px 0 var(--gold); }
+  }
+</style>
+
+<script>
+  const calm = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  document.querySelectorAll<HTMLElement>('[data-presets]').forEach(box => {
+    const presets = [...box.querySelectorAll('.preset')];
+    const dots = [...box.querySelectorAll<HTMLButtonElement>('.dots button')];
+    let i = 0, timer = 0, visible = false;
+    const show = (n: number) => {
+      presets[i].classList.remove('on'); dots[i].classList.remove('on');
+      i = n;
+      presets[i].classList.add('on'); dots[i].classList.add('on');
+    };
+    const schedule = () => {
+      clearInterval(timer);
+      if (visible && !calm) timer = setInterval(() => { if (!document.hidden) show((i + 1) % presets.length); }, 4200);
+    };
+    dots.forEach((d, n) => d.addEventListener('click', () => { show(n); schedule(); }));
+    new IntersectionObserver(([e]) => { visible = e.isIntersecting; schedule(); }, { threshold: .4 }).observe(box);
+  });
+</script>

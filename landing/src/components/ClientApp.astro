@@ -1,0 +1,118 @@
+---
+import Shot from './Shot.astro';
+
+const steps = [
+ { name: 'current-menu', title: 'Выбрать любимое', text: 'Меню с фотографиями, акции и звёзды за отдельные блюда — всё перед глазами.' },
+ { name: 'current-product', title: 'Узнать больше о блюде', text: 'Крупное фото, состав, вес и цена. Гостю легко определиться с выбором.' },
+ { name: 'current-cart', title: 'Собрать выгодный заказ', text: 'Рекомендации, промокод и подсказки об акциях. Видно, сколько звёзд принесёт покупка.' },
+];
+const extras = [['Заказ в браузере', 'Телефон, планшет или компьютер'], ['Доставка и самовывоз', 'Гость выбирает удобный способ'], ['Бонусные звёзды', 'За сумму заказа и отдельные блюда'], ['Ваше оформление', 'Название, цвета и меню заведения']];
+---
+<section id="app">
+  <div class="wrap">
+    <div class="head reveal">
+      <span class="kicker">Клиентское приложение</span>
+      <h2>От «что заказать?»<br/><em>до «хочу ещё».</em></h2>
+      <p>Гость приходит по вашей ссылке и видит меню, акции и бонусы. Всё открывается в браузере — с телефона или компьютера, без установки приложения.</p>
+    </div>
+
+    <div class="tour" data-tour>
+      <ol class="steps reveal">
+        {steps.map((s, i) => (
+          <li>
+            <button type="button" class:list={[i === 0 && 'on']} aria-pressed={i === 0 ? 'true' : 'false'}>
+              <span class="n">{String(i + 1).padStart(2, '0')}</span>
+              <span class="t"><b>{s.title}</b><span class="d"><span>{s.text}</span></span></span>
+              <span class="bar"></span>
+            </button>
+          </li>
+        ))}
+      </ol>
+      <div class="device reveal" style="--d:2">
+        <div class="phone">
+          <div class="screens">
+            {steps.map((s, i) => (
+              <div class:list={['scr', i === 0 && 'on']}><Shot name={s.name} alt={s.title} widths={[300, 585]} sizes="(max-width: 720px) 70vw, 300px" /></div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <ul class="extras">
+      {extras.map(([b, t], i) => <li class="reveal" style={`--d:${i % 4}`}><b>{b}</b><span>{t}</span></li>)}
+    </ul>
+  </div>
+</section>
+
+<style>
+  .tour { display: grid; grid-template-columns: 1fr minmax(260px, 320px); gap: clamp(32px, 6vw, 96px); align-items: center; }
+  .steps { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
+  .steps li { border-bottom: 1px solid var(--line); }
+  .steps button {
+    position: relative; width: 100%; display: grid; grid-template-columns: 44px 1fr; gap: 12px; align-items: baseline;
+    padding: 14px 0; background: none; border: 0; text-align: left; cursor: pointer;
+  }
+  .n { font-family: "Lora", serif; font-style: italic; font-size: 20px; color: var(--muted); transition: color .3s; }
+  .t b { display: block; font-size: 18px; font-weight: 600; color: var(--ink-2); transition: color .3s; }
+  .d { display: grid; grid-template-rows: 0fr; color: var(--muted); font-size: 15.5px; transition: grid-template-rows .45s var(--ease), margin .45s var(--ease); }
+  .d > span { min-height: 0; overflow: hidden; }
+  .on .n { color: var(--accent); }
+  .on .t b, .steps button:hover .t b { color: var(--ink); }
+  .on .d { grid-template-rows: 1fr; margin-top: 4px; }
+  .bar { position: absolute; left: 0; bottom: -1px; height: 2px; width: 100%; background: var(--accent); transform: scaleX(0); transform-origin: left; }
+
+  .device { max-width: 320px; width: 100%; margin: 0 auto; }
+
+  .extras { list-style: none; padding: 0; margin: clamp(48px, 7vw, 80px) 0 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  .extras li { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 18px 20px; transition: border-color .2s, transform .2s var(--ease); }
+  .extras li:hover { border-color: var(--accent); transform: translateY(-2px); }
+  .extras b { display: block; font-size: 16px; margin-bottom: 2px; }
+  .extras span { color: var(--muted); font-size: 14.5px; line-height: 1.45; }
+
+  @media (max-width: 1020px) { .extras { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 720px) {
+    .tour { grid-template-columns: 1fr; }
+    .device { order: -1; max-width: 250px; }
+    .extras { grid-template-columns: 1fr 1fr; gap: 10px; }
+    .extras li { padding: 14px 16px; }
+  }
+</style>
+
+<script>
+  // Step list drives the phone. The countdown runs only while the block is in the middle of the screen;
+  // scrolling away pauses it and coming back resumes from the same point. A click picks a step and starts it over.
+  const STEP = 4500;
+  const calm = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  document.querySelectorAll<HTMLElement>('[data-tour]').forEach(tour => {
+    const buttons = [...tour.querySelectorAll('button')];
+    const screens = [...tour.querySelectorAll('.scr')];
+    const bars = buttons.map(b => b.querySelector<HTMLElement>('.bar')!);
+    let i = 0, elapsed = 0, last = 0, visible = false, frame = 0;
+
+    const show = (n: number) => {
+      bars[i].style.transform = '';
+      buttons[i].classList.remove('on'); buttons[i].setAttribute('aria-pressed', 'false'); screens[i].classList.remove('on');
+      i = n; elapsed = 0;
+      buttons[i].classList.add('on'); buttons[i].setAttribute('aria-pressed', 'true'); screens[i].classList.add('on');
+    };
+    const tick = (now: number) => {
+      elapsed += now - last;
+      last = now;
+      if (elapsed >= STEP) show((i + 1) % buttons.length);
+      bars[i].style.transform = `scaleX(${elapsed / STEP})`;
+      frame = requestAnimationFrame(tick);
+    };
+    const sync = () => {
+      cancelAnimationFrame(frame);
+      if (visible && !calm && !document.hidden) {
+        last = performance.now();
+        frame = requestAnimationFrame(tick);
+      }
+    };
+
+    buttons.forEach((b, n) => b.addEventListener('click', () => { show(n); sync(); }));
+    document.addEventListener('visibilitychange', sync);
+    new IntersectionObserver(([e]) => { visible = e.isIntersecting; sync(); }, { rootMargin: '-30% 0px -30% 0px' }).observe(tour);
+  });
+</script>

@@ -1,0 +1,165 @@
+---
+import Shot from './Shot.astro';
+
+const tabs = [
+  {
+    id: 'stats', label: 'Статистика', shot: 'admin-statistics',
+    title: 'Цифры за любой период',
+    text: 'Выручка, заказы и средний чек за день, неделю, месяц или свои даты, со сравнением с прошлым периодом.',
+    points: ['Заказы по часам и пиковая нагрузка', 'Хиты продаж по количеству и выручке', 'Способы получения и оплаты'],
+  },
+  {
+    id: 'orders', label: 'Заказы', shot: 'admin-orders',
+    title: 'Все заказы в одной ленте',
+    text: 'Заказы с сайта и принятые по телефону. Новые появляются без перезагрузки, видно, сколько ещё не приняли.',
+    points: ['Статусы от «принят» до «выполнен»', 'Фильтры по дате и статусу', 'Зависшие заказы закрываются сами'],
+  },
+  {
+    id: 'phone', label: 'Заказ по телефону', shot: 'admin-order-new',
+    title: 'Оператор собирает корзину',
+    text: 'Каталог и корзина на одном экране. Акции и промокоды применяются так же, как на сайте.',
+    points: ['Акции применяются сами', 'Состав можно менять, пока заказ открыт', 'Заказ попадает в общую ленту и в CRM'],
+  },
+  {
+    id: 'clients', label: 'Клиенты', shot: 'admin-client',
+    title: 'База гостей',
+    text: 'Каждый, кто сделал заказ, попадает в базу. В карточке видно, что и как часто он заказывает.',
+    points: ['История и сумма покупок', 'Любимые блюда', 'Персональный промокод из карточки'],
+  },
+  {
+    id: 'menu', label: 'Меню', shot: 'admin-products',
+    title: 'Меню за минуты',
+    text: 'Категории, товары с фото и весом, баннеры. Порядок меняется перетаскиванием.',
+    points: ['Вставка меню из Excel через Ctrl+V', 'Копирование между филиалами', 'Скрыть позицию одной кнопкой'],
+  },
+  {
+    id: 'access', label: 'Доступы', shot: 'admin-logs',
+    title: 'Роли и журнал действий',
+    text: 'У каждого сотрудника только нужные права: по разделам и по филиалам.',
+    points: ['Просмотр, создание, изменение, удаление', 'Журнал: кто, что и когда изменил', 'Технические логи прямо в панели'],
+  },
+  {
+    id: 'branches', label: 'Филиалы', shot: 'admin-branch',
+    title: 'Новая точка без разработчика',
+    text: 'Филиал добавляется в панели. У каждого своё меню, цены, часы работы и страница на сайте.',
+    points: ['Адрес на карте и соцсети', 'Своя ссылка вида /kovrov', 'Закрыть точку одним переключателем'],
+  },
+  {
+    id: 'brand', label: 'Бренд', shot: 'admin-franchise',
+    title: 'Название, цвет, реквизиты',
+    text: 'Общие настройки для всех филиалов. Сайт перекрашивается в цвет бренда сразу, контраст проверяется автоматически.',
+    points: ['SEO-описание для поисковиков', 'Реквизиты продавца в подвале сайта', 'Редактор юридических документов'],
+    swatches: ['#48010C', '#462094', '#1F6F50', '#C2410C', '#1D4ED8'],
+  },
+];
+---
+<section id="admin" class="tinted">
+  <div class="wrap">
+    <div class="head reveal">
+      <span class="kicker">Панель управления</span>
+      <h2>Рабочее место <em>для персонала</em></h2>
+      <p>Владелец, управляющий и операторы работают в браузере. Данные обновляются без перезагрузки, каждый видит только свои разделы и филиалы.</p>
+    </div>
+
+    <div class="tabs reveal" role="tablist" aria-label="Разделы панели">
+      {tabs.map((t, i) => (
+        <button type="button" role="tab" id={`tab-${t.id}`} aria-controls={`panel-${t.id}`} aria-selected={i === 0 ? 'true' : 'false'} tabindex={i === 0 ? 0 : -1}>{t.label}</button>
+      ))}
+      <span class="pill" aria-hidden="true"></span>
+    </div>
+
+    <div class="panels reveal">
+      {tabs.map((t, i) => (
+        <div class:list={['panel', i === 0 && 'on']} role="tabpanel" id={`panel-${t.id}`} aria-labelledby={`tab-${t.id}`}>
+          <div class="text">
+            <h3>{t.title}</h3>
+            <p>{t.text}</p>
+            <ul>{t.points.map(p => <li>{p}</li>)}</ul>
+            {t.swatches && <div class="swatches" aria-hidden="true">{t.swatches.map(c => <i style={`background:${c}`}></i>)}</div>}
+          </div>
+          <div class="browser">
+            <div class="browser-bar"><i></i><i></i><i></i><span class="url">Панель управления · {t.label}</span></div>
+            <div class="view"><Shot name={t.shot} alt={t.title} widths={[700, 1100, 1700]} sizes="(max-width: 1020px) 92vw, 720px" /></div>
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+</section>
+
+<style>
+  .tabs { position: relative; display: flex; gap: 4px; padding: 5px; margin-bottom: 28px; background: var(--card); border: 1.5px solid var(--edge); border-radius: 999px; width: max-content; max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tabs button { position: relative; z-index: 1; flex: none; border: 0; background: none; padding: 9px 16px; border-radius: 999px; font-size: 15px; font-weight: 500; color: var(--ink-2); cursor: pointer; transition: color .25s; }
+  .tabs button:hover { color: var(--ink); }
+  .tabs button[aria-selected="true"] { color: var(--paper); }
+  .pill { position: absolute; top: 5px; bottom: 5px; left: 0; width: 0; border-radius: 999px; background: var(--ink); transition: transform .4s var(--ease), width .4s var(--ease); }
+
+  .panels { display: grid; }
+  .panel { grid-area: 1 / 1; display: grid; grid-template-columns: minmax(260px, .8fr) 1.6fr; gap: clamp(28px, 4vw, 56px); align-items: start; visibility: hidden; opacity: 0; transform: translateY(10px); transition: opacity .4s var(--ease), transform .5s var(--ease), visibility 0s .4s; }
+  .panel.on { visibility: visible; opacity: 1; transform: none; transition-delay: 0s; }
+  /* Only the active screenshot may load: hidden panels are display:none for their images */
+  .panel:not(.on) .view img { display: none; }
+
+  .text { padding-top: 8px; }
+  .text h3 { font-size: clamp(22px, 2.4vw, 28px); letter-spacing: -.02em; margin-bottom: 10px; }
+  .text p { margin: 0 0 18px; color: var(--ink-2); }
+  .text ul { list-style: none; padding: 0; margin: 0; border-top: 1px solid var(--line); }
+  .text li { padding: 11px 0 11px 28px; border-bottom: 1px solid var(--line); position: relative; font-size: 15.5px; }
+  .text li::before { content: ""; position: absolute; left: 2px; top: 18px; width: 12px; height: 7px; border-left: 2px solid var(--accent); border-bottom: 2px solid var(--accent); transform: rotate(-45deg); }
+  .swatches { display: flex; gap: 8px; margin-top: 18px; }
+  .swatches i { width: 32px; height: 32px; border-radius: 10px; border: 1.5px solid var(--edge); }
+
+  .view { aspect-ratio: 16 / 11; background: var(--paper-2); overflow: hidden; }
+  .view img { width: 100%; height: 100%; object-fit: cover; object-position: top left; }
+  .browser { box-shadow: 12px 12px 0 var(--accent); }
+
+  @media (max-width: 1020px) {
+    .panel { grid-template-columns: 1fr; }
+    .text { order: 1; }
+  }
+  @media (max-width: 720px) {
+    .tabs { border-radius: 16px; }
+    .browser { box-shadow: 7px 7px 0 var(--accent); }
+  }
+</style>
+
+<script>
+  document.querySelectorAll<HTMLElement>('#admin').forEach(root => {
+    const tabs = [...root.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
+    const panels = [...root.querySelectorAll<HTMLElement>('[role="tabpanel"]')];
+    const list = root.querySelector<HTMLElement>('.tabs')!;
+    const pill = root.querySelector<HTMLElement>('.pill')!;
+    let current = 0;
+    const place = () => {
+      const t = tabs[current];
+      pill.style.width = `${t.offsetWidth}px`;
+      pill.style.transform = `translateX(${t.offsetLeft}px)`;
+    };
+    const select = (n: number, focus = false) => {
+      tabs[current].setAttribute('aria-selected', 'false'); tabs[current].tabIndex = -1; panels[current].classList.remove('on');
+      current = n;
+      tabs[n].setAttribute('aria-selected', 'true'); tabs[n].tabIndex = 0; panels[n].classList.add('on');
+      if (focus) tabs[n].focus();
+      tabs[n].scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+      place();
+    };
+    tabs.forEach((t, n) => t.addEventListener('click', () => select(n)));
+    list.addEventListener('keydown', e => {
+      const step = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
+      if (step) { e.preventDefault(); select((current + step + tabs.length) % tabs.length, true); }
+    });
+    // Warm up the next screenshots once the section is close, so tab switches feel instant
+    new IntersectionObserver(([e], io) => {
+      if (!e.isIntersecting) return;
+      io.disconnect();
+      const dark = document.documentElement.dataset.theme === 'dark';
+      panels.forEach(p => p.querySelectorAll<HTMLImageElement>(dark ? '.th-dark, img:not(.th-light)' : 'img:not(.th-dark)').forEach(img => {
+        const pre = new Image(); pre.sizes = img.sizes; pre.srcset = img.srcset; pre.src = img.src;
+      }));
+    }, { rootMargin: '400px 0px' }).observe(root);
+    addEventListener('resize', place);
+    document.fonts?.ready.then(place);
+    place();
+  });
+</script>

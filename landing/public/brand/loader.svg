@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 88 88" width="88" height="88">
+  <style>
+    svg { background: #48010c; }
+    @media (min-width: 89px) { :root { display: block; margin: calc((100vh - 88px) / 2) auto 0; } }
+    path { fill: none; stroke: #ffead7; stroke-width: 2.6; stroke-linecap: round; animation: rise 1.9s ease-in-out infinite; }
+    .left { animation-delay: -1.25s; }
+    .middle { animation-delay: -.65s; }
+    @keyframes rise {
+      0%, 100% { opacity: .12; transform: translateY(4px); }
+      50% { opacity: 1; transform: translateY(-3px); }
+      88% { opacity: .12; transform: translateY(-7px); }
+    }
+    @media (prefers-reduced-motion: reduce) { path { animation: none; } }
+  </style>
+  <path class="left" d="M29 59 C17 45 39 43 29 29"/>
+  <path class="middle" d="M44 65 C29 47 57 42 44 21"/>
+  <path d="M59 59 C47 45 69 43 59 29"/>
+</svg>
