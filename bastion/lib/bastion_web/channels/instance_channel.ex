@@ -1,7 +1,7 @@
 defmodule BastionWeb.InstanceChannel do
   use Phoenix.Channel
 
-  alias Bastion.{Backups, CrmAlerts, Instances, Metrics, SiteAlerts}
+  alias Bastion.{Backups, CrmAlerts, Instances, Metrics, SiteAlerts, Snapshots}
   alias BastionWeb.Presence
 
   @impl true
@@ -64,7 +64,11 @@ defmodule BastionWeb.InstanceChannel do
              ok? == true,
              result["output"]
            ),
-         do: Backups.command_finished(command)
+         do:
+           (
+             Backups.command_finished(command)
+             Snapshots.command_finished(command)
+           )
 
     {:reply, :ok, socket}
   end

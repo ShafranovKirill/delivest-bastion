@@ -6,10 +6,11 @@ defmodule Bastion.Instances do
   alias BastionWeb.Presence
 
   @topic "instances"
-  @actions ~w(status update rollback agent_update start stop restart logs env_read env_write backup restore)
+  @actions ~w(status update rollback agent_update start stop restart logs env_read env_write backup restore full_backup)
   @secret_args %{
     "env_write" => ["content"],
     "backup" => ["token"],
+    "full_backup" => ["token"],
     "restore" => ["token"],
     "update" => ["token"]
   }
@@ -30,6 +31,7 @@ defmodule Bastion.Instances do
   def action_label("env_read"), do: "Чтение .env"
   def action_label("env_write"), do: "Запись .env"
   def action_label("backup"), do: "Бэкап"
+  def action_label("full_backup"), do: "Полный слепок"
   def action_label("restore"), do: "Восстановление"
   def action_label(action), do: action
 
@@ -191,13 +193,24 @@ defmodule Bastion.Instances do
 
   def expire_commands do
     since = DateTime.add(now(), -command_timeout_seconds())
+    full_since = DateTime.add(now(), -full_backup_timeout_seconds())
 
     Command
-    |> where([c], c.status in ["sent", "running"] and c.inserted_at < ^since)
-    |> Repo.all()
-    |> Enum.each(
-      &abandon(&1, "нет результата от агента #{div(command_timeout_seconds(), 60)} минут")
+    |> where(
+      [c],
+      c.status in ["sent", "running"] and
+        ((c.action == "full_backup" and c.inserted_at < ^full_since) or
+           (c.action != "full_backup" and c.inserted_at < ^since))
     )
+    |> Repo.all()
+    |> Enum.each(fn command ->
+      timeout =
+        if command.action == "full_backup",
+          do: full_backup_timeout_seconds(),
+          else: command_timeout_seconds()
+
+      abandon(command, "нет результата от агента #{div(timeout, 60)} минут")
+    end)
   end
 
   defp abandon(%Command{} = command, reason) do
@@ -211,6 +224,7 @@ defmodule Bastion.Instances do
            |> Repo.update()
            |> broadcast(:command_updated) do
       Bastion.Backups.command_finished(command)
+      Bastion.Snapshots.command_finished(command)
     end
   end
 
@@ -219,15 +233,21 @@ defmodule Bastion.Instances do
   defp command_timeout_seconds,
     do: Application.get_env(:bastion, :command_timeout_seconds, 10 * 60)
 
+  defp full_backup_timeout_seconds,
+    do: Application.get_env(:bastion, :full_backup_timeout_seconds, 60 * 60)
+
   def busy?(instance_id) do
     since = DateTime.add(now(), -@busy_window_seconds)
+    full_since = DateTime.add(now(), -full_backup_timeout_seconds())
     settling_since = DateTime.add(now(), -settle_seconds())
 
     Command
     |> where([c], c.instance_id == ^instance_id)
     |> where(
       [c],
-      (c.status in ["sent", "running"] and c.inserted_at > ^since) or
+      (c.status in ["sent", "running"] and
+         ((c.action == "full_backup" and c.inserted_at > ^full_since) or
+            (c.action != "full_backup" and c.inserted_at > ^since))) or
         (c.action in ^@starting_actions and c.finished_at > ^settling_since)
     )
     |> Repo.exists?()

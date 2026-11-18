@@ -50,6 +50,7 @@ defmodule BastionWeb.Router do
   scope "/agent", BastionWeb do
     put "/backups/:id", BackupController, :upload
     get "/backups/:id/file", BackupController, :file
+    put "/backups/snapshots/:id", SnapshotController, :upload
   end
 
   scope "/push", BastionWeb do
@@ -63,6 +64,7 @@ defmodule BastionWeb.Router do
     pipe_through [:browser, :admin]
 
     get "/backups/:id/download", BackupController, :download
+    get "/backups/snapshots/:id/download", SnapshotController, :download
 
     live_session :admin, on_mount: [{BastionWeb.Auth, :require_admin}] do
       live "/", InstanceLive.Index, :index

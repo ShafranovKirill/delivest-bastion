@@ -95,6 +95,19 @@ defmodule Bastion.InstancesTest do
     assert Repo.reload!(done).status == "ok"
   end
 
+  test "a full archive gets an hour to finish" do
+    instance = instance_fixture()
+    running = command(instance, "running", 11, "full_backup")
+    stale = command(instance, "running", 61, "full_backup")
+
+    Instances.expire_commands()
+
+    assert Repo.reload!(running).status == "running"
+    assert %{status: "error", output: output} = Repo.reload!(stale)
+    assert output =~ "60 минут"
+    assert Instances.busy?(instance.id)
+  end
+
   test "the .env never lands in the database" do
     instance = instance_fixture()
     Bastion.Instances.subscribe()

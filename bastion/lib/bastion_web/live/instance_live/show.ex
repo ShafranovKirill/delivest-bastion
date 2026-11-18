@@ -13,7 +13,8 @@ defmodule BastionWeb.InstanceLive.Show do
     Instances,
     Maintenance,
     Metrics,
-    SiteAlerts
+    SiteAlerts,
+    Snapshots
   }
 
   alias BastionWeb.Presence
@@ -228,6 +229,19 @@ defmodule BastionWeb.InstanceLive.Show do
     {:noreply, load_backups(socket)}
   end
 
+  def handle_event("full_snapshot", _params, socket) do
+    socket =
+      case Snapshots.start(socket.assigns.instance, socket.assigns.current_admin) do
+        {:ok, _snapshot} ->
+          put_flash(socket, :info, "Агент создаёт полный слепок")
+
+        {:error, reason} ->
+          put_flash(socket, :error, "Слепок не начат: #{snapshot_error(reason)}")
+      end
+
+    {:noreply, load_backups(socket)}
+  end
+
   def handle_event("maintenance_toggle", _params, socket),
     do: {:noreply, assign(socket, maintenance_open?: !socket.assigns.maintenance_open?)}
 
@@ -304,6 +318,7 @@ defmodule BastionWeb.InstanceLive.Show do
   end
 
   def handle_info({:backup_updated, _backup}, socket), do: {:noreply, load_backups(socket)}
+  def handle_info({:snapshot_updated, _snapshot}, socket), do: {:noreply, load_backups(socket)}
 
   def handle_info({:env_loaded, %{id: id}, content}, %{assigns: %{env_request: id}} = socket) do
     {:noreply,
@@ -372,7 +387,11 @@ defmodule BastionWeb.InstanceLive.Show do
   defp load_backups(socket) do
     id = socket.assigns.instance.id
 
-    assign(socket, backups: Backups.list(id))
+    assign(socket,
+      backups: Backups.list(id),
+      snapshot_latest: Snapshots.latest(id),
+      snapshot_current: Snapshots.current(id)
+    )
   end
 
   defp load_metrics(socket) do
@@ -396,6 +415,16 @@ defmodule BastionWeb.InstanceLive.Show do
   defp gigabytes(kb), do: :erlang.float_to_binary(kb / 1_048_576, decimals: 1) <> " ГБ"
 
   defp backups_supported?(instance), do: Backups.supported?(instance)
+  defp snapshots_supported?(instance), do: Snapshots.supported?(instance)
+  defp snapshot_error(:busy), do: "уже выполняется другая операция"
+  defp snapshot_error(:offline), do: "агент не на связи"
+  defp snapshot_error(:unsupported), do: "агент не поддерживает полный слепок"
+  defp snapshot_error(:storage_unavailable), do: "хранилище не настроено"
+  defp snapshot_error(reason), do: inspect(reason)
+  defp snapshot_stale?(nil), do: false
+
+  defp snapshot_stale?(snapshot),
+    do: DateTime.diff(DateTime.utc_now(), snapshot.finished_at) > 86_400
 
   defp format_size(nil), do: "—"
   defp format_size(bytes) when bytes < 1_048_576, do: "#{max(div(bytes, 1024), 1)} КБ"
@@ -900,6 +929,75 @@ defmodule BastionWeb.InstanceLive.Show do
           open={MapSet.member?(@open_modules, "backups")}
         >
           <div id="tab-backups-panel" class="space-y-4">
+            <section id="full-snapshot" class="card bg-base-100 border border-base-300">
+              <div class="card-body p-4 gap-3">
+                <div class="flex flex-wrap items-start justify-between gap-2">
+                  <div>
+                    <h2 class="font-bold">Полный слепок франшизы</h2>
+                    <p class="text-xs text-base-content/60">
+                      База и все файлы. Создаётся ежедневно в 00:30 UTC (03:30 МСК); во время создания сайт останавливается.
+                      Хранится последняя проверенная копия. Архив содержит приватные файлы и ключи интеграций.
+                    </p>
+                  </div>
+                  <button
+                    id="snapshot-now"
+                    type="button"
+                    class="btn btn-sm"
+                    phx-click="full_snapshot"
+                    disabled={
+                      !@instance.online || busy?(@commands) || !snapshots_supported?(@instance) ||
+                        (@snapshot_current && @snapshot_current.status == "pending")
+                    }
+                    data-confirm="Создать полный слепок сейчас? На время копирования сайт будет остановлен."
+                  >
+                    Создать сейчас
+                  </button>
+                </div>
+                <p :if={!snapshots_supported?(@instance)} class="text-sm text-warning">
+                  Агент этого экземпляра не поддерживает полный слепок.
+                </p>
+                <p
+                  :if={@snapshot_current && @snapshot_current.status == "pending"}
+                  id="snapshot-pending"
+                  class="text-sm text-info"
+                >
+                  Новый слепок создаётся. Последний готовый доступен ниже.
+                </p>
+                <p
+                  :if={@snapshot_current && @snapshot_current.status == "error"}
+                  id="snapshot-error"
+                  class="text-sm text-error"
+                >
+                  Последняя попытка не удалась: {@snapshot_current.error}
+                </p>
+                <p
+                  :if={snapshot_stale?(@snapshot_latest)}
+                  id="snapshot-stale"
+                  class="text-sm text-warning"
+                >
+                  Последнему готовому слепку больше суток.
+                </p>
+                <div
+                  :if={@snapshot_latest}
+                  id="snapshot-latest"
+                  class="flex flex-wrap items-center gap-3 text-sm"
+                >
+                  <span>Готовый слепок: {datetime(@snapshot_latest.finished_at)}</span>
+                  <span>{format_size(@snapshot_latest.size)}</span>
+                  <span class="badge badge-success badge-sm">проверен</span>
+                  <.link
+                    id="snapshot-download"
+                    href={~p"/backups/snapshots/#{@snapshot_latest.id}/download"}
+                    class="btn btn-sm btn-outline"
+                  >
+                    <.icon name="hero-arrow-down-tray" class="size-4" /> Скачать
+                  </.link>
+                </div>
+                <p :if={!@snapshot_latest} id="snapshot-empty" class="text-sm text-base-content/60">
+                  Готового слепка пока нет.
+                </p>
+              </div>
+            </section>
             <section id="backups" class="card bg-base-100 border border-base-300">
               <div class="card-body p-4 gap-3">
                 <div class="flex flex-wrap items-start justify-between gap-2">
