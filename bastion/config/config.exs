@@ -11,6 +11,10 @@ config :bastion,
   ecto_repos: [Bastion.Repo],
   generators: [timestamp_type: :utc_datetime, binary_id: true]
 
+config :phoenix,
+       :filter_parameters,
+       ~w(password token yandex_token new_yandex_token admin_password)
+
 # Configure the endpoint
 config :bastion, BastionWeb.Endpoint,
   url: [host: "localhost"],

@@ -22,6 +22,17 @@ defmodule BastionWeb.Router do
     plug :require_admin
   end
 
+  pipeline :landing_json do
+    plug :accepts, ["json"]
+  end
+
+  scope "/api/landing", BastionWeb do
+    pipe_through :landing_json
+    get "/config", LandingController, :config
+    post "/events", LandingController, :event
+    post "/leads", LandingController, :lead
+  end
+
   scope "/", BastionWeb do
     pipe_through :browser
 
@@ -56,6 +67,7 @@ defmodule BastionWeb.Router do
     live_session :admin, on_mount: [{BastionWeb.Auth, :require_admin}] do
       live "/", InstanceLive.Index, :index
       live "/instances/:id", InstanceLive.Show, :show
+      live "/landing", LandingLive, :index
     end
   end
 end

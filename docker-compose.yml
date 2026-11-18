@@ -1,5 +1,6 @@
 services:
   bastion:
+    build: ./bastion
     image: ghcr.io/shafranovkirill/delivest-bastion:latest
     container_name: bastion
     restart: always
@@ -47,6 +48,16 @@ services:
       - S3_SECRET_KEY=${S3_SECRET_KEY}
     volumes:
       - s3_data:/data
+
+  # Optional public site, on the same network as its API.
+  landing:
+    profiles: [landing]
+    build: ./landing
+    image: ghcr.io/shafranovkirill/delivest-bastion-landing:latest
+    container_name: delivest_landing
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${LANDING_PORT:-8090}:80"
 
 volumes:
   postgres_data:

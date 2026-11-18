@@ -1,38 +1,28 @@
 # Delivest landing
 
-Landing page of Delivest, built with [Astro](https://astro.build) into static HTML.
+Публичный сайт Delivest на Astro. Находится в общем репозитории с Бастионом; старый репозиторий лендинга не является местом дальнейшей разработки этой версии.
 
-```bash
-npm install
-npm run dev      # http://localhost:4321
-npm run build    # -> dist/
+Из этой папки:
+
+```sh
+npm ci
+npm run dev
+npm test
+npm run build
 ```
 
-- `src/components/` holds the page sections, `src/pages/index.astro` puts them together.
-- `src/assets/screens/` holds the screenshots: `name.webp` is the light theme, `name-d.webp` is the dark one (optional). The build resizes them and adds a content hash to every file name.
-- `src/assets/crm/` holds the CRM logos for the integrations strip.
-- `public/brand/` holds the favicon and the OG image, copied as is.
+`src/components/` содержит секции страницы, `src/pages/index.astro` собирает главную, `src/lib/` реализует обмен с Бастионом. Браузер обращается только к `/api/landing/` на своём домене; Astro в разработке проксирует запросы на `BASTION_API_URL` (по умолчанию `http://127.0.0.1:4000`). Production nginx проксирует их на сервис `bastion:4000` в общей сети.
 
-## Deploy
+`npm run preview` проверяет только статическую сборку Astro и не проксирует API; для проверки формы используйте dev-сервер либо production nginx.
 
-The site runs in a Docker container (nginx with the built `dist/`) on `127.0.0.1:LANDING_PORT`. nginx on the host handles HTTPS and proxies to it.
+Форма сохраняет заявку в Бастионе. Отдельный Telegram-сервис `lead` заменён очередью уведомлений Бастиона. Контакты и секреты подключения настраиваются во вкладке «Настройки лендинга»; токен бота задаётся на сервере Бастиона.
 
-```
-browser ──https──▶ host nginx (TLS) ──▶ 127.0.0.1:LANDING_PORT ──▶ container nginx ──▶ dist/
-```
+Dockerfile собирает отдельный статический образ с контекстом `landing/`. Из корня общего репозитория:
 
-On a server with Docker, nginx and certbot, with the domain already pointing to it:
-
-```bash
-git clone https://github.com/ShafranovKirill/delivest-landing.git
-cd delivest-landing
-cp .env.example .env
-nano .env        # DOMAIN, LETSENCRYPT_EMAIL, LANDING_PORT (a free local port, 8090 by default)
-sudo ./deploy.sh
+```sh
+docker compose --profile landing up -d --build --no-deps landing
 ```
 
-The script builds the image and starts the container, waits for it to answer, writes the host nginx config for `DOMAIN`, issues a Let's Encrypt certificate and redirects HTTP to HTTPS. To update: `git pull && sudo ./deploy.sh`.
+Сначала должна быть настроена и запущена серверная часть Бастиона. Перенос действующего сайта описан в [инструкции перехода](../docs/platform-migration.md). `landing/deploy.sh` настраивает TLS и обновляет только лендинг, читая корневой `.env`; применять только при согласованном деплое.
 
-Contact form: the page posts to `/api/lead`, the `lead` container (`lead/server.mjs`) forwards the request to Telegram. Set `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` in `.env`; without them the form shows an error with the Telegram and phone contacts.
-
-Without the script: `docker compose up -d --build` serves the site on `http://127.0.0.1:8090`.
+Схема учёта и подключение Метрики/Директа: [документация](../docs/landing-analytics.md).

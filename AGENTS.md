@@ -447,3 +447,13 @@ And **never** do this:
 <!-- phoenix:liveview-end -->
 
 <!-- usage-rules-end -->
+
+## Delivest Platform monorepo
+
+- `bastion/` is the Phoenix application; run Mix commands there.
+- `landing/` is the Astro application; run `npm test` and `npm run build` there.
+- Root Compose owns the shared network; use the `landing` profile for the public site. Rebuild each application independently.
+- Keep public landing API under `/api/landing/`; the public nginx must never proxy Bastion admin pages.
+- Preserve both Git histories and existing deployment volumes; production migration is a separate explicitly authorized operation.
+- Work in `codex/*` branches from current `develop`. Do not push, create PRs, merge or run full preflight/E2E until the user explicitly says “Пуш в Девелоп”. Use targeted checks for local work.
+- Read root `HANDOFF.md` when resuming; historical landing notes are in `landing/HANDOFF.md`.

@@ -36,8 +36,8 @@ defmodule BastionWeb.Layouts do
 
   def app(assigns) do
     ~H"""
-    <header class="navbar border-b border-base-300 px-4 sm:px-6 lg:px-8">
-      <div class="flex-1">
+    <header class="navbar flex-wrap gap-2 border-b border-base-300 px-4 sm:px-6 lg:px-8">
+      <div class="min-w-32 flex-1">
         <.link navigate={~p"/"} class="flex w-fit items-center gap-2 font-bold text-lg">
           <img src={~p"/icons/icon.svg"} alt="" class="size-7" /> Бастион
         </.link>
@@ -62,6 +62,13 @@ defmodule BastionWeb.Layouts do
         </.link>
       </div>
     </header>
+    <nav
+      :if={@current_admin}
+      class="flex flex-wrap gap-2 border-b border-base-300 px-4 py-1 sm:px-6 lg:px-8"
+    >
+      <.link navigate={~p"/"} class="btn btn-ghost btn-sm">Франшизы</.link>
+      <.link navigate={~p"/landing"} class="btn btn-ghost btn-sm">Настройки лендинга</.link>
+    </nav>
 
     <main class="px-4 py-6 sm:px-6 lg:px-8">
       <div class="mx-auto max-w-6xl space-y-6">

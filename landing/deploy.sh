@@ -1,13 +1,13 @@
 #!/bin/sh
 set -eu
 
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."
 
 env_value() {
   grep -E "^$1=" .env | tail -n 1 | cut -d= -f2- | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//"
 }
 
-[ "$(id -u)" -eq 0 ] || { echo "run as root: sudo ./deploy.sh" >&2; exit 1; }
+[ "$(id -u)" -eq 0 ] || { echo "run as root: sudo ./landing/deploy.sh" >&2; exit 1; }
 [ -f .env ] || { echo ".env not found, copy .env.example" >&2; exit 1; }
 
 DOMAIN=$(env_value DOMAIN | sed -E -e 's#^[a-z]+://##' -e 's#[/:].*$##')
@@ -29,7 +29,7 @@ fi
 docker compose version >/dev/null 2>&1 || { echo "docker compose not found: curl -fsSL https://get.docker.com | sh" >&2; exit 1; }
 
 # The container builds the site and serves it on 127.0.0.1:$PORT; host nginx terminates TLS in front of it
-LANDING_PORT=$PORT docker compose up -d --build --remove-orphans
+LANDING_PORT=$PORT docker compose --profile landing up -d --build landing
 docker image prune -f >/dev/null
 
 i=0

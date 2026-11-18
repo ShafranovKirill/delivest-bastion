@@ -16,6 +16,7 @@ defmodule Bastion.Application do
         BastionWeb.Presence,
         {Task.Supervisor, name: Bastion.TaskSupervisor},
         Bastion.LoginCodes,
+        Bastion.Landing.RateLimiter,
         Bastion.Images,
         Bastion.Rollout,
         Bastion.Telegram.Cards,

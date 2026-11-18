@@ -2,13 +2,42 @@ name: CI
 
 on:
   push:
-    branches: ["main"]
+    branches: ["main", "develop"]
     tags: ["v*"]
   pull_request:
-    branches: ["main"]
+    branches: ["main", "develop"]
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      bastion: ${{ steps.paths.outputs.bastion }}
+      landing: ${{ steps.paths.outputs.landing }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: paths
+        env:
+          BEFORE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        shell: python
+        run: |
+          import os, subprocess
+          before = os.environ.get('BEFORE', '')
+          if not before or set(before) == {'0'}:
+              paths = ['bastion/', 'landing/']
+          else:
+              paths = subprocess.check_output(['git', 'diff', '--name-only', before, 'HEAD'], text=True).splitlines()
+          shared = any(p.startswith('.github/') or p in ('docker-compose.yml', '.env.example') for p in paths)
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              for app in ('bastion', 'landing'):
+                  changed = shared or any(p.startswith(app + '/') for p in paths)
+                  output.write(f'{app}={str(changed).lower()}\n')
+
   test:
+    defaults:
+      run:
+        working-directory: bastion
     name: Tests
     runs-on: ubuntu-latest
     env:
@@ -37,18 +66,35 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: |
-            deps
-            _build/test
-          key: ${{ runner.os }}-mix-${{ hashFiles('mix.lock') }}
+            bastion/deps
+            bastion/_build/test
+          key: ${{ runner.os }}-mix-${{ hashFiles('bastion/mix.lock') }}
 
       - run: mix deps.get
       - run: mix format --check-formatted
       - run: mix compile --warnings-as-errors
       - run: mix test
 
+  landing:
+    name: Landing tests and build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: landing
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: landing/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm test
+      - run: npm run build
+
   build-and-push:
-    needs: test
-    if: github.event_name == 'push'
+    needs: [changes, test, landing]
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) && (needs.changes.outputs.bastion == 'true' || startsWith(github.ref, 'refs/tags/v'))
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -75,10 +121,43 @@ jobs:
 
       - uses: docker/build-push-action@v5
         with:
-          context: .
+          context: bastion
           platforms: linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  build-landing:
+    needs: [changes, test, landing]
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) && (needs.changes.outputs.landing == 'true' || startsWith(github.ref, 'refs/tags/v'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: landing-meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}-landing
+          tags: |
+            type=sha
+            type=ref,event=tag
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+      - uses: docker/build-push-action@v5
+        with:
+          context: landing
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.landing-meta.outputs.tags }}
+          labels: ${{ steps.landing-meta.outputs.labels }}
+          cache-from: type=gha,scope=landing
+          cache-to: type=gha,mode=max,scope=landing
