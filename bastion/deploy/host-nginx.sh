@@ -9,13 +9,15 @@ env_value() {
 
 [ -f .env ] || { echo ".env not found" >&2; exit 1; }
 
-NAME=bastion
 DOMAIN=$(env_value PHX_HOST | sed -E -e 's#^[a-z]+://##' -e 's#[/:].*$##')
 PORT=$(env_value BASTION_PORT)
 PORT=${PORT:-4100}
 EMAIL=$(env_value LETSENCRYPT_EMAIL)
 
 [ -n "$DOMAIN" ] || { echo "PHX_HOST is empty, check .env" >&2; exit 1; }
+
+# Keep certificates/configs for legacy agent endpoints intact on a domain move.
+NAME=$DOMAIN
 
 if [ -d /etc/nginx/sites-available ]; then
   CONF=/etc/nginx/sites-available/$NAME.conf

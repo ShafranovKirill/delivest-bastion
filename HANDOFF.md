@@ -1,3 +1,17 @@
+# Выпуск на bastion.delivest.ru — 18 ноября 2026, Europe/Moscow
+
+Новый явный запрос владельца: `ssh root@89.111.153.140`, перенести Бастион на `bastion.delivest.ru`, обновить и подключить необходимое. Это разрешение текущего выпуска/production, заменяющее прежнее ожидание разрешения в разделе ниже. Релиз готовится из develop в main; действующие секреты/volumes и Telegram polling сохраняются. Старый хост оставляем для /agent и /telegram, человеческие страницы перенаправляем на новый.
+
+На сервере исходная версия Бастиона 10cadd7, лендинга c4a11a0, git checkout отсутствует (поставка архивом). Project name delivest-bastion, volumes delivest-bastion_postgres_data и delivest-bastion_s3_data; 5 агентов online. Сохранена проверенная pg_dump -Fc + архив source/.env/nginx/certs в `/root/bastion-deploy-backups/20261118T170248+0300-landing-platform` с checksum, права root-only. DNS A нового хоста уже 89.111.153.140; сертификат bastion.delivest.ru выпущен, expiry2027-02-16, установлен renewal reload hook.
+
+Из-за 1GB RAM и 1.6GB свободного диска на сервере собираем образы вне production и обновляем только bastion/landing без перезапуска postgres/s3/telegram-egress. Сохраняем compose.mtu.yml, docker-compose.override.yml и deploy/telegram-egress.cjs; proxy.env не копируем в Git. Старый лендинг/lead сохраняются для отката. Telegram bot у лендинга и Бастиона отличается, получатель совпадает; новый обработчик заявок использует существующего бота Бастиона.
+
+Перед выпуском устранена потеря X-Forwarded-Proto при nginx→Phoenix(force_ssl), TLS helper именует конфиг/сертификат по домену и не затирает legacy endpoint. Astro7.4.12/sharp0.35.5/Node22.23.4, поддержан static stack. Локально полный server precommit:176 тестов,0 ошибок; frontend13/13 и build на Node22.23.4; nginx-t и shell syntax успешны. Независимое ревью без замечаний. Docker build локально не завершился из-за сетевого EIDLETIMEOUT в npm ci; окончательную сборку проверяем в CI. Npm audit теперь10 high (без critical), оставшиеся связаны с picomatch<=4.0.7; исправленной upstream версии нет, зависимости используются только при сборке, финальный образ содержит nginx+статику.
+
+После CI: доставить archive main в staging, сохранить server env/overrides, задать PHX_HOST=bastion.delivest.ru/DOMAIN=delivest.ru, обновить приложения, проверить TLS/HTTP/WSS обоих хостов/5агентов, config+honeypot без реальной Telegram-рассылки. Яндекс реквизиты не обнаружены: сам счётчик включить, Метрику/Директ не выдавать за подключённые.
+
+---
+
 # Объединение платформы и продвижение лендинга
 
 Обновлено: 2026-11-18T16:56+03:00 (Europe/Moscow).
