@@ -6,7 +6,7 @@ defmodule Bastion.Rollout do
 
   use GenServer
 
-  alias Bastion.{Alerts, Health, Images, Instances, Updates}
+  alias Bastion.{Alerts, Health, Instances, Releases, Updates}
   alias Bastion.Instances.Instance
 
   @topic "instances"
@@ -22,24 +22,41 @@ defmodule Bastion.Rollout do
             started_at: nil,
             deadline: nil,
             requested_by: nil,
+            version: nil,
             error: nil
 
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
 
   def state, do: GenServer.call(__MODULE__, :state)
-  def start(requested_by), do: GenServer.call(__MODULE__, {:start, requested_by})
+
+  def start(requested_by, version) do
+    with {:ok, bundle} <- Releases.resolve(version) do
+      GenServer.call(__MODULE__, {:start, requested_by, bundle.manifest})
+    end
+  end
+
+  def start(_requested_by), do: {:error, :version_required}
   def cancel(requested_by), do: GenServer.call(__MODULE__, {:cancel, requested_by})
 
   def running?(%__MODULE__{status: :running}), do: true
   def running?(_state), do: false
 
-  @doc "Online sites that are not stopped on purpose and are behind the registry or not known to be up to date."
-  def candidates do
+  @doc "Online capable sites whose confirmed bundle differs from the selected release."
+  def candidates(manifest) do
     Instances.list_instances()
     |> Enum.filter(fn instance ->
       instance.online and is_nil(instance.stopped_at) and "update" in instance.actions and
-        Images.up_to_date?(instance) != true
+        "release_manifest_v1" in instance.capabilities and not installed?(instance, manifest)
     end)
+  end
+
+  defp installed?(instance, manifest) do
+    current = get_in(instance.status || %{}, ["rollback", "current"]) || %{}
+
+    current["version"] == manifest["version"] and
+      Enum.all?(~w(server client), fn service ->
+        get_in(current, ["digest", service]) == manifest["images"][service]
+      end)
   end
 
   @impl true
@@ -51,11 +68,25 @@ defmodule Bastion.Rollout do
   @impl true
   def handle_call(:state, _from, state), do: {:reply, state, state}
 
-  def handle_call({:start, _requested_by}, _from, %{status: :running} = state),
+  def handle_call({:start, _requested_by, _version}, _from, %{status: :running} = state),
     do: {:reply, {:error, :already_running}, state}
 
-  def handle_call({:start, requested_by}, _from, _state) do
-    case candidates() do
+  def handle_call({:start, requested_by, manifest}, _from, _state),
+    do: start_version(requested_by, manifest)
+
+  def handle_call({:cancel, requested_by}, _from, %{status: :running} = state) do
+    Alerts.send_message(
+      "⏹ Обновление по очереди отменено (#{requested_by}). " <>
+        "Начатое обновление #{name(state.current)} доиграет само."
+    )
+
+    {:reply, :ok, publish(%{state | status: :cancelled, queue: [], phase: nil})}
+  end
+
+  def handle_call({:cancel, _requested_by}, _from, state), do: {:reply, :ok, state}
+
+  defp start_version(requested_by, manifest) do
+    case candidates(manifest) do
       [] ->
         {:reply, {:error, :nothing_to_update}, %__MODULE__{}}
 
@@ -69,23 +100,13 @@ defmodule Bastion.Rollout do
           status: :running,
           queue: Enum.map(instances, & &1.id),
           started_at: now(),
-          requested_by: requested_by
+          requested_by: requested_by,
+          version: manifest["version"]
         }
 
         {:reply, :ok, state |> next() |> publish()}
     end
   end
-
-  def handle_call({:cancel, requested_by}, _from, %{status: :running} = state) do
-    Alerts.send_message(
-      "⏹ Обновление по очереди отменено (#{requested_by}). " <>
-        "Начатое обновление #{name(state.current)} доиграет само."
-    )
-
-    {:reply, :ok, publish(%{state | status: :cancelled, queue: [], phase: nil})}
-  end
-
-  def handle_call({:cancel, _requested_by}, _from, state), do: {:reply, :ok, state}
 
   @impl true
   def handle_info(
@@ -146,7 +167,7 @@ defmodule Bastion.Rollout do
 
     case Instances.get_instance(id) do
       %Instance{online: true, stopped_at: nil} = instance ->
-        case Updates.update(instance, "#{state.requested_by} · по очереди") do
+        case Updates.update(instance, state.version, "#{state.requested_by} · по очереди") do
           {:ok, command} ->
             Process.send_after(self(), :command_timeout, @command_timeout_seconds * 1000 + 1000)
 

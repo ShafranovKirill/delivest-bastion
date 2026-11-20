@@ -207,10 +207,14 @@ defmodule Bastion.BackupsTest do
   end
 
   test "an update backs up the database first when the agent can roll back", %{conn: conn} do
-    instance = instance_fixture() |> bring_online()
+    manifest = release_fixture()
 
-    assert {:ok, command} = Bastion.Updates.update(instance, "admin")
+    instance =
+      instance_fixture(%{info: %{"capabilities" => ["release_manifest_v1"]}}) |> bring_online()
+
+    assert {:ok, command} = Bastion.Updates.update(instance, "1.2.3", "admin")
     assert_receive {:agent_got, %{action: "update", args: args}}
+    assert args["release"] == manifest
     refute Map.has_key?(command.args, "token")
 
     [backup] = Backups.list(instance.id)
@@ -224,9 +228,12 @@ defmodule Bastion.BackupsTest do
   end
 
   test "an update that did not upload its backup fails the backup" do
-    instance = instance_fixture() |> bring_online()
+    release_fixture()
 
-    {:ok, command} = Bastion.Updates.update(instance, "admin")
+    instance =
+      instance_fixture(%{info: %{"capabilities" => ["release_manifest_v1"]}}) |> bring_online()
+
+    {:ok, command} = Bastion.Updates.update(instance, "1.2.3", "admin")
 
     {:ok, command} =
       Instances.command_finished(
@@ -243,14 +250,33 @@ defmodule Bastion.BackupsTest do
   end
 
   test "agents without rollback update without a backup" do
+    manifest = release_fixture()
+
     instance =
-      instance_fixture(%{info: %{"actions" => Instances.actions() -- ["rollback"]}})
+      instance_fixture(%{
+        info: %{
+          "actions" => Instances.actions() -- ["rollback"],
+          "capabilities" => ["release_manifest_v1"]
+        }
+      })
       |> bring_online()
 
-    assert {:ok, _command} = Bastion.Updates.update(instance, "admin")
+    assert {:ok, _command} = Bastion.Updates.update(instance, "1.2.3", "admin")
     assert_receive {:agent_got, %{action: "update", args: args}}
-    assert args == %{}
+    assert args == %{"release" => manifest}
     assert Backups.list(instance.id) == []
+  end
+
+  test "an unavailable release does not create a backup or command" do
+    instance =
+      instance_fixture(%{info: %{"capabilities" => ["release_manifest_v1"]}})
+      |> bring_online()
+
+    Req.Test.stub(Bastion.Http, fn conn -> Plug.Conn.send_resp(conn, 503, "unavailable") end)
+
+    assert {:error, :release_unavailable} = Bastion.Updates.update(instance, "9.9.9", "admin")
+    assert Backups.list(instance.id) == []
+    assert Instances.list_commands(instance.id) == []
   end
 
   @moduletag :tmp_dir

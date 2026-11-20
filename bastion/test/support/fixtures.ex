@@ -1,6 +1,21 @@
 defmodule Bastion.Fixtures do
   alias Bastion.Instances
 
+  def release_fixture(version \\ "1.2.3") do
+    manifest = %{
+      "version" => version,
+      "root_sha" => String.duplicate("a", 40),
+      "gitlinks" => Map.new(~w(server client agent), &{&1, String.duplicate("b", 40)}),
+      "images" => Map.new(~w(server client agent), &{&1, "sha256:" <> String.duplicate("c", 64)})
+    }
+
+    Bastion.Repo.insert!(%Bastion.Releases.Bundle{version: version, manifest: manifest},
+      on_conflict: :nothing
+    )
+
+    manifest
+  end
+
   def instance_fixture(attrs \\ %{}) do
     id = Map.get(attrs, :id, Ecto.UUID.generate())
 

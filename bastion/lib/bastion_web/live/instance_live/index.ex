@@ -28,9 +28,9 @@ defmodule BastionWeb.InstanceLive.Index do
   end
 
   @impl true
-  def handle_event("rollout", _params, socket) do
+  def handle_event("rollout", %{"version" => version}, socket) do
     socket =
-      case Rollout.start(socket.assigns.current_admin) do
+      case Rollout.start(socket.assigns.current_admin, String.trim(version)) do
         :ok ->
           put_flash(socket, :info, "Сайты обновляются по очереди")
 
@@ -39,10 +39,16 @@ defmodule BastionWeb.InstanceLive.Index do
 
         {:error, :nothing_to_update} ->
           put_flash(socket, :info, "Все сайты на связи уже обновлены")
+
+        {:error, _} ->
+          put_flash(socket, :error, "Не удалось выбрать опубликованную версию релиза")
       end
 
     {:noreply, assign(socket, rollout: Rollout.state())}
   end
+
+  def handle_event("rollout", _params, socket),
+    do: {:noreply, put_flash(socket, :error, "Выберите версию релиза в Bastion")}
 
   def handle_event("rollout_cancel", _params, socket) do
     :ok = Rollout.cancel(socket.assigns.current_admin)
