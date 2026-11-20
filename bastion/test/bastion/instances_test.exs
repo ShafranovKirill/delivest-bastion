@@ -177,6 +177,17 @@ defmodule Bastion.InstancesTest do
     assert Repo.reload!(done).status == "ok"
   end
 
+  test "expiry selected before a successful result cannot replace that result" do
+    instance = instance_fixture()
+    selected = command(instance, "running", 11)
+
+    assert {:ok, %{status: "ok"}} =
+             Instances.command_finished(instance.id, selected.id, true, "site ready")
+
+    assert :ok = Instances.expire_selected_command(selected, "timeout")
+    assert %{status: "ok", output: "site ready"} = Repo.reload!(selected)
+  end
+
   test "a full archive gets an hour to finish" do
     instance = instance_fixture()
     running = command(instance, "running", 11, "full_backup")

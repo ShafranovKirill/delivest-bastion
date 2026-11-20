@@ -1,9 +1,11 @@
-if beam_root = System.get_env("RELEASE_AGENT_BEAM_ROOT") do
+if System.get_env("RELEASE_PROTOCOL_INTEGRATION") == "1" do
+  beam_root = System.fetch_env!("RELEASE_AGENT_BEAM_ROOT")
   for beam_dir <- Path.wildcard(Path.join(beam_root, "*/ebin")), do: Code.prepend_path(beam_dir)
-end
 
-if System.get_env("RELEASE_PROTOCOL_INTEGRATION") == "1" and
-     Code.ensure_loaded?(DelivestAgent.Bastion) do
+  unless Code.ensure_loaded?(DelivestAgent.Bastion) and Code.ensure_loaded?(Slipstream.SocketTest) do
+    raise "release protocol integration requires compiled agent and Slipstream beams"
+  end
+
   defmodule Bastion.ReleaseProtocolIntegrationTest do
     use BastionWeb.ChannelCase, async: false
     use Slipstream.SocketTest

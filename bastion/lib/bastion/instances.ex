@@ -227,7 +227,12 @@ defmodule Bastion.Instances do
     |> then(&if(running_id, do: where(&1, [c], c.id != ^running_id), else: &1))
     |> Repo.all()
     |> Enum.reject(&is_map(&1.args["release"]))
-    |> Enum.each(&abandon(&1, "агент не выполняет эту команду: он перезапустился и потерял её"))
+    |> Enum.each(
+      &expire_selected_command(
+        &1,
+        "агент не выполняет эту команду: он перезапустился и потерял её"
+      )
+    )
   end
 
   def drop_lost_commands(_instance_id, _status), do: :ok
@@ -250,22 +255,45 @@ defmodule Bastion.Instances do
           do: full_backup_timeout_seconds(),
           else: command_timeout_seconds()
 
-      abandon(command, "нет результата от агента #{div(timeout, 60)} минут")
+      expire_selected_command(command, "нет результата от агента #{div(timeout, 60)} минут")
     end)
   end
 
-  defp abandon(%Command{} = command, reason) do
-    with {:ok, command} <-
-           command
-           |> Ecto.Changeset.change(
-             status: "error",
-             output: Enum.join(Enum.reject([command.output, reason], &is_nil/1), "\n"),
-             finished_at: now()
-           )
-           |> Repo.update()
-           |> broadcast(:command_updated) do
-      Bastion.Backups.command_finished(command)
-      Bastion.Snapshots.command_finished(command)
+  @doc false
+  def expire_selected_command(%Command{} = selected, reason) when is_binary(reason) do
+    result =
+      Repo.transaction(fn ->
+        query =
+          from c in Command,
+            where: c.id == ^selected.id and c.instance_id == ^selected.instance_id,
+            lock: "FOR UPDATE"
+
+        case Repo.one(query) do
+          %Command{status: status} = current when status in ["sent", "running"] ->
+            attrs = [
+              status: "error",
+              output: Enum.join(Enum.reject([current.output, reason], &is_nil/1), "\n"),
+              finished_at: now()
+            ]
+
+            case current |> Ecto.Changeset.change(attrs) |> Repo.update() do
+              {:ok, updated} -> updated
+              {:error, error} -> Repo.rollback(error)
+            end
+
+          _ ->
+            :unchanged
+        end
+      end)
+
+    case result do
+      {:ok, %Command{} = command} ->
+        broadcast({:ok, command}, :command_updated)
+        Bastion.Backups.command_finished(command)
+        Bastion.Snapshots.command_finished(command)
+
+      _ ->
+        :ok
     end
   end
 
@@ -424,14 +452,13 @@ defmodule Bastion.Instances do
     )
     |> Repo.all()
     |> Enum.each(fn command ->
-      if command.output == "агент перезапускается; ждём подтверждения digest" and
-           get_in(command.args, ["release", "images", "agent"]) == digest do
-        update_command(instance_id, command.id, fn current ->
-          if current.status == "running",
-            do: [status: "ok", output: "подтверждён digest агента #{digest}", finished_at: now()],
-            else: []
-        end)
-      end
+      update_command(instance_id, command.id, fn current ->
+        if current.status == "running" and
+             current.output == "агент перезапускается; ждём подтверждения digest" and
+             get_in(current.args, ["release", "images", "agent"]) == digest,
+           do: [status: "ok", output: "подтверждён digest агента #{digest}", finished_at: now()],
+           else: []
+      end)
     end)
   end
 
