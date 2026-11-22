@@ -83,6 +83,20 @@ defmodule Bastion.Backups do
   def attach_command(%Backup{} = backup, %Command{} = command),
     do: backup |> Ecto.Changeset.change(command_id: command.id) |> Repo.update() |> broadcast()
 
+  def retry_args(%Command{} = command) do
+    case Repo.get_by(Backup, command_id: command.id) do
+      %Backup{} = backup ->
+        Map.merge(command.args, %{
+          "backup_id" => backup.id,
+          "upload_url" => url("/agent/backups/#{backup.id}"),
+          "token" => sign(:upload, backup)
+        })
+
+      nil ->
+        command.args
+    end
+  end
+
   def discard(%Backup{} = backup) do
     with {:ok, backup} <- Repo.delete(backup), do: broadcast({:ok, backup})
   end

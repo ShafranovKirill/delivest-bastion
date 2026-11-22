@@ -16,6 +16,7 @@ defmodule Bastion.Instances.Instance do
     field :hosts, :map, default: %{}
     field :agent_version, :string
     field :actions, {:array, :string}, default: []
+    field :capabilities, {:array, :string}, default: []
     field :status, :map
     field :last_seen_at, :utc_datetime
     field :external, :map, default: %{}
@@ -54,7 +55,7 @@ defmodule Bastion.Instances.Instance do
 
   def register_changeset(instance, attrs) do
     instance
-    |> cast(attrs, [:name, :hosts, :agent_version, :actions])
+    |> cast(attrs, [:name, :hosts, :agent_version, :actions, :capabilities])
     |> validate_required([:name])
     |> validate_length(:name, max: 255)
   end

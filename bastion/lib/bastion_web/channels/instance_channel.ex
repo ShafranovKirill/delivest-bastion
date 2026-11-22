@@ -24,14 +24,21 @@ defmodule BastionWeb.InstanceChannel do
   def handle_info(:after_join, socket) do
     Instances.subscribe_commands(socket.assigns.instance_id)
     {:ok, _ref} = Presence.track_agent(self(), socket.assigns.instance_id)
+
+    for command <- Instances.pending_commands(socket.assigns.instance_id) do
+      send(self(), {:push_command, command})
+    end
+
     {:noreply, socket}
   end
 
   def handle_info({:push_command, command}, socket) do
+    args = if command.action == "update", do: Backups.retry_args(command), else: command.args
+
     push(socket, "command", %{
       "id" => command.id,
       "action" => command.action,
-      "args" => command.args
+      "args" => args
     })
 
     {:noreply, socket}

@@ -279,6 +279,9 @@ defmodule Bastion.Telegram.Bot do
       {:error, :unknown_action} ->
         answer(query, "Агент не умеет: #{Instances.action_label(action)}")
 
+      {:error, :version_required} ->
+        answer(query, "Выберите версию релиза на странице франшизы в Bastion")
+
       {:error, reason} when is_binary(reason) ->
         answer(query, "Не получилось: #{reason}")
     end

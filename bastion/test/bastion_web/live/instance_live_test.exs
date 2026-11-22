@@ -150,7 +150,8 @@ defmodule BastionWeb.InstanceLiveTest do
   end
 
   test "sends commands to an online agent", %{conn: conn} do
-    instance = instance_fixture()
+    manifest = release_fixture()
+    instance = instance_fixture(%{info: %{"capabilities" => ["release_manifest_v1"]}})
     {:ok, _} = Instances.record_heartbeat(instance.id, healthy_status())
     bring_online(instance)
 
@@ -161,14 +162,35 @@ defmodule BastionWeb.InstanceLiveTest do
     refute has_element?(lv, "#instance-start")
     assert has_element?(lv, "#module-settings:not([open]) #instance-restart")
 
-    lv |> element("#instance-actions button", "Обновить") |> render_click()
-    assert_receive {:agent_got, "update", %{}}
+    lv |> form("#release-form", release: %{version: "1.2.3"}) |> render_submit()
+    assert_receive {:agent_got, "update", %{"release" => ^manifest}}
     assert_patch(lv, ~p"/instances/#{instance.id}?tab=logs")
     assert has_element?(lv, "[id^=command-]", "Обновление")
 
     [command] = Instances.list_commands(instance.id)
     Instances.command_finished(instance.id, command.id, true, "all good")
     assert render(lv) =~ "all good"
+  end
+
+  test "older agent shows upgrade requirement and cannot install a version", %{conn: conn} do
+    instance = instance_fixture()
+    bring_online(instance)
+
+    {:ok, lv, _} = live(log_in(conn), ~p"/instances/#{instance.id}?tab=updates")
+    assert has_element?(lv, "#agent-upgrade-required")
+    assert has_element?(lv, "#instance-update[disabled]")
+    assert has_element?(lv, "#agent-update")
+  end
+
+  test "a capable agent update submits the visible selected release", %{conn: conn} do
+    manifest = release_fixture("2.1.0")
+    instance = instance_fixture(%{info: %{"capabilities" => ["release_manifest_v1"]}})
+    bring_online(instance)
+
+    {:ok, lv, _} = live(log_in(conn), ~p"/instances/#{instance.id}?tab=settings")
+    assert has_element?(lv, "#agent-release-form #agent-update")
+    lv |> form("#agent-release-form", agent_release: %{version: "2.1.0"}) |> render_submit()
+    assert_receive {:agent_got, "agent_update", %{"release" => ^manifest}}
   end
 
   test "a site updated by the agent can be rolled back", %{conn: conn} do
@@ -363,7 +385,7 @@ defmodule BastionWeb.InstanceLiveTest do
     instance = instance_fixture()
     {:ok, lv, _html} = live(log_in(conn), ~p"/instances/#{instance.id}?tab=settings")
 
-    assert lv |> element("#instance-actions button", "Обновить") |> render() =~ "disabled"
+    assert lv |> element("#instance-update") |> render() =~ "disabled"
 
     lv |> element("#delete-instance") |> render_click()
     assert_redirect(lv, ~p"/")

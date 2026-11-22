@@ -89,7 +89,8 @@ defmodule Bastion.Instances do
       name: info["name"] || "#{id}",
       hosts: if(is_map(info["hosts"]), do: info["hosts"], else: %{}),
       agent_version: info["agent_version"],
-      actions: Enum.filter(List.wrap(info["actions"]), &is_binary/1)
+      actions: Enum.filter(List.wrap(info["actions"]), &is_binary/1),
+      capabilities: Enum.filter(List.wrap(info["capabilities"]), &is_binary/1)
     }
 
     (Repo.get(Instance, id) || %Instance{id: id})
@@ -105,10 +106,22 @@ defmodule Bastion.Instances do
         {:error, :not_found}
 
       instance ->
-        instance
-        |> Ecto.Changeset.change(status: status, last_seen_at: now())
-        |> Repo.update()
-        |> broadcast()
+        result =
+          instance
+          |> Ecto.Changeset.change(
+            status: status,
+            last_seen_at: now(),
+            capabilities:
+              if(is_list(status["capabilities"]),
+                do: Enum.filter(status["capabilities"], &is_binary/1),
+                else: instance.capabilities
+              )
+          )
+          |> Repo.update()
+          |> broadcast()
+
+        if match?({:ok, _}, result), do: confirm_agent_updates(id, status)
+        result
     end
   end
 
@@ -139,6 +152,18 @@ defmodule Bastion.Instances do
       not MapSet.member?(Presence.online_ids(), instance.id) ->
         {:error, :offline}
 
+      action in ["update", "agent_update"] and
+        "release_manifest_v1" in instance.capabilities and
+          not cached_release?(args["release"]) ->
+        {:error, :release_required}
+
+      action == "update" and "release_manifest_v1" not in instance.capabilities ->
+        {:error, :agent_upgrade_required}
+
+      action == "agent_update" and "release_manifest_v1" not in instance.capabilities and
+          args != %{} ->
+        {:error, :agent_upgrade_required}
+
       true ->
         {:ok, command} =
           Repo.insert(%Command{
@@ -160,19 +185,34 @@ defmodule Bastion.Instances do
   end
 
   def command_started(instance_id, command_id) do
-    update_command(instance_id, command_id, status: "running", started_at: now())
+    update_command(instance_id, command_id, fn command ->
+      if command.status == "sent", do: [status: "running", started_at: now()], else: []
+    end)
   end
 
   def command_finished(instance_id, command_id, ok?, output) do
     instance_id
     |> update_command(command_id, fn command ->
-      if command.action == "env_read" and ok?, do: broadcast_env(command, output)
+      if command.status in ["sent", "running"] do
+        if command.action == "env_read" and ok?, do: broadcast_env(command, output)
 
-      [
-        status: if(ok?, do: "ok", else: "error"),
-        output: if(command.action == "env_read" and ok?, do: nil, else: format_output(output)),
-        finished_at: now()
-      ]
+        if command.action == "agent_update" and ok? and cached_release?(command.args["release"]) do
+          [
+            status: "running",
+            output: "агент перезапускается; ждём подтверждения digest",
+            started_at: command.started_at || now()
+          ]
+        else
+          [
+            status: if(ok?, do: "ok", else: "error"),
+            output:
+              if(command.action == "env_read" and ok?, do: nil, else: format_output(output)),
+            finished_at: now()
+          ]
+        end
+      else
+        []
+      end
     end)
     |> tap(&track_planned_stop/1)
   end
@@ -186,7 +226,13 @@ defmodule Bastion.Instances do
     |> where([c], c.inserted_at < ^since)
     |> then(&if(running_id, do: where(&1, [c], c.id != ^running_id), else: &1))
     |> Repo.all()
-    |> Enum.each(&abandon(&1, "агент не выполняет эту команду: он перезапустился и потерял её"))
+    |> Enum.reject(&is_map(&1.args["release"]))
+    |> Enum.each(
+      &expire_selected_command(
+        &1,
+        "агент не выполняет эту команду: он перезапустился и потерял её"
+      )
+    )
   end
 
   def drop_lost_commands(_instance_id, _status), do: :ok
@@ -209,22 +255,45 @@ defmodule Bastion.Instances do
           do: full_backup_timeout_seconds(),
           else: command_timeout_seconds()
 
-      abandon(command, "нет результата от агента #{div(timeout, 60)} минут")
+      expire_selected_command(command, "нет результата от агента #{div(timeout, 60)} минут")
     end)
   end
 
-  defp abandon(%Command{} = command, reason) do
-    with {:ok, command} <-
-           command
-           |> Ecto.Changeset.change(
-             status: "error",
-             output: Enum.join(Enum.reject([command.output, reason], &is_nil/1), "\n"),
-             finished_at: now()
-           )
-           |> Repo.update()
-           |> broadcast(:command_updated) do
-      Bastion.Backups.command_finished(command)
-      Bastion.Snapshots.command_finished(command)
+  @doc false
+  def expire_selected_command(%Command{} = selected, reason) when is_binary(reason) do
+    result =
+      Repo.transaction(fn ->
+        query =
+          from c in Command,
+            where: c.id == ^selected.id and c.instance_id == ^selected.instance_id,
+            lock: "FOR UPDATE"
+
+        case Repo.one(query) do
+          %Command{status: status} = current when status in ["sent", "running"] ->
+            attrs = [
+              status: "error",
+              output: Enum.join(Enum.reject([current.output, reason], &is_nil/1), "\n"),
+              finished_at: now()
+            ]
+
+            case current |> Ecto.Changeset.change(attrs) |> Repo.update() do
+              {:ok, updated} -> updated
+              {:error, error} -> Repo.rollback(error)
+            end
+
+          _ ->
+            :unchanged
+        end
+      end)
+
+    case result do
+      {:ok, %Command{} = command} ->
+        broadcast({:ok, command}, :command_updated)
+        Bastion.Backups.command_finished(command)
+        Bastion.Snapshots.command_finished(command)
+
+      _ ->
+        :ok
     end
   end
 
@@ -263,6 +332,14 @@ defmodule Bastion.Instances do
     |> Repo.all()
   end
 
+  def last_update_command(instance_id) do
+    Command
+    |> where([c], c.instance_id == ^instance_id and c.action == "update")
+    |> order_by([c], desc: c.inserted_at, desc: c.id)
+    |> limit(1)
+    |> Repo.one()
+  end
+
   def last_successful_operations(instance_id) do
     commands =
       Command
@@ -288,14 +365,109 @@ defmodule Bastion.Instances do
   end
 
   defp update_command(instance_id, command_id, changes) do
-    with {:ok, command_id} <- Ecto.UUID.cast(command_id),
-         %Command{} = command <- Repo.get_by(Command, id: command_id, instance_id: instance_id) do
-      changes = if is_function(changes, 1), do: changes.(command), else: changes
-      command |> Ecto.Changeset.change(changes) |> Repo.update() |> broadcast(:command_updated)
+    with {:ok, command_id} <- Ecto.UUID.cast(command_id) do
+      result =
+        Repo.transaction(fn ->
+          query =
+            from c in Command,
+              where: c.id == ^command_id and c.instance_id == ^instance_id,
+              lock: "FOR UPDATE"
+
+          case Repo.one(query) do
+            nil ->
+              Repo.rollback(:not_found)
+
+            command ->
+              attrs = if is_function(changes, 1), do: changes.(command), else: changes
+
+              if attrs == [] do
+                {:unchanged, command}
+              else
+                case command |> Ecto.Changeset.change(attrs) |> Repo.update() do
+                  {:ok, updated} -> {:changed, updated}
+                  {:error, reason} -> Repo.rollback(reason)
+                end
+              end
+          end
+        end)
+
+      case result do
+        {:ok, {:changed, command}} -> broadcast({:ok, command}, :command_updated)
+        {:ok, {:unchanged, command}} -> {:ok, command}
+        {:error, reason} -> {:error, reason}
+      end
     else
       _ -> {:error, :not_found}
     end
   end
+
+  def pending_commands(instance_id) do
+    if release_capable?(Repo.get(Instance, instance_id)) do
+      Command
+      |> where([c], c.instance_id == ^instance_id and c.status in ["sent", "running"])
+      |> where([c], c.action in ["update", "agent_update"])
+      |> order_by([c], asc: c.inserted_at)
+      |> Repo.all()
+      |> Enum.filter(&cached_release?(&1.args["release"]))
+    else
+      []
+    end
+  end
+
+  def retry_command(%Instance{} = instance, id) do
+    with {:ok, id} <- Ecto.UUID.cast(id),
+         %Command{status: status} = command <-
+           Repo.get_by(Command, id: id, instance_id: instance.id),
+         true <-
+           status in ["sent", "running"] and command.action in ["update", "agent_update"] and
+             release_capable?(Repo.get(Instance, instance.id)) and
+             cached_release?(command.args["release"]) do
+      Phoenix.PubSub.broadcast(
+        Bastion.PubSub,
+        commands_topic(instance.id),
+        {:push_command, command}
+      )
+
+      {:ok, command}
+    else
+      _ -> {:error, :not_found}
+    end
+  end
+
+  defp cached_release?(%{"version" => version} = manifest) do
+    case Bastion.Releases.get(version) do
+      %{manifest: ^manifest} -> true
+      _ -> false
+    end
+  end
+
+  defp cached_release?(_), do: false
+
+  defp confirm_agent_updates(instance_id, %{"agent" => %{"digest" => digest}})
+       when is_binary(digest) do
+    Command
+    |> where(
+      [c],
+      c.instance_id == ^instance_id and c.action == "agent_update" and c.status == "running"
+    )
+    |> Repo.all()
+    |> Enum.each(fn command ->
+      update_command(instance_id, command.id, fn current ->
+        if current.status == "running" and
+             current.output == "агент перезапускается; ждём подтверждения digest" and
+             get_in(current.args, ["release", "images", "agent"]) == digest,
+           do: [status: "ok", output: "подтверждён digest агента #{digest}", finished_at: now()],
+           else: []
+      end)
+    end)
+  end
+
+  defp confirm_agent_updates(_instance_id, _status), do: :ok
+
+  defp release_capable?(%Instance{capabilities: capabilities}),
+    do: "release_manifest_v1" in capabilities
+
+  defp release_capable?(_), do: false
 
   # The .env holds secrets, so it goes to the open pages and never to the database.
   defp broadcast_env(command, content) when is_binary(content),

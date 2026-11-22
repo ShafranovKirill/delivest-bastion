@@ -65,4 +65,69 @@ defmodule BastionWeb.InstanceChannelTest do
 
     assert [%{status: "ok", output: "done", requested_by: "admin"}] = Instances.list_commands(id)
   end
+
+  test "a reconnect replays the same selected release command and preserves its result" do
+    manifest = Bastion.Fixtures.release_fixture("2.0.0")
+    id = Ecto.UUID.generate()
+    {:ok, socket} = connect_agent(id)
+
+    {:ok, _, socket} =
+      subscribe_and_join(socket, "instance:" <> id, %{
+        "name" => "Pilot",
+        "actions" => Instances.actions(),
+        "capabilities" => ["release_manifest_v1"]
+      })
+
+    {:ok, command} =
+      Instances.send_command(Instances.get_instance(id), "update", %{"release" => manifest})
+
+    command_id = command.id
+    assert_push "command", %{"id" => ^command_id, "args" => %{"release" => ^manifest}}
+
+    {:ok, reconnect} = connect_agent(id)
+
+    {:ok, _, reconnect} =
+      subscribe_and_join(reconnect, "instance:" <> id, %{
+        "name" => "Pilot",
+        "actions" => Instances.actions(),
+        "capabilities" => ["release_manifest_v1"]
+      })
+
+    assert_push "command", %{"id" => ^command_id, "args" => %{"release" => ^manifest}}
+
+    ref =
+      push(reconnect, "command_result", %{"id" => command_id, "ok" => true, "output" => "ready"})
+
+    assert_reply ref, :ok
+    ref = push(socket, "command_started", %{"id" => command_id})
+    assert_reply ref, :ok
+
+    assert [%{status: "ok", output: "ready", args: %{"release" => ^manifest}}] =
+             Instances.list_commands(id)
+  end
+
+  test "a legacy pending update is never replayed into a newly capable agent" do
+    id = Ecto.UUID.generate()
+    join_agent(id)
+
+    command =
+      Bastion.Repo.insert!(%Bastion.Instances.Command{
+        instance_id: id,
+        action: "update",
+        args: %{},
+        status: "sent"
+      })
+
+    {:ok, reconnect} = connect_agent(id)
+
+    {:ok, _, _} =
+      subscribe_and_join(reconnect, "instance:" <> id, %{
+        "name" => "Pilot",
+        "actions" => Instances.actions(),
+        "capabilities" => ["release_manifest_v1"]
+      })
+
+    command_id = command.id
+    refute_push "command", %{"id" => ^command_id}
+  end
 end

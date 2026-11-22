@@ -41,7 +41,11 @@ defmodule Bastion.RolloutTest do
 
     instance =
       instance_fixture(%{
-        info: %{"name" => name, "actions" => Instances.actions() -- ["rollback"]}
+        info: %{
+          "name" => name,
+          "actions" => Instances.actions() -- ["rollback"],
+          "capabilities" => ["release_manifest_v1"]
+        }
       })
 
     status =
@@ -70,10 +74,11 @@ defmodule Bastion.RolloutTest do
   end
 
   test "sites are updated one after another once the previous one answers" do
+    release_fixture()
     first = behind("A first")
     second = behind("B second")
 
-    assert :ok = Rollout.start("admin")
+    assert :ok = Rollout.start("admin", "1.2.3")
     assert_receive {:agent_got, id, %{action: "update"} = command}
     assert id == first.id
     refute_receive {:agent_got, _, _}, 50
@@ -92,10 +97,11 @@ defmodule Bastion.RolloutTest do
   end
 
   test "the first failed update stops the rest" do
+    release_fixture()
     first = behind("A first")
     _second = behind("B second")
 
-    assert :ok = Rollout.start("admin")
+    assert :ok = Rollout.start("admin", "1.2.3")
     assert_receive {:agent_got, _, command}
 
     Instances.command_finished(first.id, command.id, false, "pull failed")
@@ -106,6 +112,24 @@ defmodule Bastion.RolloutTest do
   end
 
   test "nothing starts when every site is up to date" do
-    assert {:error, :nothing_to_update} = Rollout.start("admin")
+    release_fixture()
+    assert {:error, :nothing_to_update} = Rollout.start("admin", "1.2.3")
+  end
+
+  test "candidate selection follows the requested digest even when it is a downgrade" do
+    old = release_fixture("1.2.3")
+    newer = release_fixture("1.2.4")
+    instance = behind("Pilot")
+
+    {:ok, _} =
+      Instances.record_heartbeat(
+        instance.id,
+        Map.put(healthy_status(), "rollback", %{
+          "current" => %{"version" => "1.2.4", "digest" => newer["images"]}
+        })
+      )
+
+    assert Enum.any?(Rollout.candidates(old), &(&1.id == instance.id))
+    refute Enum.any?(Rollout.candidates(newer), &(&1.id == instance.id))
   end
 end
