@@ -32,6 +32,83 @@ defmodule Bastion.InstancesTest do
     assert {:error, :unknown_action} = Instances.send_command(instance, "rm")
   end
 
+  test "a capable agent only accepts a cached, exact release bundle" do
+    manifest = release_fixture("1.2.3")
+    instance = instance_fixture(%{info: %{"capabilities" => ["release_manifest_v1"]}})
+    Instances.subscribe_commands(instance.id)
+    {:ok, _} = BastionWeb.Presence.track_agent(self(), instance.id)
+
+    assert {:error, :release_required} = Instances.send_command(instance, "update")
+
+    assert {:error, :release_required} =
+             Instances.send_command(instance, "update", %{
+               "release" =>
+                 put_in(manifest, ["images", "server"], "sha256:" <> String.duplicate("d", 64))
+             })
+
+    assert {:ok, command} = Instances.send_command(instance, "update", %{"release" => manifest})
+    assert_receive {:push_command, %{id: id, args: %{"release" => ^manifest}}}
+    assert id == command.id
+    assert {:ok, %{id: ^id}} = Instances.retry_command(instance, id)
+    assert_receive {:push_command, %{id: ^id, args: %{"release" => ^manifest}}}
+  end
+
+  test "older agents require upgrade before a selected site release" do
+    instance = instance_fixture()
+    {:ok, _} = BastionWeb.Presence.track_agent(self(), instance.id)
+    assert {:error, :agent_upgrade_required} = Instances.send_command(instance, "update")
+    assert {:ok, _} = Instances.send_command(instance, "agent_update")
+  end
+
+  test "pinned agent update finishes only after its running digest is observed" do
+    manifest = release_fixture("2.1.0")
+    instance = instance_fixture(%{info: %{"capabilities" => ["release_manifest_v1"]}})
+    {:ok, _} = BastionWeb.Presence.track_agent(self(), instance.id)
+
+    assert {:ok, command} =
+             Instances.send_command(instance, "agent_update", %{"release" => manifest})
+
+    assert {:ok, %{status: "running"}} =
+             Instances.command_finished(instance.id, command.id, true, "scheduled")
+
+    {:ok, _} =
+      Instances.record_heartbeat(instance.id, %{
+        "agent" => %{"digest" => "sha256:" <> String.duplicate("d", 64)}
+      })
+
+    assert Repo.reload!(command).status == "running"
+
+    expected = manifest["images"]["agent"]
+    {:ok, _} = Instances.record_heartbeat(instance.id, %{"agent" => %{"digest" => expected}})
+    assert %{status: "ok", output: output, finished_at: %DateTime{}} = Repo.reload!(command)
+    assert output =~ expected
+    assert {:ok, %{status: "ok"}} = Instances.command_started(instance.id, command.id)
+
+    assert {:ok, %{status: "ok"}} =
+             Instances.command_finished(instance.id, command.id, false, "late")
+  end
+
+  test "unconfirmed agent update expires with the previous successful release untouched" do
+    manifest = release_fixture("2.1.0")
+    instance = instance_fixture()
+    previous = command(instance, "ok", 20)
+
+    pending =
+      Repo.insert!(%Bastion.Instances.Command{
+        instance_id: instance.id,
+        action: "agent_update",
+        args: %{"release" => manifest},
+        status: "running",
+        output: "агент перезапускается; ждём подтверждения digest",
+        inserted_at: DateTime.add(DateTime.utc_now(:second), -11 * 60)
+      })
+
+    Instances.expire_commands()
+    assert %{status: "error", output: output} = Repo.reload!(pending)
+    assert output =~ "нет результата"
+    assert Repo.reload!(previous).status == "ok"
+  end
+
   test "command results are stored only for their own instance" do
     instance = instance_fixture()
     other = instance_fixture()
@@ -48,6 +125,11 @@ defmodule Bastion.InstancesTest do
 
     assert {:ok, %{status: "ok", output: "{\n  \"a\": 1\n}"}} =
              Instances.command_finished(instance.id, command.id, true, %{"a" => 1})
+
+    assert {:ok, %{status: "ok"}} = Instances.command_started(instance.id, command.id)
+
+    assert {:ok, %{status: "ok", output: "{\n  \"a\": 1\n}"}} =
+             Instances.command_finished(instance.id, command.id, false, "late failure")
 
     assert [%{id: id}] = Instances.list_commands(instance.id)
     assert id == command.id
@@ -93,6 +175,17 @@ defmodule Bastion.InstancesTest do
     assert output =~ "10 минут"
     assert Repo.reload!(recent).status == "running"
     assert Repo.reload!(done).status == "ok"
+  end
+
+  test "expiry selected before a successful result cannot replace that result" do
+    instance = instance_fixture()
+    selected = command(instance, "running", 11)
+
+    assert {:ok, %{status: "ok"}} =
+             Instances.command_finished(instance.id, selected.id, true, "site ready")
+
+    assert :ok = Instances.expire_selected_command(selected, "timeout")
+    assert %{status: "ok", output: "site ready"} = Repo.reload!(selected)
   end
 
   test "a full archive gets an hour to finish" do

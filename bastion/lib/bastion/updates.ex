@@ -1,13 +1,24 @@
 defmodule Bastion.Updates do
   @moduledoc "Updates a site, with a fresh database backup first when the agent can make one."
 
-  alias Bastion.{Backups, Instances}
+  alias Bastion.{Backups, Instances, Releases}
   alias Bastion.Instances.Instance
 
   # Agents that know `rollback` also back up the database as the first step of an update.
   def backup_first?(%Instance{actions: actions}), do: "rollback" in actions
 
-  def update(%Instance{} = instance, requested_by \\ nil) do
+  # Legacy callers cannot safely select a mutable latest tag.
+  def update(%Instance{}, _requested_by), do: {:error, :version_required}
+
+  def update(%Instance{} = instance, version, requested_by) do
+    with true <-
+           "release_manifest_v1" in instance.capabilities or {:error, :agent_upgrade_required},
+         {:ok, bundle} <- Releases.resolve(version) do
+      do_update(instance, bundle.manifest, requested_by)
+    end
+  end
+
+  defp do_update(instance, manifest, requested_by) do
     prepared =
       if backup_first?(instance),
         do: Backups.prepare_for_update(instance, requested_by),
@@ -15,7 +26,12 @@ defmodule Bastion.Updates do
 
     case prepared do
       {:ok, backup, args} ->
-        case Instances.send_command(instance, "update", args, requested_by) do
+        case Instances.send_command(
+               instance,
+               "update",
+               Map.put(args, "release", manifest),
+               requested_by
+             ) do
           {:ok, command} ->
             Backups.attach_command(backup, command)
             {:ok, command}
@@ -26,7 +42,7 @@ defmodule Bastion.Updates do
         end
 
       :skip ->
-        Instances.send_command(instance, "update", %{}, requested_by)
+        Instances.send_command(instance, "update", %{"release" => manifest}, requested_by)
     end
   end
 end

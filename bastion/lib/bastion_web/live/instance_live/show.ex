@@ -13,6 +13,7 @@ defmodule BastionWeb.InstanceLive.Show do
     Instances,
     Maintenance,
     Metrics,
+    Releases,
     SiteAlerts,
     Snapshots
   }
@@ -53,6 +54,9 @@ defmodule BastionWeb.InstanceLive.Show do
            env_request: nil,
            env_loaded?: false,
            maintenance_form: to_form(%{"minutes" => "30"}),
+           release_form: to_form(%{"version" => ""}, as: :release),
+           agent_release_form: to_form(%{"version" => ""}, as: :agent_release),
+           release_options: Releases.list_cached(),
            maintenance_open?: false,
            metrics_period: :day,
            client_form:
@@ -148,16 +152,56 @@ defmodule BastionWeb.InstanceLive.Show do
   def handle_event("hide_password", _params, socket),
     do: {:noreply, assign(socket, revealed_password: nil)}
 
-  def handle_event("command", %{"action" => "update"}, socket) do
+  def handle_event("install_release", %{"release" => %{"version" => version}}, socket) do
+    version = String.trim(version)
+    socket = assign(socket, release_form: to_form(%{"version" => version}, as: :release))
+
     socket =
-      case Bastion.Updates.update(socket.assigns.instance, socket.assigns.current_admin) do
-        {:ok, command} -> show_logs(socket, command)
-        {:error, :offline} -> put_flash(socket, :error, "Агент не на связи")
-        {:error, :unknown_action} -> put_flash(socket, :error, "Неизвестная команда")
+      case Bastion.Updates.update(socket.assigns.instance, version, socket.assigns.current_admin) do
+        {:ok, command} ->
+          socket |> assign(release_options: Releases.list_cached()) |> show_logs(command)
+
+        {:error, :offline} ->
+          put_flash(socket, :error, "Агент не на связи")
+
+        {:error, :agent_upgrade_required} ->
+          put_flash(socket, :error, "Сначала обновите агент")
+
+        {:error, :invalid_version} ->
+          put_flash(socket, :error, "Неверный формат версии")
+
+        {:error, reason} ->
+          put_flash(socket, :error, release_error(reason))
       end
 
     {:noreply, socket}
   end
+
+  def handle_event("release_changed", %{"release" => %{"version" => version}}, socket),
+    do: {:noreply, assign(socket, release_form: to_form(%{"version" => version}, as: :release))}
+
+  def handle_event("install_agent_release", %{"agent_release" => %{"version" => version}}, socket) do
+    version = String.trim(version)
+
+    socket =
+      assign(socket, agent_release_form: to_form(%{"version" => version}, as: :agent_release))
+
+    socket =
+      case Releases.resolve(version) do
+        {:ok, bundle} ->
+          socket
+          |> assign(release_options: Releases.list_cached())
+          |> send_command("agent_update", %{"release" => bundle.manifest}, &show_logs/2)
+
+        {:error, reason} ->
+          put_flash(socket, :error, release_error(reason))
+      end
+
+    {:noreply, socket}
+  end
+
+  def handle_event("command", %{"action" => "agent_update"}, socket),
+    do: {:noreply, send_command(socket, "agent_update", %{}, &show_logs/2)}
 
   def handle_event("command", %{"action" => action}, socket) do
     {:noreply, send_command(socket, action, %{}, &show_logs/2)}
@@ -314,7 +358,10 @@ defmodule BastionWeb.InstanceLive.Show do
         do: assign(socket, env_request: nil),
         else: socket
 
-    {:noreply, load_commands(socket)}
+    {:noreply,
+     socket
+     |> load_commands()
+     |> assign(last_update_command: Instances.last_update_command(id))}
   end
 
   def handle_info({:backup_updated, _backup}, socket), do: {:noreply, load_backups(socket)}
@@ -380,6 +427,7 @@ defmodule BastionWeb.InstanceLive.Show do
       uptime: Downtime.summary(instance),
       incidents: Downtime.list_incidents(instance.id),
       operations: Instances.last_successful_operations(instance.id),
+      last_update_command: Instances.last_update_command(instance.id),
       maintenance_windows: Maintenance.windows(instance)
     )
   end
@@ -462,6 +510,25 @@ defmodule BastionWeb.InstanceLive.Show do
        do: String.slice(revision, 0, 7)
 
   defp agent_revision(_instance), do: "—"
+
+  defp release_error(:release_required), do: "Выберите опубликованную версию"
+  defp release_error(:missing_manifest), do: "У релиза нет release-manifest.json"
+  defp release_error(:invalid_manifest), do: "Манифест релиза неполон или повреждён"
+  defp release_error(:agent_upgrade_required), do: "Сначала обновите агент"
+  defp release_error(:invalid_version), do: "Неверный формат версии"
+  defp release_error(_), do: "Не удалось получить опубликованный релиз"
+
+  defp confirmed_release(%{status: %{"rollback" => %{"current" => current}}})
+       when is_map(current),
+       do: current
+
+  defp confirmed_release(_), do: %{}
+
+  defp last_attempt(%{status: %{"rollback" => %{"attempt" => attempt}}})
+       when is_map(attempt),
+       do: attempt
+
+  defp last_attempt(_), do: %{}
 
   defp app_stats?(%{status: %{} = status}),
     do: is_map(status["orders"]) or is_map(status["errors"]) or is_map(status["database"])
@@ -762,18 +829,44 @@ defmodule BastionWeb.InstanceLive.Show do
           <div id="tab-updates-panel" class="space-y-4">
             <div class="flex flex-wrap items-center justify-between gap-4">
               <.site_version instance={@instance} />
-              <div id="instance-actions" class="flex flex-wrap items-center gap-2">
-                <button
-                  id="instance-update"
-                  type="button"
-                  class="btn btn-primary btn-sm"
-                  phx-click="command"
-                  phx-value-action="update"
-                  disabled={!@instance.online || busy?(@commands)}
-                  data-confirm="Скачать новые образы и перезапустить сайт?"
+              <div id="instance-actions" class="space-y-2">
+                <.form
+                  for={@release_form}
+                  id="release-form"
+                  phx-change="release_changed"
+                  phx-submit="install_release"
+                  class="flex flex-wrap items-end gap-2"
                 >
-                  <.icon name="hero-arrow-path" class="size-4" /> Обновить
-                </button>
+                  <.input
+                    field={@release_form[:version]}
+                    type="text"
+                    label="Версия релиза"
+                    placeholder="1.2.3"
+                    list="cached-releases"
+                  />
+                  <datalist id="cached-releases">
+                    <option :for={bundle <- @release_options} value={bundle.version} />
+                  </datalist>
+                  <button
+                    id="instance-update"
+                    type="submit"
+                    class="btn btn-primary btn-sm"
+                    disabled={
+                      !@instance.online || busy?(@commands) ||
+                        "release_manifest_v1" not in @instance.capabilities
+                    }
+                    data-confirm="Установить выбранную версию сайта?"
+                  >
+                    <.icon name="hero-arrow-path" class="size-4" /> Установить
+                  </button>
+                </.form>
+                <p
+                  :if={"release_manifest_v1" not in @instance.capabilities}
+                  id="agent-upgrade-required"
+                  class="text-sm text-warning"
+                >
+                  Сначала обновите агент для установки выбранной версии.
+                </p>
               </div>
 
               <button
@@ -788,6 +881,33 @@ defmodule BastionWeb.InstanceLive.Show do
               >
                 <.icon name="hero-arrow-uturn-left" class="size-4" /> Откатить обновление
               </button>
+            </div>
+            <div id="release-state" class="rounded-box bg-base-200 p-3 text-sm space-y-1">
+              <p>
+                Подтверждённая версия сайта:
+                <strong>{confirmed_release(@instance)["version"] || "—"}</strong>
+              </p>
+              <p>
+                Digest server:
+                <code>{get_in(confirmed_release(@instance), ["digest", "server"]) || "—"}</code>
+              </p>
+              <p>
+                Digest client:
+                <code>{get_in(confirmed_release(@instance), ["digest", "client"]) || "—"}</code>
+              </p>
+              <p>
+                Агент: {get_in(@instance.status || %{}, ["agent", "version"]) ||
+                  @instance.agent_version || "—"} · digest
+                <code>{get_in(@instance.status || %{}, ["agent", "digest"]) || "—"}</code>
+              </p>
+              <p :if={last_attempt(@instance) != %{}}>
+                Последняя попытка: {last_attempt(@instance)["version"] || "—"} · {last_attempt(
+                  @instance
+                )["status"] || "выполняется"} · {last_attempt(@instance)["error"]}
+              </p>
+              <p :if={@last_update_command} id="last-update-command">
+                Цель {get_in(@last_update_command.args, ["release", "version"]) || "—"} · команда {@last_update_command.id} · {@last_update_command.status} · {@last_update_command.output}
+              </p>
             </div>
           </div>
         </.module_panel>
@@ -1283,6 +1403,10 @@ defmodule BastionWeb.InstanceLive.Show do
                 <summary class="flex flex-wrap items-center gap-3 p-3 cursor-pointer">
                   <span class="font-semibold">{action_label(command.action)}</span>
                   <span :if={command.args["service"]} class="text-xs">{command.args["service"]}</span>
+                  <span :if={command.args["release"]} class="text-xs">цель {command.args["release"][
+                    "version"
+                  ]}</span>
+                  <span class="font-mono text-xs text-base-content/60">{command.id}</span>
                   <.command_status status={command.status} />
                   <span class="text-xs text-base-content/60">
                     {datetime(command.inserted_at)} · {command.requested_by}
@@ -1589,15 +1713,45 @@ defmodule BastionWeb.InstanceLive.Show do
                       Сайт при этом работает, бастион на несколько секунд потеряет связь с агентом.
                     </p>
                   </div>
+                  <.form
+                    :if={
+                      "agent_update" in @instance.actions and
+                        "release_manifest_v1" in @instance.capabilities
+                    }
+                    for={@agent_release_form}
+                    id="agent-release-form"
+                    phx-submit="install_agent_release"
+                    class="flex flex-wrap items-end gap-2"
+                  >
+                    <.input
+                      field={@agent_release_form[:version]}
+                      type="text"
+                      label="Версия для агента"
+                      placeholder="1.2.3"
+                      list="cached-releases"
+                    />
+                    <button
+                      id="agent-update"
+                      type="submit"
+                      class="btn btn-sm"
+                      disabled={!@instance.online || busy?(@commands)}
+                      data-confirm="Установить агента из выбранного релиза?"
+                    >
+                      <.icon name="hero-arrow-path" class="size-4" /> Обновить агента
+                    </button>
+                  </.form>
                   <button
-                    :if={"agent_update" in @instance.actions}
+                    :if={
+                      "agent_update" in @instance.actions and
+                        "release_manifest_v1" not in @instance.capabilities
+                    }
                     id="agent-update"
                     type="button"
                     class="btn btn-sm"
                     phx-click="command"
                     phx-value-action="agent_update"
                     disabled={!@instance.online || busy?(@commands)}
-                    data-confirm="Обновить агента? Он перезапустится через несколько секунд."
+                    data-confirm="Обновить агент до версии с поддержкой выбора релиза?"
                   >
                     <.icon name="hero-arrow-path" class="size-4" /> Обновить агента
                   </button>
