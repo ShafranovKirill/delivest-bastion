@@ -62,4 +62,31 @@ defmodule Bastion.ReleasesTest do
     Req.Test.stub(Bastion.Http, fn conn -> Plug.Conn.send_resp(conn, 503, "unavailable") end)
     assert {:error, :release_unavailable} = Releases.resolve("1.2.6")
   end
+
+  test "latest rejects prereleases and unavailable GitHub responses" do
+    Req.Test.stub(Bastion.Http, fn conn ->
+      Plug.Conn.send_resp(
+        conn,
+        200,
+        Jason.encode!(%{
+          "tag_name" => "v1.3.0-rc.1",
+          "draft" => false,
+          "prerelease" => true,
+          "published_at" => "2026-11-23T00:00:00Z"
+        })
+      )
+    end)
+
+    assert {:error, :release_unavailable} = Releases.latest()
+
+    Req.Test.stub(Bastion.Http, fn conn -> Plug.Conn.send_resp(conn, 503, "down") end)
+    assert {:error, :release_unavailable} = Releases.latest()
+  end
+
+  test "semantic version comparison prevents downgrade" do
+    assert Releases.newer?("1.10.0", "1.9.0")
+    refute Releases.newer?("1.9.0", "1.10.0")
+    refute Releases.newer?("1.9.0", "1.9.0")
+    assert Releases.newer?("1.9.0", nil)
+  end
 end

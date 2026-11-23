@@ -27,6 +27,37 @@ defmodule Bastion.Releases do
 
   def resolve(_), do: {:error, :invalid_version}
 
+  def latest do
+    with {:ok, release} <- fetch_json("#{@api}/releases/latest"),
+         %{"tag_name" => "v" <> version, "draft" => false, "prerelease" => false} <- release,
+         true <- is_binary(release["published_at"]) and stable_version?(version),
+         {:ok, bundle} <- resolve(version) do
+      {:ok, bundle}
+    else
+      {:error, _} = error -> error
+      _ -> {:error, :release_unavailable}
+    end
+  end
+
+  def newer?(target, current) when is_binary(target) and is_binary(current) do
+    with {:ok, target_version} <- Version.parse(target),
+         {:ok, current_version} <- Version.parse(current) do
+      Version.compare(target_version, current_version) == :gt
+    else
+      _ -> true
+    end
+  end
+
+  def newer?(_target, _current), do: true
+
+  defp stable_version?(version) do
+    valid_version(version) == :ok and
+      case Version.parse(version) do
+        {:ok, parsed} -> parsed.pre == []
+        _ -> false
+      end
+  end
+
   def valid_manifest?(
         %{"version" => version, "root_sha" => root, "gitlinks" => gitlinks, "images" => images} =
           manifest

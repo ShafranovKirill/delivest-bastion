@@ -7,6 +7,29 @@ defmodule BastionWeb.InstanceLiveTest do
   alias Bastion.Instances
   alias BastionWeb.Presence
 
+  setup do
+    Req.Test.set_req_test_to_shared()
+    Req.Test.stub(Bastion.Http, fn conn -> Plug.Conn.send_resp(conn, 503, "unavailable") end)
+    :ok
+  end
+
+  defp stub_latest(version) do
+    Req.Test.stub(Bastion.Http, fn conn ->
+      assert conn.request_path == "/repos/ShafranovKirill/delivest/releases/latest"
+
+      Plug.Conn.send_resp(
+        conn,
+        200,
+        Jason.encode!(%{
+          "tag_name" => "v#{version}",
+          "draft" => false,
+          "prerelease" => false,
+          "published_at" => "2026-11-23T00:00:00Z"
+        })
+      )
+    end)
+  end
+
   defp log_in(conn), do: init_test_session(conn, %{"admin" => "admin"})
 
   defp bring_online(instance) do
@@ -151,18 +174,22 @@ defmodule BastionWeb.InstanceLiveTest do
 
   test "sends commands to an online agent", %{conn: conn} do
     manifest = release_fixture()
+    release_fixture("9.9.9")
+    stub_latest("1.2.3")
     instance = instance_fixture(%{info: %{"capabilities" => ["release_manifest_v1"]}})
     {:ok, _} = Instances.record_heartbeat(instance.id, healthy_status())
     bring_online(instance)
 
-    {:ok, lv, _html} = live(log_in(conn), ~p"/instances/#{instance.id}")
+    {:ok, lv, _html} = live(log_in(conn), ~p"/instances/#{instance.id}?tab=updates")
+    render_async(lv)
     assert has_element?(lv, "#technical-details:not([open]) #containers", "server")
     assert has_element?(lv, "#tab-state-panel > #uptime:first-child")
     assert has_element?(lv, "#tab-state-panel > #load:nth-child(2)")
     refute has_element?(lv, "#instance-start")
     assert has_element?(lv, "#module-settings:not([open]) #instance-restart")
 
-    lv |> form("#release-form", release: %{version: "1.2.3"}) |> render_submit()
+    assert has_element?(lv, "#instance-update")
+    render_submit(lv, "install_release", %{"release" => %{"version" => "9.9.9"}})
     assert_receive {:agent_got, "update", %{"release" => ^manifest}}
     assert_patch(lv, ~p"/instances/#{instance.id}?tab=logs")
     assert has_element?(lv, "[id^=command-]", "Обновление")
@@ -170,6 +197,27 @@ defmodule BastionWeb.InstanceLiveTest do
     [command] = Instances.list_commands(instance.id)
     Instances.command_finished(instance.id, command.id, true, "all good")
     assert render(lv) =~ "all good"
+  end
+
+  test "installed current release cannot be installed again", %{conn: conn} do
+    manifest = release_fixture()
+    stub_latest("1.2.3")
+    instance = instance_fixture(%{info: %{"capabilities" => ["release_manifest_v1"]}})
+
+    status =
+      Map.put(healthy_status(), "rollback", %{
+        "current" => %{"version" => "1.2.3", "digest" => manifest["images"]}
+      })
+
+    {:ok, _} = Instances.record_heartbeat(instance.id, status)
+    bring_online(instance)
+
+    {:ok, lv, _} = live(log_in(conn), ~p"/instances/#{instance.id}?tab=updates")
+    render_async(lv)
+    assert has_element?(lv, "#instance-update[disabled]")
+    assert has_element?(lv, "#release-current")
+    render_submit(lv, "install_release", %{})
+    refute_receive {:agent_got, "update", _}
   end
 
   test "older agent shows upgrade requirement and cannot install a version", %{conn: conn} do
@@ -182,14 +230,16 @@ defmodule BastionWeb.InstanceLiveTest do
     assert has_element?(lv, "#agent-update")
   end
 
-  test "a capable agent update submits the visible selected release", %{conn: conn} do
+  test "a capable agent update submits the latest release", %{conn: conn} do
     manifest = release_fixture("2.1.0")
+    stub_latest("2.1.0")
     instance = instance_fixture(%{info: %{"capabilities" => ["release_manifest_v1"]}})
     bring_online(instance)
 
     {:ok, lv, _} = live(log_in(conn), ~p"/instances/#{instance.id}?tab=settings")
+    render_async(lv)
     assert has_element?(lv, "#agent-release-form #agent-update")
-    lv |> form("#agent-release-form", agent_release: %{version: "2.1.0"}) |> render_submit()
+    lv |> element("#agent-release-form") |> render_submit()
     assert_receive {:agent_got, "agent_update", %{"release" => ^manifest}}
   end
 
@@ -205,8 +255,7 @@ defmodule BastionWeb.InstanceLiveTest do
     {:ok, _} = Instances.record_heartbeat(instance.id, status)
 
     lv |> element("#tab-history") |> render_click()
-    lv |> element("#rollback") |> render_click()
-    assert_receive {:agent_got, "rollback", %{}}
+    refute has_element?(lv, "#rollback")
   end
 
   test "an undated rollback does not break the instance page", %{conn: conn} do
@@ -216,7 +265,7 @@ defmodule BastionWeb.InstanceLiveTest do
     bring_online(instance)
 
     {:ok, lv, _html} = live(log_in(conn), ~p"/instances/#{instance.id}?tab=history")
-    assert has_element?(lv, "#rollback")
+    refute has_element?(lv, "#rollback")
   end
 
   test "orders, errors, the database and site alerts are shown", %{conn: conn} do

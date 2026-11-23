@@ -279,6 +279,26 @@ defmodule Bastion.BackupsTest do
     assert Instances.list_commands(instance.id) == []
   end
 
+  test "an older release cannot start an update or backup" do
+    release_fixture("1.2.3")
+
+    instance =
+      instance_fixture(%{info: %{"capabilities" => ["release_manifest_v1"]}})
+      |> bring_online()
+
+    {:ok, _} =
+      Instances.record_heartbeat(
+        instance.id,
+        Map.put(healthy_status(), "rollback", %{"current" => %{"version" => "1.3.0"}})
+      )
+
+    instance = Instances.get_instance(instance.id)
+    assert {:error, :already_current} = Bastion.Updates.update(instance, "1.2.3", "admin")
+    assert Backups.list(instance.id) == []
+    assert Instances.list_commands(instance.id) == []
+    refute_receive {:agent_got, _}
+  end
+
   @moduletag :tmp_dir
 
   defp fake_pg_restore(dir, toc, status \\ 0) do

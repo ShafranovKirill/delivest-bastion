@@ -116,7 +116,7 @@ defmodule Bastion.RolloutTest do
     assert {:error, :nothing_to_update} = Rollout.start("admin", "1.2.3")
   end
 
-  test "candidate selection follows the requested digest even when it is a downgrade" do
+  test "candidate selection excludes downgrade" do
     old = release_fixture("1.2.3")
     newer = release_fixture("1.2.4")
     instance = behind("Pilot")
@@ -129,7 +129,7 @@ defmodule Bastion.RolloutTest do
         })
       )
 
-    assert Enum.any?(Rollout.candidates(old), &(&1.id == instance.id))
+    refute Enum.any?(Rollout.candidates(old), &(&1.id == instance.id))
     refute Enum.any?(Rollout.candidates(newer), &(&1.id == instance.id))
   end
 end

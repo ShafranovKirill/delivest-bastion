@@ -46,7 +46,11 @@ defmodule Bastion.Rollout do
     Instances.list_instances()
     |> Enum.filter(fn instance ->
       instance.online and is_nil(instance.stopped_at) and "update" in instance.actions and
-        "release_manifest_v1" in instance.capabilities and not installed?(instance, manifest)
+        "release_manifest_v1" in instance.capabilities and not installed?(instance, manifest) and
+        Releases.newer?(
+          manifest["version"],
+          get_in(instance.status || %{}, ["rollback", "current", "version"])
+        )
     end)
   end
 
