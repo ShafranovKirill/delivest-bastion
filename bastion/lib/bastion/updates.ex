@@ -14,7 +14,11 @@ defmodule Bastion.Updates do
     with true <-
            "release_manifest_v1" in instance.capabilities or {:error, :agent_upgrade_required},
          {:ok, bundle} <- Releases.resolve(version) do
-      do_update(instance, bundle.manifest, requested_by)
+      current = get_in(instance.status || %{}, ["rollback", "current", "version"])
+
+      if Releases.newer?(version, current),
+        do: do_update(instance, bundle.manifest, requested_by),
+        else: {:error, :already_current}
     end
   end
 
