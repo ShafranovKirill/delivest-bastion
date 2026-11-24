@@ -2,19 +2,18 @@
   <div class="pricing-wrap">
     <div class="pricing-head">
       <span class="pricing-kicker">Тарифы Delivest</span>
-      <h2 id="pricing-title">Первые 2 месяца <em>бесплатно.</em></h2>
-      <p>Пробный период начинается с запуска сайта. После него подписка стоит от <span class="nowrap">3&nbsp;000&nbsp;₽/мес</span> на Базовом или от <span class="nowrap">6&nbsp;000&nbsp;₽/мес</span> на Pro.</p>
+      <h2 id="pricing-title">Подписка <em>для вашей сети.</em></h2>
+      <p>Первая оплата за настройку и запуск сайта рассчитывается индивидуально и зависит от масштаба франшизы.</p>
     </div>
 
-    <p class="pricing-included"><strong>В обоих тарифах:</strong> стартовая настройка сайта, товаров и поддерживаемой CRM, помощь с маркетингом и AI-сопровождение команды.</p>
+    <p class="pricing-included"><strong>При запуске</strong> настроим сайт, меню и поддерживаемую CRM. Помощь с маркетингом и AI-сопровождение доступны в обоих тарифах.</p>
 
     <div class="pricing-grid">
       <article class="pricing-card" aria-labelledby="basic-title">
         <div class="card-top">
           <span class="card-label">Для запуска онлайн-заказов</span>
           <h3 id="basic-title">Базовый</h3>
-          <p class="price">от 3 000 ₽<span>/мес</span></p>
-          <p class="price-hint">После первых 2 бесплатных месяцев</p>
+          <p class="price">5 000 ₽<span>/мес</span></p>
         </div>
         <ul>
           <li>Сайт под вашим брендом</li>
@@ -29,24 +28,38 @@
 
       <article class="pricing-card pro" aria-labelledby="pro-title">
         <div class="card-top">
-          <span class="card-label">Для роста сети</span>
+          <span class="card-label">Продажи, реклама и финансы</span>
           <h3 id="pro-title">Pro</h3>
-          <p class="price">от 6 000 ₽<span>/мес</span></p>
-          <p class="price-hint">После первых 2 бесплатных месяцев</p>
+          <p class="price">8 000 ₽<span>/мес</span></p>
         </div>
-        <ul>
-          <li>Всё из Базового</li>
-          <li>Мобильное приложение под вашим брендом — запуск и публикацию согласуем при подключении</li>
-          <li>Сегменты гостей, кампании для их возврата и персональные предложения</li>
-          <li>Воронка, рекламные источники и расширенная аналитика</li>
-          <li>Сводка и сравнение филиалов</li>
-          <li>Масштабирование сети: копирование меню и настройка точек</li>
+        <ul class="pro-features">
+          <li class="pro-base">Всё из Базового</li>
+          <li class="pro-feature">
+            <strong>Интеграция и настройка рекламы</strong>
+            <span>Яндекс Директ, Метрика и VK Реклама. Отслеживание заказов с любых площадок по рекламным ссылкам.</span>
+          </li>
+          <li class="pro-feature">
+            <strong>Свои курьеры и Яндекс Доставка</strong>
+            <span>Назначайте своих курьеров, отслеживайте статусы и вызывайте курьеров Яндекс Доставки прямо из заказа.</span>
+          </li>
+          <li class="pro-feature">
+            <strong>Финансовый учёт и онлайн-касса</strong>
+            <span>АТОЛ Онлайн, фискальные чеки, платежи, возвраты и сводки по выручке.</span>
+          </li>
+          <li class="pro-feature">
+            <strong>Автоматизация повторных продаж</strong>
+            <span>Сегменты гостей, персональные предложения, бонусы и push-кампании.</span>
+          </li>
+          <li class="pro-feature">
+            <strong>Мобильное приложение под вашим брендом</strong>
+            <span>Запуск и публикацию согласуем при подключении.</span>
+          </li>
         </ul>
         <button class="pricing-cta" type="button" data-lead="pricing">Обсудить подключение <span aria-hidden="true">↗</span></button>
       </article>
     </div>
 
-    <p class="pricing-terms">Итоговая стоимость зависит от оборота франшизы и согласуется до подключения. Предложение распространяется на стандартную подписку. SMS, эквайринг, касса и услуги доставки оплачиваются отдельно по тарифам провайдеров.</p>
+    <p class="pricing-terms">Сумму первой оплаты за настройку и запуск сайта согласуем до начала работ. SMS, эквайринг, касса и услуги доставки оплачиваются отдельно по тарифам провайдеров.</p>
   </div>
 </section>
 
@@ -59,7 +72,6 @@
   h2 em { color: #9e1c36; }
   .pricing-head > p { max-width: 730px; margin: 0; font-size: clamp(17px, 1.5vw, 20px); line-height: 1.55; }
   .pricing-included { margin: -8px 0 28px; padding: 18px 22px; border-left: 4px solid #9e1c36; background: #fffaf6; font-size: 16px; line-height: 1.55; }
-  .nowrap { white-space: nowrap; }
   .pricing-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
   .pricing-card { min-width: 0; display: flex; flex-direction: column; padding: clamp(24px, 3vw, 40px); background: #fffaf6; border: 1px solid #cdbcb5; border-radius: 12px; }
   .pricing-card.pro { background: #48010c; color: #fff6f4; border-color: #48010c; }
@@ -69,13 +81,18 @@
   h3 { margin: 14px 0 18px; font-size: clamp(32px, 3vw, 44px); letter-spacing: -.045em; line-height: 1.1; }
   .price { margin: 0; font-size: clamp(32px, 3.2vw, 46px); font-weight: 700; line-height: 1.1; letter-spacing: -.04em; }
   .price span { margin-left: 4px; font-size: 17px; font-weight: 500; letter-spacing: normal; white-space: nowrap; }
-  .price-hint { margin: 10px 0 0; color: #725b57; font-size: 14px; }
-  .pro .price-hint { color: #ebcdd1; }
   ul { flex: 1; margin: 24px 0 32px; padding: 0; list-style: none; }
   li { position: relative; padding: 0 0 0 26px; margin: 0 0 15px; line-height: 1.45; }
   li:last-child { margin-bottom: 0; }
   li::before { content: '✓'; position: absolute; left: 0; color: #9e1c36; font-weight: 700; }
   .pro li::before { color: #efc07a; }
+  .pro .pro-base { display: inline-block; width: fit-content; margin: 0 0 14px; padding: 8px 14px 8px 34px; border: 1px solid #b28872; border-radius: 100px; color: #f6d6b6; font-size: 13px; font-weight: 700; }
+  .pro .pro-base::before { left: 14px; top: 8px; }
+  .pro .pro-feature { margin: 0; padding: 17px 0 18px 30px; border-top: 1px solid #80505a; }
+  .pro .pro-feature::before { top: 18px; }
+  .pro-feature strong, .pro-feature span { display: block; }
+  .pro-feature strong { margin-bottom: 5px; color: #fff8f2; font-size: clamp(16px, 1.5vw, 19px); line-height: 1.25; }
+  .pro-feature span { color: #eacfd0; font-size: 14px; line-height: 1.45; }
   .pricing-cta { display: flex; justify-content: space-between; align-items: center; gap: 20px; width: 100%; min-height: 56px; padding: 14px 22px; border: 1px solid transparent; border-radius: 4px; background: #48010c; color: #fff6f4; font: 700 15px/1.3 Onest, sans-serif; text-align: left; cursor: pointer; transition: transform .2s, background .2s; }
   .pricing-cta:hover { transform: translateY(-3px); background: #6b1825; }
   .pricing-cta span { font-size: 20px; font-weight: 400; line-height: 1; }
