@@ -8,7 +8,7 @@
 
   <form class="form" novalidate>
     <h2 id="lead-title">Обсудим <em>подключение</em></h2>
-    <p class="sub">Первые 2 месяца подписки бесплатно с запуска сайта. Оставьте телефон или почту — обсудим вашу сеть.</p>
+    <p class="sub">Оставьте телефон или почту — обсудим вашу сеть и стоимость запуска сайта.</p>
 
     <label class="field">
       <span>Телефон или почта</span>
@@ -125,7 +125,7 @@
   const intent = form.elements.namedItem('intent') as HTMLInputElement;
   const requestCopy = {
     demo: { title: 'Delivest', emphasis: 'в деле', intro: 'Оставьте телефон или почту — свяжемся и обсудим вашу сеть.', button: 'Обсудить подключение' },
-    pricing: { title: 'Первые 2 месяца', emphasis: 'бесплатно', intro: 'Бесплатный период начинается с запуска сайта. Оставьте телефон или почту — обсудим вашу сеть и стоимость после пробного периода.', button: 'Обсудить подключение' },
+    pricing: { title: 'Обсудим', emphasis: 'стоимость запуска', intro: 'Оставьте телефон или почту — обсудим масштаб вашей сети и первую оплату за настройку и запуск сайта.', button: 'Обсудить подключение' },
   };
   let selected: keyof typeof requestCopy = 'demo';
   const open = (kind: string | undefined) => {
