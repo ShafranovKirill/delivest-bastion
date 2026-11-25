@@ -125,7 +125,7 @@
   const intent = form.elements.namedItem('intent') as HTMLInputElement;
   const requestCopy = {
     demo: { title: 'Delivest', emphasis: 'в деле', intro: 'Оставьте телефон или почту — свяжемся и обсудим вашу сеть.', button: 'Обсудить подключение' },
-    pricing: { title: 'Обсудим', emphasis: 'стоимость запуска', intro: 'Оставьте телефон или почту — обсудим масштаб вашей сети и первую оплату за настройку и запуск сайта.', button: 'Обсудить подключение' },
+    pricing: { title: 'Рассчитаем', emphasis: 'стоимость', intro: 'Оставьте телефон или почту — обсудим оборот франшизы и рассчитаем стоимость подключения и подписки.', button: 'Рассчитать стоимость' },
   };
   let selected: keyof typeof requestCopy = 'demo';
   const open = (kind: string | undefined) => {
