@@ -1052,11 +1052,41 @@ defmodule Bastion.Nodes do
            data,
          sampled_at
        ) do
+    placement =
+      Repo.one(
+        from p in Placement,
+          where:
+            p.node_id == ^node_id and p.instance_id == ^instance_id and p.revision == ^revision and
+              p.state in ["active", "reserved"]
+      )
+
+    allowed =
+      case placement do
+        %Placement{state: "active"} ->
+          true
+
+        %Placement{state: "reserved", id: id} ->
+          move =
+            Repo.one(
+              from o in Operation,
+                where:
+                  o.instance_id == ^instance_id and o.action == "instance_move" and
+                    o.status == "waiting_external" and
+                    fragment("?->>'target_placement_id' = ?", o.args, ^id),
+                limit: 1
+            )
+
+          move && (status != "running" or data["transfer_ready"] == move.id)
+
+        _ ->
+          false
+      end
+
     query =
       from p in Placement,
         where:
-          p.node_id == ^node_id and p.instance_id == ^instance_id and p.revision == ^revision and
-            p.state == "active" and (is_nil(p.observed_at) or p.observed_at <= ^sampled_at)
+          p.id == ^(placement && placement.id) and
+            (is_nil(p.observed_at) or p.observed_at <= ^sampled_at)
 
     observed = [observed_state: status, observed_at: sampled_at]
 
@@ -1065,7 +1095,12 @@ defmodule Bastion.Nodes do
         do: [{:observed_release, data["release_version"]} | observed],
         else: observed
 
-    Repo.update_all(query, set: observed)
+    observed =
+      if Map.has_key?(data, "restart_guard"),
+        do: [{:restart_guard, data["restart_guard"]} | observed],
+        else: observed
+
+    if allowed, do: Repo.update_all(query, set: observed)
   end
 
   defp record_instance_observation(_, _, _), do: :ok
@@ -1081,10 +1116,23 @@ defmodule Bastion.Nodes do
       status in ~w(running stopped degraded unknown) and
       (is_nil(data["release_version"]) or
          (is_binary(data["release_version"]) and
-            Regex.match?(~r/\A\d+\.\d+\.\d+\z/, data["release_version"])))
+            Regex.match?(~r/\A\d+\.\d+\.\d+\z/, data["release_version"]))) and
+      (not Map.has_key?(data, "restart_guard") or valid_restart_guard?(data["restart_guard"])) and
+      (is_nil(data["transfer_ready"]) or match?({:ok, _}, Ecto.UUID.cast(data["transfer_ready"])))
   end
 
   defp valid_instance_observation?(_), do: false
+
+  defp valid_restart_guard?(guard) when is_list(guard) and length(guard) <= 5 do
+    Enum.all?(guard, fn item ->
+      is_map(item) and item["service"] in ~w(gateway server client postgres s3 node) and
+        item["state"] in ~w(tripped unknown) and
+        (is_nil(item["restarts"]) or
+           (is_integer(item["restarts"]) and item["restarts"] in 0..1000))
+    end)
+  end
+
+  defp valid_restart_guard?(_), do: false
 
   defp current_placement?(operation) do
     deliverable?(operation)

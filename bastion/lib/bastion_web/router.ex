@@ -75,6 +75,7 @@ defmodule BastionWeb.Router do
       live "/", OverviewLive, :index
       live "/instances", InstanceLive.Index, :index
       live "/instances/:id", InstanceLive.Show, :show
+      live "/instances/:id/move", InstanceLive.Move, :show
       live "/nodes", NodeLive.Index, :index
       live "/nodes/:id", NodeLive.Show, :show
       live "/domains", DomainLive.Index, :index
