@@ -15,6 +15,8 @@ defmodule Bastion.Application do
         {Phoenix.PubSub, name: Bastion.PubSub},
         BastionWeb.Presence,
         {Task.Supervisor, name: Bastion.TaskSupervisor},
+        Bastion.Nodes.InstallRecovery,
+        Bastion.Domains.RegRuRateLimiter,
         Bastion.LoginCodes,
         Bastion.Landing.RateLimiter,
         Bastion.Images,
@@ -23,7 +25,7 @@ defmodule Bastion.Application do
         # Durable jobs need the endpoint's URL and token configuration during boot.
         BastionWeb.Endpoint,
         {Oban, Application.fetch_env!(:bastion, Oban)}
-      ] ++ telegram()
+      ] ++ domain_polling() ++ telegram()
 
     # See https://elixir.hexdocs.pm/Supervisor.html
     # for other strategies and supported options
@@ -33,6 +35,13 @@ defmodule Bastion.Application do
 
   defp telegram,
     do: if(Bastion.Telegram.enabled?(), do: [Bastion.Telegram.Server], else: [])
+
+  defp domain_polling,
+    do:
+      if(Application.get_env(:bastion, :domain_polling, true),
+        do: [Bastion.Domains.DnsPoller],
+        else: []
+      )
 
   # Tell Phoenix to update the endpoint configuration
   # whenever the application is updated.

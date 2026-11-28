@@ -1,7 +1,7 @@
 defmodule Bastion.Checks.Worker do
   use Oban.Worker, queue: :checks, max_attempts: 1
 
-  alias Bastion.{Alerts, Downtime, Health, Instances, Maintenance}
+  alias Bastion.{Alerts, Downtime, Fleet, Health, Instances, Maintenance}
   alias Bastion.Checks.External
 
   @impl Oban.Worker
@@ -9,6 +9,9 @@ defmodule Bastion.Checks.Worker do
     Instances.list_instances()
     |> Task.async_stream(&check/1, timeout: 60_000, on_timeout: :kill_task, max_concurrency: 10)
     |> Stream.run()
+
+    Fleet.reconcile()
+    :ok
   end
 
   def check(instance, now \\ DateTime.utc_now(:second)) do
@@ -28,7 +31,12 @@ defmodule Bastion.Checks.Worker do
       {:ok, updated} = Instances.update_checks(instance, external, instance.health)
       updated
     else
-      health = Health.evaluate(%{instance | external: external, maintenance_until: nil}, now)
+      health =
+        Health.evaluate(
+          %{instance | external: external, checked_at: now, maintenance_until: nil},
+          now
+        )
+
       down_since = if health.level == :down, do: instance.down_since || now
 
       if confirmed?(health, instance.down_since, now),
@@ -48,9 +56,15 @@ defmodule Bastion.Checks.Worker do
     previous = instance.health
 
     {:ok, updated} = Instances.update_checks(instance, external, health.level, down_since)
-    downtime = Downtime.track(updated, health, down_since || now)
 
-    if to_string(health.level) != previous,
+    site_health =
+      if instance.transport == "node" and health.level == :offline,
+        do: %{health | level: :unknown},
+        else: health
+
+    downtime = Downtime.track(updated, site_health, down_since || now)
+
+    if instance.transport != "node" and to_string(health.level) != previous,
       do: Alerts.health_changed(updated, previous, health, downtime)
 
     updated

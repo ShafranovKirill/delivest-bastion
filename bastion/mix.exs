@@ -70,7 +70,8 @@ defmodule Bastion.MixProject do
       {:dns_cluster, "~> 0.2.0"},
       {:bandit, "~> 1.5"},
       {:oban, "~> 2.24"},
-      {:req, "~> 0.5"}
+      {:req, "~> 0.5"},
+      {:idna, "~> 8.0"}
     ]
   end
 

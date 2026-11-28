@@ -119,9 +119,13 @@ defmodule Bastion.Backups do
   def run_daily do
     fail_stale()
 
-    if Storage.configured?(),
-      do: Enum.map(Instances.list_instances(), &start(&1, "расписание")),
-      else: Alerts.send_message("💾 Бэкапы не сделаны: хранилище бастиона не настроено")
+    if Storage.configured?() do
+      for %Instance{transport: "agent"} = instance <- Instances.list_instances() do
+        start(instance, "расписание")
+      end
+    else
+      Alerts.send_message("💾 Бэкапы не сделаны: хранилище бастиона не настроено")
+    end
   end
 
   def authorize(kind, id, token) when kind in [:upload, :download] and is_binary(token) do

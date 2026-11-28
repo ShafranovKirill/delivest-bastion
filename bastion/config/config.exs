@@ -13,7 +13,7 @@ config :bastion,
 
 config :phoenix,
        :filter_parameters,
-       ~w(password token yandex_token new_yandex_token admin_password)
+       ~w(password private_key token credential secret reg_password regru_password x-delivest-node-token yandex_token new_yandex_token admin_password)
 
 # Configure the endpoint
 config :bastion, BastionWeb.Endpoint,
@@ -64,16 +64,20 @@ config :phoenix, :json_library, Jason
 config :bastion, Oban,
   engine: Oban.Engines.Basic,
   repo: Bastion.Repo,
-  queues: [checks: 2, backups: 1, push: 2, telegram: 1],
+  queues: [checks: 2, backups: 1, push: 2, telegram: 1, managed_rollout: 1, recovery: 1],
   plugins: [
     {Oban.Plugins.Pruner, max_age: 86_400},
     {Oban.Plugins.Cron,
      crontab: [
        {"* * * * *", Bastion.Checks.Worker},
        {"* * * * *", Bastion.Instances.ExpireWorker},
+       {"* * * * *", Bastion.Nodes.DispatchWorker},
+       {"* * * * *", Bastion.ManagedRollout.Worker},
        {"*/5 * * * *", Bastion.PaymentReminderWorker},
        {"0 0 * * *", Bastion.Backups.Worker},
        {"30 0 * * *", Bastion.Snapshots.Worker},
+       {"0 2,6,10,14,18,22 * * *", Bastion.ManagedSnapshots.DatabaseWorker},
+       {"0 4 * * 1", Bastion.ManagedSnapshots.RestoreDrillWorker},
        {"30 0 * * *", Bastion.Metrics.PruneWorker}
      ]}
   ]

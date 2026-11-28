@@ -5,6 +5,7 @@ defmodule Bastion.Telegram.Screens do
 
   alias Bastion.{Alerts, Backups, Downtime, Health, Images, Instances, Telegram, Updates}
   alias Bastion.Instances.Instance
+  alias Bastion.Telegram.FleetScreens
 
   @levels %{
     ok: {"🟢", "работает"},
@@ -68,7 +69,7 @@ defmodule Bastion.Telegram.Screens do
       end)
       |> Enum.chunk_every(2)
 
-    {text, buttons ++ [[{"🔄 Обновить", "l"}]]}
+    {text, buttons ++ [[{"Обновить данные", "l"}]] ++ FleetScreens.menu()}
   end
 
   def not_found(query) do

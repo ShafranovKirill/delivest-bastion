@@ -45,24 +45,38 @@ defmodule Bastion.Instances do
     do: Phoenix.PubSub.subscribe(Bastion.PubSub, commands_topic(instance_id))
 
   def list_instances do
-    online = Presence.online_ids()
+    agent_online = Presence.online_ids()
+    node_online = Bastion.Nodes.connected_instance_ids()
 
     Instance
     |> order_by([i], asc: i.name)
     |> Repo.all()
-    |> Enum.map(&put_online(&1, online))
+    |> Enum.map(&put_online(&1, agent_online, node_online))
   end
 
   def get_instance(id) do
     with {:ok, id} <- Ecto.UUID.cast(id),
          %Instance{} = instance <- Repo.get(Instance, id) do
-      put_online(instance, Presence.online_ids())
+      put_online(instance, Presence.online_ids(), Bastion.Nodes.connected_instance_ids())
     else
       _ -> nil
     end
   end
 
   def update_client(%Instance{} = instance, attrs) do
+    attrs =
+      if instance.transport == "node",
+        do:
+          Map.drop(attrs, [
+            "payment_due_on",
+            "admin_login",
+            "admin_password",
+            :payment_due_on,
+            :admin_login,
+            :admin_password
+          ]),
+        else: attrs
+
     changeset = Instance.client_changeset(instance, attrs)
 
     changeset =
@@ -85,6 +99,10 @@ defmodule Bastion.Instances do
   end
 
   def register(id, info) do
+    if managed?(id), do: {:error, :managed_by_node}, else: register_legacy(id, info)
+  end
+
+  defp register_legacy(id, info) do
     attrs = %{
       name: info["name"] || "#{id}",
       hosts: if(is_map(info["hosts"]), do: info["hosts"], else: %{}),
@@ -104,6 +122,9 @@ defmodule Bastion.Instances do
     case Repo.get(Instance, id) do
       nil ->
         {:error, :not_found}
+
+      %Instance{transport: "node"} ->
+        {:error, :managed_by_node}
 
       instance ->
         result =
@@ -146,6 +167,9 @@ defmodule Bastion.Instances do
 
   def send_command(%Instance{} = instance, action, args \\ %{}, requested_by \\ nil) do
     cond do
+      managed?(instance.id) ->
+        {:error, :managed_by_node}
+
       action not in @actions ->
         {:error, :unknown_action}
 
@@ -495,7 +519,11 @@ defmodule Bastion.Instances do
   defp format_output(nil), do: nil
   defp format_output(output), do: Jason.encode!(output, pretty: true)
 
-  defp put_online(instance, online), do: %{instance | online: MapSet.member?(online, instance.id)}
+  defp put_online(%Instance{transport: "node"} = instance, _agent_online, node_online),
+    do: %{instance | online: MapSet.member?(node_online, instance.id)}
+
+  defp put_online(instance, agent_online, _node_online),
+    do: %{instance | online: MapSet.member?(agent_online, instance.id)}
 
   defp broadcast(result, event \\ :instance_updated)
 
@@ -507,6 +535,13 @@ defmodule Bastion.Instances do
   defp broadcast(error, _event), do: error
 
   defp commands_topic(instance_id), do: "agent_commands:#{instance_id}"
+
+  defp managed?(id) do
+    case Repo.get(Instance, id) do
+      %Instance{transport: "node"} -> true
+      _ -> false
+    end
+  end
 
   defp now, do: DateTime.utc_now(:second)
 end

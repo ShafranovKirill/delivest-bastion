@@ -53,6 +53,11 @@ defmodule BastionWeb.Router do
     put "/backups/snapshots/:id", SnapshotController, :upload
   end
 
+  scope "/node", BastionWeb do
+    pipe_through :landing_json
+    post "/register", NodeRegistrationController, :create
+  end
+
   scope "/push", BastionWeb do
     pipe_through [:session_json, :admin]
 
@@ -67,8 +72,15 @@ defmodule BastionWeb.Router do
     get "/backups/snapshots/:id/download", SnapshotController, :download
 
     live_session :admin, on_mount: [{BastionWeb.Auth, :require_admin}] do
-      live "/", InstanceLive.Index, :index
+      live "/", OverviewLive, :index
+      live "/instances", InstanceLive.Index, :index
       live "/instances/:id", InstanceLive.Show, :show
+      live "/instances/:id/move", InstanceLive.Move, :show
+      live "/nodes", NodeLive.Index, :index
+      live "/nodes/:id", NodeLive.Show, :show
+      live "/domains", DomainLive.Index, :index
+      live "/domains/:id", DomainLive.Show, :show
+      live "/operations", OperationsLive, :index
       live "/landing", LandingLive, :index
     end
   end

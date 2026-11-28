@@ -1,7 +1,7 @@
 defmodule BastionWeb.InstanceLiveTest do
   use BastionWeb.ConnCase, async: false
 
-  import Phoenix.LiveViewTest
+  import Phoenix.LiveViewTest, except: [live: 2]
   import Bastion.Fixtures
 
   alias Bastion.Instances
@@ -31,6 +31,17 @@ defmodule BastionWeb.InstanceLiveTest do
   end
 
   defp log_in(conn), do: init_test_session(conn, %{"admin" => "admin"})
+
+  defp live(conn, path) do
+    case Phoenix.LiveViewTest.live(conn, path) do
+      {:ok, view, _html} = result ->
+        render_async(view, 1_000)
+        result
+
+      other ->
+        other
+    end
+  end
 
   defp bring_online(instance) do
     test_pid = self()
@@ -73,9 +84,11 @@ defmodule BastionWeb.InstanceLiveTest do
 
   test "lists instances with their state and updates live", %{conn: conn} do
     instance = instance_fixture(%{info: %{"name" => "Pizza North"}})
-    {:ok, lv, html} = live(log_in(conn), ~p"/")
+    {:ok, lv, html} = live(log_in(conn), ~p"/instances")
 
     assert html =~ "Pizza North"
+    assert has_element?(lv, "#managed-create-form")
+    assert has_element?(lv, "#managed-create-submit[disabled]")
     refute has_element?(lv, "#update-all")
     assert has_element?(lv, "h1", "Франшизы")
     assert has_element?(lv, "#instances thead th", "Админка")
@@ -83,13 +96,13 @@ defmodule BastionWeb.InstanceLiveTest do
 
     assert has_element?(
              lv,
-             "#instances tbody[phx-update='stream'] #instance-#{instance.id} > td:nth-child(3)",
+             "#instances tbody[phx-update='stream'] #instance-#{instance.id} > td:nth-child(4)",
              "Админка"
            )
 
     assert has_element?(
              lv,
-             "#instances tbody[phx-update='stream'] #instance-#{instance.id} > td:nth-child(4)",
+             "#instances tbody[phx-update='stream'] #instance-#{instance.id} > td:nth-child(5)",
              "Сайт"
            )
 
@@ -107,6 +120,161 @@ defmodule BastionWeb.InstanceLiveTest do
     {:ok, _} = Instances.record_heartbeat(instance.id, healthy_status())
     refute has_element?(lv, "#problem-#{instance.id}")
     refute has_element?(lv, "#instances thead th", "Состояние")
+  end
+
+  test "owner creates a managed franchise and can retry the same operation", %{conn: conn} do
+    {:ok, node, token} = Bastion.Nodes.create_node("pilot")
+    {:ok, _, _} = Bastion.Nodes.register(token, 1)
+    {:ok, _} = Bastion.Nodes.update_public_addresses(node, %{"public_ipv4" => "8.8.8.8"})
+
+    :ok =
+      Bastion.Nodes.record_heartbeat(node.id, %{
+        "sample_id" => Ecto.UUID.generate(),
+        "sampled_at" => DateTime.utc_now() |> DateTime.to_iso8601(),
+        "version" => "0.1.0",
+        "metrics" => %{},
+        "instances" => [],
+        "infrastructure" => %{"ready" => true}
+      })
+
+    Req.Test.stub(Bastion.Http, fn req ->
+      Req.Test.json(req, %{
+        "tag_name" => "v1.25.0",
+        "draft" => false,
+        "prerelease" => false,
+        "published_at" => "2026-11-28T00:00:00Z",
+        "assets" => [
+          %{
+            "name" => "delivest-deploy-1.25.0.tar.gz",
+            "digest" => "sha256:" <> String.duplicate("a", 64),
+            "browser_download_url" =>
+              "https://github.com/ShafranovKirill/delivest/releases/download/v1.25.0/delivest-deploy-1.25.0.tar.gz"
+          }
+        ]
+      })
+    end)
+
+    {:ok, view, _} = live(log_in(conn), ~p"/instances")
+    assert has_element?(view, "#managed-create-form")
+    refute has_element?(view, "#managed-create-submit[disabled]")
+
+    view
+    |> form("#managed-create-form",
+      franchise: %{
+        "name" => "Cafe",
+        "short_name" => "cafe",
+        "node_id" => node.id,
+        "site_hostname" => "",
+        "dns_mode" => "regru",
+        "zone" => "delivest.ru"
+      }
+    )
+    |> render_submit()
+
+    {"/instances/" <> id, _flash} = assert_redirect(view)
+    {:ok, show, _} = live(log_in(conn), ~p"/instances/#{id}")
+    assert has_element?(show, "#managed-creation")
+    assert has_element?(show, "#managed-retry-create")
+    show |> element("#managed-retry-create") |> render_click()
+    assert length(Bastion.Nodes.operations_for(id)) == 1
+  end
+
+  test "owner confirms a prepared browser route and starts primary switch", %{conn: conn} do
+    Application.put_env(:bastion, :domain_dns_resolver, Bastion.TestDomainDNS)
+    Application.put_env(:bastion, :test_domain_addresses, {:ok, ["8.8.8.8"]})
+
+    on_exit(fn ->
+      Application.delete_env(:bastion, :domain_dns_resolver)
+      Application.delete_env(:bastion, :test_domain_addresses)
+    end)
+
+    {:ok, node, token} = Bastion.Nodes.create_node("pilot")
+    {:ok, _, _} = Bastion.Nodes.register(token, 1)
+    {:ok, _} = Bastion.Nodes.update_public_addresses(node, %{"public_ipv4" => "8.8.8.8"})
+    id = Ecto.UUID.generate()
+
+    {:ok, placement} =
+      Bastion.Nodes.prepare_instance(
+        node.id,
+        id,
+        "Cafe",
+        %{"site" => "old.example.org"},
+        "delivest-cafe",
+        20_000
+      )
+
+    {:ok, old_domain} =
+      Bastion.Domains.create_domain(%{"hostname" => "old.example.org", "dns_mode" => "external"})
+
+    {:ok, old} = Bastion.Domains.reserve(old_domain.id, id, "site", true)
+
+    {:ok, new_domain} =
+      Bastion.Domains.create_domain(%{"hostname" => "new.example.org", "dns_mode" => "external"})
+
+    {:ok, new} = Bastion.Domains.reserve(new_domain.id, id, "site", false)
+
+    prepare =
+      %Bastion.Nodes.Operation{
+        node_id: node.id,
+        instance_id: id,
+        placement_id: placement.id,
+        placement_revision: placement.revision
+      }
+      |> Bastion.Nodes.Operation.changeset(%{
+        action: "domain_prepare",
+        status: "ok",
+        args: %{"binding_id" => new.id},
+        requested_by: "admin"
+      })
+      |> Bastion.Repo.insert!()
+
+    old |> Ecto.Changeset.change(state: "connected") |> Bastion.Repo.update!()
+
+    new
+    |> Ecto.Changeset.change(
+      state: "connected",
+      observed_records: %{"prepare_operation_id" => prepare.id}
+    )
+    |> Bastion.Repo.update!()
+
+    Req.Test.stub(Bastion.Http, fn request ->
+      request
+      |> Plug.Conn.put_resp_header("x-delivest-binding-id", new.id)
+      |> Plug.Conn.send_resp(200, "site")
+    end)
+
+    {:ok, view, _} = live(log_in(conn), ~p"/instances/#{id}")
+    assert has_element?(view, "#binding-#{new.id} [phx-click=managed_confirm_browser]")
+    refute has_element?(view, "#binding-#{new.id} [phx-click=managed_activate_domain]")
+    view |> element("#binding-#{new.id} [phx-click=managed_confirm_browser]") |> render_click()
+    assert has_element?(view, "#binding-#{new.id} [phx-click=managed_activate_domain]")
+    view |> element("#binding-#{new.id} [phx-click=managed_activate_domain]") |> render_click()
+    assert [operation | _] = Bastion.Nodes.operations_for(id)
+    assert operation.action == "domain_activate"
+    assert operation.args["previous_binding_id"] == old.id
+    assert operation.args["binding_id"] == new.id
+
+    operation |> Ecto.Changeset.change(status: "error") |> Bastion.Repo.update!()
+
+    %Bastion.Nodes.Operation{
+      node_id: node.id,
+      instance_id: id,
+      placement_id: placement.id,
+      placement_revision: placement.revision
+    }
+    |> Bastion.Nodes.Operation.changeset(%{
+      action: "domain_rollback",
+      status: "error",
+      args: operation.args,
+      requested_by: "system"
+    })
+    |> Bastion.Repo.insert!()
+
+    {:ok, retry_view, _} = live(log_in(conn), ~p"/instances/#{id}")
+    assert has_element?(retry_view, "#managed-retry-rollback")
+    retry_view |> element("#managed-retry-rollback") |> render_click()
+    assert hd(Bastion.Nodes.operations_for(id)).action == "domain_rollback"
+    assert hd(Bastion.Nodes.operations_for(id)).status == "pending"
   end
 
   test "opens validated server and client URLs and mutes unsafe hosts", %{conn: conn} do
@@ -139,7 +307,7 @@ defmodule BastionWeb.InstanceLiveTest do
         }
       })
 
-    {:ok, list, _} = live(log_in(conn), ~p"/")
+    {:ok, list, _} = live(log_in(conn), ~p"/instances")
     assert has_element?(list, "#server-open-#{good.id}[href='http://localhost:4000/staff']")
     assert has_element?(list, "#client-open-#{good.id}[href='http://localhost:3000/shop']")
     assert has_element?(list, "span#server-open-#{unsafe.id}", "Не настроен")
@@ -166,7 +334,7 @@ defmodule BastionWeb.InstanceLiveTest do
 
     {:ok, _} = Instances.record_heartbeat(broken.id, failing)
 
-    {:ok, list, _} = live(log_in(conn), ~p"/")
+    {:ok, list, _} = live(log_in(conn), ~p"/instances")
     assert has_element?(list, "#instances tbody tr:first-child[id='instance-#{broken.id}']")
     assert has_element?(list, "#problem-#{broken.id}", "Ошибки")
     refute has_element?(list, "#instance-#{broken.id}", "secret failure")
@@ -308,7 +476,7 @@ defmodule BastionWeb.InstanceLiveTest do
     lv |> element("#tab-settings") |> render_click()
     assert has_element?(lv, "#env-missing", "NEW_KEY")
 
-    {:ok, index, _html} = live(log_in(build_conn()), ~p"/")
+    {:ok, index, _html} = live(log_in(build_conn()), ~p"/instances")
     assert has_element?(index, "#instance-#{instance.id}", "Предупреждения")
     refute has_element?(index, "#instance-#{instance.id}", "Нет заказов")
   end
@@ -390,7 +558,7 @@ defmodule BastionWeb.InstanceLiveTest do
     conn: conn
   } do
     instance_fixture()
-    {:ok, lv, _html} = live(log_in(conn), ~p"/")
+    {:ok, lv, _html} = live(log_in(conn), ~p"/instances")
     refute has_element?(lv, "#rollout-start")
     refute has_element?(lv, "#instances thead th", "Действия")
     lv |> element("#check-images") |> render_click()
@@ -437,7 +605,7 @@ defmodule BastionWeb.InstanceLiveTest do
     assert lv |> element("#instance-update") |> render() =~ "disabled"
 
     lv |> element("#delete-instance") |> render_click()
-    assert_redirect(lv, ~p"/")
+    assert_redirect(lv, ~p"/instances")
     assert Instances.list_instances() == []
   end
 
@@ -553,14 +721,14 @@ defmodule BastionWeb.InstanceLiveTest do
     assert has_element?(lv, "#crm-order-o1", "A017")
     assert has_element?(lv, "#crm-order-o1", "не ушёл")
 
-    {:ok, list, _html} = live(log_in(conn), ~p"/")
+    {:ok, list, _html} = live(log_in(conn), ~p"/instances")
     refute has_element?(list, "#instance-#{instance.id}", "CRM: 1")
 
     lv |> element("#crm-order-o1 button", "Убрал") |> render_click()
     refute has_element?(lv, "#crm-order-o1")
     assert has_element?(lv, "#tab-errors-panel", "Ошибок нет")
 
-    {:ok, list, _html} = live(log_in(conn), ~p"/")
+    {:ok, list, _html} = live(log_in(conn), ~p"/instances")
     refute has_element?(list, "#instance-#{instance.id}", "CRM:")
   end
 
@@ -611,7 +779,7 @@ defmodule BastionWeb.InstanceLiveTest do
     assert Instances.get_instance(instance.id).admin_password_encrypted ==
              stored.admin_password_encrypted
 
-    {:ok, list, _} = live(log_in(build_conn()), ~p"/")
+    {:ok, list, _} = live(log_in(build_conn()), ~p"/instances")
 
     refute has_element?(list, "#subscription-#{instance.id}")
     refute has_element?(list, "#instances th", "Подписка")
@@ -661,7 +829,7 @@ defmodule BastionWeb.InstanceLiveTest do
       ])
 
     Instances.record_heartbeat(instance.id, status)
-    {:ok, lv, _} = live(log_in(conn), ~p"/")
+    {:ok, lv, _} = live(log_in(conn), ~p"/instances")
     assert has_element?(lv, "#version-#{instance.id}", "1.0.0")
     assert has_element?(lv, "#version-#{instance.id}", "2.0.0")
     assert has_element?(lv, "#version-#{instance.id}", "Доступна 2.0.0")
@@ -680,7 +848,7 @@ defmodule BastionWeb.InstanceLiveTest do
       )
       |> Bastion.Repo.update!()
 
-    {:ok, lv, _} = live(log_in(conn), ~p"/")
+    {:ok, lv, _} = live(log_in(conn), ~p"/instances")
 
     Instances.update_checks(
       instance,
@@ -706,7 +874,7 @@ defmodule BastionWeb.InstanceLiveTest do
       :down
     )
 
-    {:ok, lv, _} = live(log_in(conn), ~p"/")
+    {:ok, lv, _} = live(log_in(conn), ~p"/instances")
     refute has_element?(lv, "#problem-#{instance.id}", "Недоступен")
     assert has_element?(lv, "#problem-#{instance.id}", "Ошибки")
   end

@@ -6,7 +6,7 @@ defmodule BastionWeb.InstanceChannel do
 
   @impl true
   def join("instance:" <> instance_id, info, socket) do
-    if instance_id == socket.assigns.instance_id do
+    if instance_id == socket.assigns.instance_id and legacy_instance?(instance_id) do
       case Instances.register(instance_id, info) do
         {:ok, _instance} ->
           send(self(), :after_join)
@@ -33,53 +33,74 @@ defmodule BastionWeb.InstanceChannel do
   end
 
   def handle_info({:push_command, command}, socket) do
-    args = if command.action == "update", do: Backups.retry_args(command), else: command.args
+    if legacy_instance?(socket.assigns.instance_id) do
+      args = if command.action == "update", do: Backups.retry_args(command), else: command.args
 
-    push(socket, "command", %{
-      "id" => command.id,
-      "action" => command.action,
-      "args" => args
-    })
+      push(socket, "command", %{
+        "id" => command.id,
+        "action" => command.action,
+        "args" => args
+      })
+    end
 
     {:noreply, socket}
   end
 
   @impl true
   def handle_in("heartbeat", status, socket) when is_map(status) do
-    previous = Instances.get_instance(socket.assigns.instance_id)
-    Instances.record_heartbeat(socket.assigns.instance_id, status)
-    Instances.drop_lost_commands(socket.assigns.instance_id, status)
-    if previous, do: SiteAlerts.check(previous, status)
-    CrmAlerts.check(socket.assigns.instance_id, status["crm"])
+    if legacy_instance?(socket.assigns.instance_id) do
+      previous = Instances.get_instance(socket.assigns.instance_id)
+      Instances.record_heartbeat(socket.assigns.instance_id, status)
+      Instances.drop_lost_commands(socket.assigns.instance_id, status)
+      if previous, do: SiteAlerts.check(previous, status)
+      CrmAlerts.check(socket.assigns.instance_id, status["crm"])
 
-    with {:ok, _sample} <- Metrics.record(socket.assigns.instance_id, status["metrics"]),
-         do: Metrics.Alerts.check(socket.assigns.instance_id)
+      with {:ok, _sample} <- Metrics.record(socket.assigns.instance_id, status["metrics"]),
+           do: Metrics.Alerts.check(socket.assigns.instance_id)
 
-    {:reply, :ok, socket}
+      {:reply, :ok, socket}
+    else
+      {:reply, {:error, %{reason: "managed_by_node"}}, socket}
+    end
   end
 
   def handle_in("command_started", %{"id" => id}, socket) do
-    Instances.command_started(socket.assigns.instance_id, id)
-    {:reply, :ok, socket}
+    if legacy_instance?(socket.assigns.instance_id) do
+      Instances.command_started(socket.assigns.instance_id, id)
+      {:reply, :ok, socket}
+    else
+      {:reply, {:error, %{reason: "managed_by_node"}}, socket}
+    end
   end
 
   def handle_in("command_result", %{"id" => id, "ok" => ok?} = result, socket) do
-    with {:ok, command} <-
-           Instances.command_finished(
-             socket.assigns.instance_id,
-             id,
-             ok? == true,
-             result["output"]
-           ),
-         do:
-           (
-             Backups.command_finished(command)
-             Snapshots.command_finished(command)
-           )
+    if legacy_instance?(socket.assigns.instance_id) do
+      with {:ok, command} <-
+             Instances.command_finished(
+               socket.assigns.instance_id,
+               id,
+               ok? == true,
+               result["output"]
+             ),
+           do:
+             (
+               Backups.command_finished(command)
+               Snapshots.command_finished(command)
+             )
 
-    {:reply, :ok, socket}
+      {:reply, :ok, socket}
+    else
+      {:reply, {:error, %{reason: "managed_by_node"}}, socket}
+    end
   end
 
   def handle_in(_event, _payload, socket),
     do: {:reply, {:error, %{reason: "unknown event"}}, socket}
+
+  defp legacy_instance?(id) do
+    case Instances.get_instance(id) do
+      %{transport: "node"} -> false
+      _ -> true
+    end
+  end
 end
