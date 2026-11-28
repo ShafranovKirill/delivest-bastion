@@ -111,6 +111,64 @@ defmodule Bastion.Domains do
     end
   end
 
+  # A new installation needs DNS before Node can issue its certificates. This
+  # performs the DNS half of request_prepare without sending a domain command.
+  def ensure_dns_for_create(binding_id) do
+    with %Binding{} = binding <- get_binding(binding_id),
+         true <- binding.state in ~w(reserved waiting_dns error checking connected),
+         {:ok, addresses} <- expected_addresses(binding.instance_id),
+         :ok <- store_expected(binding, addresses),
+         :ok <- ownership_confirmed?(binding, nil),
+         :ok <- provision_managed_records(binding, addresses),
+         {:ok, observed} <- Bastion.Domains.PublicDNS.check(binding.domain.hostname, addresses) do
+      binding
+      |> Ecto.Changeset.change(
+        state: "checking",
+        observed_records: observed,
+        last_checked_at: DateTime.utc_now(),
+        failure_reason: nil,
+        next_step: nil
+      )
+      |> Repo.update!()
+
+      set_domain_state(binding.domain_id, "checking")
+      :ok
+    else
+      {:error, {:dns_mismatch, observed}} ->
+        mark_dns_wait(binding_id, observed, "Опубликуйте ожидаемые A/AAAA записи")
+        {:error, :waiting_dns}
+
+      {:error, :ownership_unconfirmed} ->
+        mark_dns_wait(binding_id, %{}, "Опубликуйте TXT запись подтверждения")
+        {:error, :waiting_dns}
+
+      false ->
+        {:error, :binding_changed}
+
+      nil ->
+        {:error, :binding_not_found}
+
+      other ->
+        other
+    end
+  end
+
+  defp mark_dns_wait(binding_id, observed, next_step) do
+    if binding = Repo.get(Binding, binding_id) do
+      binding
+      |> Ecto.Changeset.change(
+        state: "waiting_dns",
+        observed_records: observed,
+        failure_reason: "DNS не готов",
+        next_step: next_step,
+        last_checked_at: DateTime.utc_now()
+      )
+      |> Repo.update!()
+
+      set_domain_state(binding.domain_id, "waiting_dns")
+    end
+  end
+
   def request_prepare(binding_id, proof, requested_by) do
     :global.trans({{__MODULE__, binding_id}, self()}, fn ->
       do_request_prepare(binding_id, proof, requested_by)
@@ -425,7 +483,11 @@ defmodule Bastion.Domains do
           |> Ecto.Changeset.change(
             state: "connected",
             active_operation_id: nil,
-            observed_records: Map.put(current.observed_records, "https", observation),
+            observed_records:
+              current.observed_records
+              |> Map.put("https", observation)
+              |> Map.put("prepare_operation_id", operation.id)
+              |> Map.delete("browser_verification"),
             certificate_expires_at: parse_expiry(result["certificate_expires_at"]),
             last_checked_at: DateTime.utc_now(),
             failure_reason: nil,
@@ -497,7 +559,7 @@ defmodule Bastion.Domains do
        )
        when is_binary(zone) do
     if hostname == zone or String.ends_with?(hostname, "." <> zone) do
-      case Bastion.Domains.RegRu.records(zone) do
+      case reg_ru().records(zone) do
         {:ok, _} -> :ok
         _ -> {:error, :dns_access_unconfirmed}
       end
@@ -517,7 +579,7 @@ defmodule Bastion.Domains do
     Enum.reduce_while(addresses, :ok, fn address, _ ->
       type = if String.contains?(address, ":"), do: "AAAA", else: "A"
 
-      case Bastion.Domains.RegRu.add(zone, subdomain, type, address) do
+      case reg_ru().add(zone, subdomain, type, address) do
         {:ok, :already_present} ->
           {:cont, :ok}
 
@@ -549,7 +611,7 @@ defmodule Bastion.Domains do
 
     Enum.reduce_while(owned, :ok, fn {type, values}, _ ->
       Enum.reduce_while(values, :ok, fn value, _ ->
-        case Bastion.Domains.RegRu.remove(zone, subdomain, type, value) do
+        case reg_ru().remove(zone, subdomain, type, value) do
           {:ok, _} -> {:cont, :ok}
           error -> {:halt, error}
         end
@@ -562,4 +624,6 @@ defmodule Bastion.Domains do
   end
 
   defp remove_owned_records(_), do: :ok
+
+  defp reg_ru, do: Application.get_env(:bastion, :domain_reg_ru_adapter, Bastion.Domains.RegRu)
 end

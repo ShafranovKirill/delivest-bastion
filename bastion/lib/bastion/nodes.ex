@@ -5,7 +5,7 @@ defmodule Bastion.Nodes do
   alias Bastion.Nodes.{MetricSample, Node, Operation, Placement, SshInstaller}
   alias Bastion.Repo
 
-  @actions ~w(status start stop domain_prepare domain_release)
+  @actions ~w(status start stop domain_prepare domain_release instance_create instance_cleanup domain_activate domain_rollback)
   @unresolved ~w(pending running waiting_external unknown)
   @deliverable ~w(pending running unknown)
   @topic "managed_nodes"
@@ -562,7 +562,7 @@ defmodule Bastion.Nodes do
   def queue(_, _, _, _), do: {:error, :invalid_action_or_args}
 
   def queue_deferred(instance_id, action, requested_by, args)
-      when action in ~w(domain_prepare domain_release) do
+      when action in ~w(domain_prepare domain_release instance_create instance_cleanup domain_activate domain_rollback) do
     if valid_args?(action, args) do
       case Ecto.UUID.cast(instance_id) do
         {:ok, id} -> do_queue(id, action, requested_by, args, false)
@@ -585,6 +585,50 @@ defmodule Bastion.Nodes do
   end
 
   defp valid_args?(action, args) when action in ~w(status start stop), do: args == %{}
+
+  defp valid_args?("instance_create", args) when is_map(args) do
+    required =
+      ~w(release_url release_sha256 release_version gateway_port site_hostname admin_hostname api_hostname media_hostname site_binding_id admin_binding_id api_binding_id media_binding_id expected_addresses)
+
+    Map.keys(args) |> Enum.sort() == Enum.sort(required) and
+      is_binary(args["release_url"]) and
+      String.starts_with?(
+        args["release_url"],
+        "https://github.com/ShafranovKirill/delivest/releases/download/"
+      ) and
+      is_binary(args["release_sha256"]) and
+      Regex.match?(~r/\A[0-9a-f]{64}\z/, args["release_sha256"]) and
+      is_binary(args["release_version"]) and
+      is_integer(args["gateway_port"]) and args["gateway_port"] in 1024..65_535 and
+      Enum.all?(~w(site_hostname admin_hostname api_hostname media_hostname), fn key ->
+        host = args[key]
+        is_binary(host) and Bastion.Domains.Domain.normalize(host) == host
+      end) and
+      Enum.all?(~w(site_binding_id admin_binding_id api_binding_id media_binding_id), fn key ->
+        match?({:ok, _}, Ecto.UUID.cast(args[key]))
+      end) and
+      is_list(args["expected_addresses"]) and args["expected_addresses"] != [] and
+      Enum.all?(args["expected_addresses"], &is_binary/1)
+  end
+
+  defp valid_args?("instance_cleanup", %{"confirm_instance_id" => id, "remove_data" => false})
+       when is_binary(id),
+       do: match?({:ok, _}, Ecto.UUID.cast(id))
+
+  defp valid_args?(action, args)
+       when action in ~w(domain_activate domain_rollback) and is_map(args) do
+    Map.keys(args) |> Enum.sort() ==
+      Enum.sort(
+        ~w(hostname binding_id purpose previous_hostname previous_binding_id verification_id)
+      ) and
+      args["purpose"] == "site" and
+      Enum.all?(~w(hostname previous_hostname), fn key ->
+        is_binary(args[key]) and Bastion.Domains.Domain.normalize(args[key]) == args[key]
+      end) and
+      Enum.all?(~w(binding_id previous_binding_id verification_id), fn key ->
+        match?({:ok, _}, Ecto.UUID.cast(args[key]))
+      end)
+  end
 
   defp valid_args?(
          action,
@@ -618,7 +662,7 @@ defmodule Bastion.Nodes do
 
         if instance.transport != "node", do: Repo.rollback(:not_managed)
 
-        if action in ~w(domain_prepare domain_release) do
+        if action in ~w(domain_prepare domain_release domain_activate domain_rollback) do
           binding =
             Repo.get(Bastion.Domains.Binding, args["binding_id"]) ||
               Repo.rollback(:binding_not_found)
@@ -631,6 +675,15 @@ defmodule Bastion.Nodes do
                binding.purpose != args["purpose"],
              do: Repo.rollback(:binding_target_mismatch)
         end
+
+        if action == "instance_create" do
+          if placement.gateway_port != args["gateway_port"] or
+               instance.desired_release != args["release_version"],
+             do: Repo.rollback(:release_or_port_mismatch)
+        end
+
+        if action == "instance_cleanup" and args["confirm_instance_id"] != instance.id,
+          do: Repo.rollback(:instance_mismatch)
 
         if Repo.exists?(
              from o in Operation,
@@ -709,11 +762,90 @@ defmodule Bastion.Nodes do
           |> Oban.insert()
         end
 
+        if event == "command_result" and
+             operation.action in ~w(instance_create domain_activate domain_rollback) do
+          %{operation_id: operation.id}
+          |> Bastion.ManagedInstances.FinalizeWorker.new()
+          |> Oban.insert()
+        end
+
         broadcast()
         {:ok, operation}
 
       error ->
         error
+    end
+  end
+
+  def store_bootstrap_credentials(node_id, %{
+        "instance_id" => instance_id,
+        "placement_revision" => revision,
+        "admin_login" => login,
+        "admin_password" => password
+      })
+      when is_integer(revision) and revision > 0 and is_binary(login) and
+             is_binary(password) do
+    with {:ok, instance_id} <- Ecto.UUID.cast(instance_id),
+         true <-
+           byte_size(login) in 1..255 and byte_size(password) in 16..1024 and
+             String.valid?(login) and String.valid?(password) do
+      Repo.transaction(fn ->
+        placement =
+          Repo.one(
+            from p in Placement,
+              where:
+                p.instance_id == ^instance_id and p.node_id == ^node_id and
+                  p.revision == ^revision and p.state == "active",
+              lock: "FOR UPDATE"
+          ) || Repo.rollback(:stale_placement)
+
+        if !Repo.exists?(
+             from o in Operation,
+               where:
+                 o.instance_id == ^instance_id and o.placement_id == ^placement.id and
+                   o.action == "instance_create" and
+                   o.status in ["pending", "running", "unknown", "ok"]
+           ),
+           do: Repo.rollback(:creation_not_dispatched)
+
+        instance = Repo.one!(from i in Instance, where: i.id == ^instance_id, lock: "FOR UPDATE")
+        if instance.transport != "node", do: Repo.rollback(:not_managed)
+
+        cond do
+          is_nil(instance.admin_password_encrypted) ->
+            instance
+            |> Ecto.Changeset.change(
+              admin_login: login,
+              admin_password_encrypted: Bastion.Credentials.encrypt(password)
+            )
+            |> Repo.update!()
+
+          instance.admin_login == login and
+              credential_equal?(instance.admin_password_encrypted, password) ->
+            instance
+
+          true ->
+            Repo.rollback(:credential_conflict)
+        end
+      end)
+      |> case do
+        {:ok, _} -> :ok
+        {:error, reason} -> {:error, reason}
+      end
+    else
+      _ -> {:error, :invalid_credentials}
+    end
+  end
+
+  def store_bootstrap_credentials(_, _), do: {:error, :invalid_credentials}
+
+  defp credential_equal?(encrypted, password) do
+    case Bastion.Credentials.decrypt(encrypted) do
+      {:ok, previous} when byte_size(previous) == byte_size(password) ->
+        Plug.Crypto.secure_compare(previous, password)
+
+      _ ->
+        false
     end
   end
 

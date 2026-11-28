@@ -2,6 +2,8 @@ defmodule BastionWeb.NodeChannelTest do
   use BastionWeb.ChannelCase, async: false
 
   alias Bastion.Nodes
+  alias Bastion.Nodes.Operation
+  alias Bastion.Repo
   alias BastionWeb.NodeSocket
 
   test "node can join only its own topic and command results are scoped" do
@@ -56,5 +58,65 @@ defmodule BastionWeb.NodeChannelTest do
     {:ok, _} = Nodes.revoke(Nodes.get_node(node.id))
     ref = push(socket, "heartbeat", %{})
     assert_reply ref, :error
+  end
+
+  test "bootstrap credentials are encrypted, acknowledged after commit and scoped to a placement" do
+    {:ok, node, token} = Nodes.create_node("pilot")
+    {:ok, _, credential} = Nodes.register(token, 1)
+    id = Ecto.UUID.generate()
+    {:ok, placement} = Nodes.prepare_instance(node.id, id, "Cafe", %{}, "delivest-cafe", 20_000)
+
+    %Operation{
+      node_id: node.id,
+      instance_id: id,
+      placement_id: placement.id,
+      placement_revision: placement.revision
+    }
+    |> Operation.changeset(%{action: "instance_create", status: "running", args: %{}})
+    |> Repo.insert!()
+
+    {:ok, socket} =
+      connect(NodeSocket, %{},
+        connect_info: %{x_headers: [{"x-delivest-node-token", credential}]}
+      )
+
+    {:ok, _, socket} = subscribe_and_join(socket, "node:" <> node.id, %{"protocol_version" => 1})
+
+    payload = %{
+      "instance_id" => id,
+      "placement_revision" => 1,
+      "admin_login" => "admin123",
+      "admin_password" => "a-unique-secret-123456"
+    }
+
+    ref = push(socket, "bootstrap_credentials", payload)
+    assert_reply ref, :ok
+    assert_push "bootstrap_credentials_ack", %{instance_id: ^id, placement_revision: 1}
+
+    instance = Repo.get!(Bastion.Instances.Instance, id)
+    assert instance.admin_login == "admin123"
+    refute instance.admin_password_encrypted == payload["admin_password"]
+
+    assert {:ok, payload["admin_password"]} ==
+             Bastion.Credentials.decrypt(instance.admin_password_encrypted)
+
+    ref = push(socket, "bootstrap_credentials", payload)
+    assert_reply ref, :ok
+    assert_push "bootstrap_credentials_ack", %{instance_id: ^id, placement_revision: 1}
+
+    ref =
+      push(socket, "bootstrap_credentials", %{
+        payload
+        | "admin_password" => "different-secret-123456"
+      })
+
+    assert_reply ref, :error, %{reason: "invalid_bootstrap_credentials"}
+
+    ref = push(socket, "bootstrap_credentials", %{payload | "placement_revision" => 2})
+    assert_reply ref, :error, %{reason: "invalid_bootstrap_credentials"}
+
+    {:ok, _} = Nodes.revoke(Nodes.get_node(node.id))
+    ref = push(socket, "bootstrap_credentials", payload)
+    assert_reply ref, :error, %{reason: "invalid_bootstrap_credentials"}
   end
 end

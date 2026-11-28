@@ -21,8 +21,23 @@ defmodule Bastion.Domains.DnsPoller do
   end
 
   def poll do
-    Repo.all(from b in Binding, where: b.state == "waiting_dns", select: b.id, limit: 100)
+    Repo.all(
+      from b in Binding,
+        as: :binding,
+        where: b.state == "waiting_dns",
+        where:
+          not exists(
+            from o in Bastion.Nodes.Operation,
+              where:
+                o.instance_id == parent_as(:binding).instance_id and o.action == "instance_create" and
+                  o.status != "ok"
+          ),
+        select: b.id,
+        limit: 100
+    )
     |> Enum.each(fn id -> Bastion.Domains.request_prepare(id, nil, "system") end)
+
+    Bastion.ManagedInstances.advance_pending()
   end
 
   defp schedule, do: Process.send_after(self(), :poll, 60_000)

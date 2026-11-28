@@ -45,6 +45,20 @@ defmodule BastionWeb.NodeChannel do
     end
   end
 
+  def handle_in("bootstrap_credentials", payload, socket) do
+    with :ok <- authorize(socket),
+         :ok <- Nodes.store_bootstrap_credentials(socket.assigns.node_id, payload) do
+      push(socket, "bootstrap_credentials_ack", %{
+        instance_id: payload["instance_id"],
+        placement_revision: payload["placement_revision"]
+      })
+
+      {:reply, :ok, socket}
+    else
+      _ -> {:reply, {:error, %{reason: "invalid_bootstrap_credentials"}}, socket}
+    end
+  end
+
   def handle_in(event, %{"operation_id" => operation_id} = payload, socket)
       when event in ~w(command_ack command_progress command_result) do
     with :ok <- authorize(socket),

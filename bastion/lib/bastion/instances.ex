@@ -64,6 +64,19 @@ defmodule Bastion.Instances do
   end
 
   def update_client(%Instance{} = instance, attrs) do
+    attrs =
+      if instance.transport == "node",
+        do:
+          Map.drop(attrs, [
+            "payment_due_on",
+            "admin_login",
+            "admin_password",
+            :payment_due_on,
+            :admin_login,
+            :admin_password
+          ]),
+        else: attrs
+
     changeset = Instance.client_changeset(instance, attrs)
 
     changeset =
