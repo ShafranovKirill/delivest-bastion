@@ -71,6 +71,101 @@ defmodule Bastion.ManagedSnapshotsTest do
              ManagedSnapshots.start(%Bastion.Instances.Instance{transport: "node"})
   end
 
+  test "online PostgreSQL dump has its own operation and cannot be certified as a full copy" do
+    {:ok, node, token} = Nodes.create_node("database-dump")
+    {:ok, _, _} = Nodes.register(token, 1)
+    instance_id = Ecto.UUID.generate()
+
+    {:ok, placement} =
+      Nodes.prepare_instance(node.id, instance_id, "Pilot", %{}, "pilot", 18080)
+
+    :ok =
+      Nodes.record_heartbeat(node.id, %{
+        "sample_id" => Ecto.UUID.generate(),
+        "sampled_at" => DateTime.utc_now() |> DateTime.to_iso8601(),
+        "version" => "0.2.0",
+        "metrics" => %{},
+        "instances" => [
+          %{
+            "instance_id" => instance_id,
+            "placement_revision" => placement.revision,
+            "status" => "running"
+          }
+        ],
+        "infrastructure" => %{"ready" => true}
+      })
+
+    instance = Bastion.Instances.get_instance(instance_id)
+    assert {:ok, snapshot} = ManagedSnapshots.start_database(instance, "owner")
+    assert snapshot.kind == "postgres"
+    assert String.ends_with?(snapshot.key, ".dump.enc")
+    assert ManagedSnapshots.current(instance.id) == nil
+    assert ManagedSnapshots.current(instance.id, "postgres").id == snapshot.id
+    operation = Repo.get!(Nodes.Operation, snapshot.node_operation_id)
+    assert operation.action == "backup_database"
+    assert operation.args == %{"backup_id" => snapshot.id}
+    assert Nodes.command_payload(operation).args["token"]
+
+    timestamp = DateTime.utc_now()
+    checksum = String.duplicate("a", 64)
+
+    snapshot
+    |> Ecto.Changeset.change(
+      status: "uploaded",
+      checksum: checksum,
+      size: 100,
+      integrity_checked_at: timestamp,
+      finished_at: timestamp
+    )
+    |> Repo.update!()
+
+    assert is_nil(ManagedSnapshots.latest(instance.id, "postgres"))
+    assert String.ends_with?(Bastion.Snapshots.filename(snapshot), ".dump")
+
+    assert {:ok, _} =
+             Nodes.update_operation(node.id, operation.id, "command_result", %{
+               "status" => "ok",
+               "result" => %{
+                 "backup_id" => snapshot.id,
+                 "sha256" => checksum,
+                 "size" => 100,
+                 "captured_at" => "2026-11-28T10:00:00Z",
+                 "release_version" => "1.25.0"
+               }
+             })
+
+    assert ManagedSnapshots.latest(instance.id, "postgres").release_compatibility == %{
+             "captured_at" => "2026-11-28T10:00:00Z",
+             "release_version" => "1.25.0"
+           }
+
+    assert {:error, :snapshot_not_ready} =
+             ManagedSnapshots.confirm_restore(snapshot.id, "owner", "only database was restored")
+
+    assert ManagedSnapshots.last_restore_checked(instance.id) == nil
+
+    {:ok, next} = ManagedSnapshots.start_database(instance, "owner")
+
+    next
+    |> Ecto.Changeset.change(status: "uploaded", checksum: checksum, size: 100)
+    |> Repo.update!()
+
+    assert {:ok, _} =
+             Nodes.update_operation(node.id, next.node_operation_id, "command_result", %{
+               "status" => "ok",
+               "result" => %{
+                 "backup_id" => next.id,
+                 "sha256" => String.duplicate("b", 64),
+                 "size" => 100,
+                 "captured_at" => "2026-11-28T11:00:00Z",
+                 "release_version" => "1.25.0"
+               }
+             })
+
+    assert ManagedSnapshots.current(instance.id, "postgres").status == "error"
+    assert ManagedSnapshots.latest(instance.id, "postgres").id == snapshot.id
+  end
+
   test "upload is idempotent for the same archive and rejects changed contents" do
     test_pid = self()
 
@@ -202,6 +297,13 @@ defmodule Bastion.ManagedSnapshotsTest do
     {:ok, _} = Nodes.prepare_instance(node.id, instance_id, "Pilot", %{}, "pilot", 18080)
 
     previous = stored_full(instance_id, "previous", DateTime.add(DateTime.utc_now(), -86_400))
+
+    historical_dump =
+      instance_id
+      |> stored_full("postgres", DateTime.add(DateTime.utc_now(), -90_000))
+      |> Ecto.Changeset.change(kind: "postgres")
+      |> Repo.update!()
+
     current = stored_full(instance_id, "current", DateTime.utc_now())
     assert Repo.get!(Snapshot, previous.id).status == "ok"
     refute_receive {:storage, "DELETE", _}
@@ -218,6 +320,7 @@ defmodule Bastion.ManagedSnapshotsTest do
     assert Repo.get!(Snapshot, previous.id).status == "obsolete"
     assert_receive {:storage, "DELETE", _}
     assert Repo.get!(Snapshot, current.id).status == "ok"
+    assert Repo.get!(Snapshot, historical_dump.id).status == "ok"
     assert ManagedSnapshots.last_restore_checked(instance_id).id == current.id
   end
 

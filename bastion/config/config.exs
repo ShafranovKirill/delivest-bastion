@@ -75,6 +75,7 @@ config :bastion, Oban,
        {"*/5 * * * *", Bastion.PaymentReminderWorker},
        {"0 0 * * *", Bastion.Backups.Worker},
        {"30 0 * * *", Bastion.Snapshots.Worker},
+       {"0 2,6,10,14,18,22 * * *", Bastion.ManagedSnapshots.DatabaseWorker},
        {"30 0 * * *", Bastion.Metrics.PruneWorker}
      ]}
   ]

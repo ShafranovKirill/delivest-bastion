@@ -1,5 +1,8 @@
 import Config
 
+config :bastion,
+  managed_postgres_backups: System.get_env("MANAGED_POSTGRES_BACKUP_ENABLED") == "true"
+
 if key = System.get_env("DELIVEST_DNS_ENCRYPTION_KEY") do
   config :bastion, dns_encryption_key: key
 end

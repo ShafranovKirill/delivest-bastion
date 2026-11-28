@@ -48,7 +48,7 @@ defmodule BastionWeb.SnapshotController do
       case fetch(snapshot, path) do
         :ok ->
           send_download(conn, {:file, path},
-            filename: filename(snapshot),
+            filename: Snapshots.filename(snapshot),
             content_type: "application/octet-stream"
           )
 
@@ -86,11 +86,6 @@ defmodule BastionWeb.SnapshotController do
     do: ManagedSnapshots.fetch(snapshot, path)
 
   defp fetch(snapshot, path), do: Snapshots.fetch(snapshot, path)
-
-  defp filename(%{node_operation_id: id} = snapshot) when not is_nil(id),
-    do: "#{snapshot.id}-managed.tar.gz"
-
-  defp filename(snapshot), do: Snapshots.filename(snapshot)
 
   defp receive_file(conn) do
     path = Plug.Upload.random_file!("snapshot-upload")

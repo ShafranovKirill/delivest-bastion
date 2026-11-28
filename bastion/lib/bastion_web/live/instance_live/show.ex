@@ -472,6 +472,17 @@ defmodule BastionWeb.InstanceLive.Show do
     {:noreply, load_backups(socket)}
   end
 
+  def handle_event("managed_database_backup", _, socket) do
+    socket =
+      case ManagedSnapshots.start_database(socket.assigns.instance, socket.assigns.current_admin) do
+        {:ok, _} -> put_flash(socket, :info, "Нода создаёт дамп PostgreSQL")
+        {:error, :not_running} -> put_flash(socket, :error, "Сначала запустите франшизу")
+        {:error, reason} -> put_flash(socket, :error, "Дамп не начат: #{inspect(reason)}")
+      end
+
+    {:noreply, load_backups(socket)}
+  end
+
   def handle_event(
         "managed_restore_checked",
         %{"snapshot_id" => id, "restore_check" => %{"evidence" => evidence}},
@@ -711,7 +722,9 @@ defmodule BastionWeb.InstanceLive.Show do
       snapshot_current: Snapshots.current(id),
       managed_snapshot_latest: ManagedSnapshots.latest(id),
       managed_snapshot_current: ManagedSnapshots.current(id),
-      managed_snapshot_restore_checked: ManagedSnapshots.last_restore_checked(id)
+      managed_snapshot_restore_checked: ManagedSnapshots.last_restore_checked(id),
+      managed_database_latest: ManagedSnapshots.latest(id, "postgres"),
+      managed_database_current: ManagedSnapshots.current(id, "postgres")
     )
   end
 
@@ -732,6 +745,13 @@ defmodule BastionWeb.InstanceLive.Show do
   end
 
   defp since_label(_), do: nil
+
+  defp snapshot_point(snapshot) do
+    case DateTime.from_iso8601(snapshot.release_compatibility["captured_at"] || "") do
+      {:ok, at, _offset} -> datetime(at)
+      _ -> datetime(snapshot.finished_at)
+    end
+  end
 
   defp gigabytes(kb), do: :erlang.float_to_binary(kb / 1_048_576, decimals: 1) <> " ГБ"
 
@@ -930,17 +950,28 @@ defmodule BastionWeb.InstanceLive.Show do
             Последняя попытка завершилась ошибкой: {@managed_snapshot_current.error}
           </p>
           <p :if={@managed_snapshot_latest}>
-            Последняя копия: {datetime(@managed_snapshot_latest.finished_at)} · {format_size(
+            Последняя копия: {snapshot_point(@managed_snapshot_latest)} · {format_size(
               @managed_snapshot_latest.size
             )} · целостность архива проверена · {if @managed_snapshot_latest.restore_checked_at,
               do: "восстановление проверено",
               else: "восстановление не проверено"}
           </p>
-          <p :if={@managed_snapshot_restore_checked} id="managed-restore-point">
-            Последняя подтверждённая точка восстановления: {datetime(
-              @managed_snapshot_restore_checked.finished_at
-            )}
-          </p>
+          <div :if={@managed_snapshot_restore_checked} id="managed-restore-point">
+            <p>
+              Последняя подтверждённая точка восстановления: {snapshot_point(
+                @managed_snapshot_restore_checked
+              )}
+            </p>
+            <.link
+              :if={
+                !@managed_snapshot_latest ||
+                  @managed_snapshot_latest.id != @managed_snapshot_restore_checked.id
+              }
+              href={~p"/backups/snapshots/#{@managed_snapshot_restore_checked.id}/download"}
+              class="link"
+            >Скачать проверенную копию</.link>
+            <code class="block break-all">SHA-256 {@managed_snapshot_restore_checked.checksum}</code>
+          </div>
           <.link
             :if={@managed_snapshot_latest}
             id="managed-snapshot-download"
@@ -949,6 +980,10 @@ defmodule BastionWeb.InstanceLive.Show do
           >
             Скачать копию
           </.link>
+          <code
+            :if={@managed_snapshot_latest && !@managed_snapshot_latest.restore_checked_at}
+            class="block break-all"
+          >SHA-256 {@managed_snapshot_latest.checksum}</code>
           <p :if={!@managed_snapshot_latest}>Пригодной копии пока нет.</p>
           <p :if={@managed_snapshot_latest && @managed_snapshot_latest.error} class="text-warning">
             {@managed_snapshot_latest.error}
@@ -992,6 +1027,46 @@ defmodule BastionWeb.InstanceLive.Show do
           >
             Последней копии больше суток.
           </p>
+        </div>
+        <div id="managed-database-backups" class="rounded-lg bg-base-200 p-3 space-y-2 text-sm">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <h3 class="font-semibold">Дамп PostgreSQL</h3>
+            <button
+              id="managed-database-backup-now"
+              type="button"
+              class="btn btn-sm"
+              phx-click="managed_database_backup"
+              disabled={
+                !@node_placement || @node_placement.observed_state != "running" ||
+                  (@managed_database_current &&
+                     @managed_database_current.status in ["pending", "uploaded"])
+              }
+            >Создать дамп</button>
+          </div>
+          <p class="text-base-content/70">
+            Содержит только базу данных. Для полного восстановления нужна копия с файлами.
+          </p>
+          <p :if={
+            @managed_database_current && @managed_database_current.status in ["pending", "uploaded"]
+          }>
+            Подготавливается дамп PostgreSQL.
+          </p>
+          <p
+            :if={@managed_database_current && @managed_database_current.status == "error"}
+            class="text-error"
+          >
+            Последняя попытка завершилась ошибкой: {@managed_database_current.error}
+          </p>
+          <p :if={@managed_database_latest}>
+            Последний дамп: {snapshot_point(@managed_database_latest)} · {format_size(
+              @managed_database_latest.size
+            )}
+          </p>
+          <.link
+            :if={@managed_database_latest}
+            href={~p"/backups/snapshots/#{@managed_database_latest.id}/download"}
+            class="btn btn-sm btn-outline"
+          >Скачать дамп</.link>
         </div>
         <div
           :if={diagnostics = Enum.find(@node_operations, &(&1.action == "diagnostics"))}

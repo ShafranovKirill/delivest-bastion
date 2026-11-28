@@ -174,7 +174,14 @@ defmodule Bastion.Snapshots do
       |> String.replace(~r/[^\p{L}\p{N}]+/u, "-")
       |> String.trim("-")
 
-    "#{name}-#{Calendar.strftime(snapshot.inserted_at, "%Y-%m-%d-%H%M")}-full.tar"
+    extension =
+      case snapshot do
+        %Snapshot{kind: "postgres"} -> "postgres.dump"
+        %Snapshot{node_operation_id: id} when not is_nil(id) -> "full.tar.gz"
+        _ -> "full.tar"
+      end
+
+    "#{name}-#{Calendar.strftime(snapshot.inserted_at, "%Y-%m-%d-%H%M")}-#{extension}"
   end
 
   def command_finished(%Command{action: "full_backup", status: status} = command)
@@ -212,7 +219,9 @@ defmodule Bastion.Snapshots do
       Oban.insert(Bastion.Snapshots.Worker.new(%{instance_id: instance.id}))
     end
 
-    for instance <- Instances.list_instances(), instance.transport == "node" do
+    for instance <- Instances.list_instances(),
+        instance.transport == "node",
+        Bastion.Nodes.placement_for(instance.id) do
       Oban.insert(Bastion.ManagedSnapshots.Worker.new(%{instance_id: instance.id}))
     end
 

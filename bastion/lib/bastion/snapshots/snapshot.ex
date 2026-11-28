@@ -8,6 +8,7 @@ defmodule Bastion.Snapshots.Snapshot do
     belongs_to :instance, Bastion.Instances.Instance
     belongs_to :command, Bastion.Instances.Command
     belongs_to :node_operation, Bastion.Nodes.Operation
+    field :kind, :string, default: "full"
     field :checksum, :string
     field :release_compatibility, :map, default: %{}
     field :integrity_checked_at, :utc_datetime_usec

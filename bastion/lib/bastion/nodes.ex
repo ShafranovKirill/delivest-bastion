@@ -5,7 +5,7 @@ defmodule Bastion.Nodes do
   alias Bastion.Nodes.{MetricSample, Node, Operation, Placement, SshInstaller}
   alias Bastion.Repo
 
-  @actions ~w(status start stop diagnostics backup instance_delete domain_prepare domain_release instance_create instance_cleanup domain_activate domain_rollback)
+  @actions ~w(status start stop diagnostics backup backup_database instance_delete domain_prepare domain_release instance_create instance_cleanup domain_activate domain_rollback)
   @unresolved ~w(pending running waiting_external unknown)
   @deliverable ~w(pending running unknown)
   @topic "managed_nodes"
@@ -562,7 +562,7 @@ defmodule Bastion.Nodes do
   def queue(_, _, _, _), do: {:error, :invalid_action_or_args}
 
   def queue_deferred(instance_id, action, requested_by, args)
-      when action in ~w(backup domain_prepare domain_release instance_create instance_cleanup domain_activate domain_rollback) do
+      when action in ~w(backup backup_database domain_prepare domain_release instance_create instance_cleanup domain_activate domain_rollback) do
     if valid_args?(action, args) do
       case Ecto.UUID.cast(instance_id) do
         {:ok, id} -> do_queue(id, action, requested_by, args, false)
@@ -586,7 +586,7 @@ defmodule Bastion.Nodes do
 
   defp valid_args?(action, args) when action in ~w(status start stop diagnostics), do: args == %{}
 
-  defp valid_args?("backup", %{"backup_id" => id} = args),
+  defp valid_args?(action, %{"backup_id" => id} = args) when action in ~w(backup backup_database),
     do: map_size(args) == 1 and match?({:ok, _}, Ecto.UUID.cast(id))
 
   defp valid_args?("instance_delete", %{"confirm_instance_id" => id} = args),
@@ -749,7 +749,7 @@ defmodule Bastion.Nodes do
 
   def command_payload(%Operation{} = operation) do
     args =
-      if operation.action == "backup" do
+      if operation.action in ~w(backup backup_database) do
         Bastion.ManagedSnapshots.delivery_args(operation)
       else
         operation.args
@@ -803,7 +803,7 @@ defmodule Bastion.Nodes do
 
     case result do
       {:ok, operation} ->
-        if event == "command_result" and operation.action == "backup",
+        if event == "command_result" and operation.action in ~w(backup backup_database),
           do: Bastion.ManagedSnapshots.operation_finished(operation)
 
         if event == "command_result" and operation.action in ~w(domain_prepare domain_release) do
