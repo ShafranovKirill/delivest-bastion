@@ -354,6 +354,15 @@ defmodule Bastion.ManagedSnapshots do
     )
   end
 
+  def last_drill(instance_id) do
+    Repo.one(
+      from s in Snapshot,
+        where: s.instance_id == ^instance_id and not is_nil(s.drill_at),
+        order_by: [desc: s.drill_at, desc: s.id],
+        limit: 1
+    )
+  end
+
   def last_restore_checked(instance_id) do
     Repo.one(
       from s in Snapshot,

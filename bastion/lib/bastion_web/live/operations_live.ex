@@ -25,7 +25,7 @@ defmodule BastionWeb.OperationsLive do
             <tr>
               <th>Время</th><th>Франшиза</th><th>Сервер</th><th>Действие</th><th>Состояние</th><th>
                 Результат
-              </th>
+              </th><th>Инициатор</th>
             </tr>
           </thead>
           <tbody>
@@ -38,6 +38,7 @@ defmodule BastionWeb.OperationsLive do
               <td>{operation.action}</td>
               <td>{status_label(operation.status)}</td>
               <td class="max-w-md break-words">{result_label(operation)}</td>
+              <td>{operation.requested_by || "Система"}</td>
             </tr>
           </tbody>
         </table>
@@ -53,6 +54,10 @@ defmodule BastionWeb.OperationsLive do
   defp status_label("ok"), do: "Успешно"
   defp status_label("error"), do: "Ошибка"
   defp status_label("unknown"), do: "Результат неизвестен"
+
+  defp result_label(%{action: "node_maintenance", result: %{"maintenance" => enabled}}),
+    do: if(enabled, do: "Новые размещения запрещены", else: "Новые размещения разрешены")
+
   defp result_label(%{result: result}) when result == %{}, do: "—"
 
   defp result_label(%{result: result}),

@@ -19,6 +19,7 @@ defmodule BastionWeb.InstanceLive.Show do
     ManagedSnapshots,
     Nodes,
     ManagedInstances,
+    ManagedUpdates,
     Domains
   }
 
@@ -241,6 +242,27 @@ defmodule BastionWeb.InstanceLive.Show do
   end
 
   def handle_event("refresh_latest", _params, socket), do: {:noreply, fetch_latest(socket)}
+
+  def handle_event("managed_update", _params, socket) do
+    instance = socket.assigns.instance
+
+    case {instance.transport, socket.assigns.managed_latest} do
+      {"node", %{} = release} ->
+        case ManagedUpdates.start(instance.id, socket.assigns.current_admin, nil, release) do
+          {:ok, _operation} ->
+            {:noreply,
+             socket
+             |> assign_instance(instance)
+             |> put_flash(:info, "Обновление поставлено в очередь")}
+
+          {:error, reason} ->
+            {:noreply, put_flash(socket, :error, "Обновление не принято: #{inspect(reason)}")}
+        end
+
+      _ ->
+        {:noreply, put_flash(socket, :error, "Опубликованный релиз недоступен")}
+    end
+  end
 
   def handle_event("managed_command", %{"action" => action}, socket) do
     case Nodes.queue(socket.assigns.instance.id, action, socket.assigns.current_admin) do
@@ -595,7 +617,7 @@ defmodule BastionWeb.InstanceLive.Show do
       {:noreply, assign(socket, latest_release: nil, latest_loading?: false, latest_error?: true)}
 
   def handle_async(:managed_latest, {:ok, {:ok, release}}, socket),
-    do: {:noreply, assign(socket, managed_latest: release.version)}
+    do: {:noreply, assign(socket, managed_latest: release)}
 
   def handle_async(:managed_latest, _result, socket),
     do: {:noreply, assign(socket, managed_latest: nil)}
@@ -721,6 +743,7 @@ defmodule BastionWeb.InstanceLive.Show do
       snapshot_latest: Snapshots.latest(id),
       snapshot_current: Snapshots.current(id),
       managed_snapshot_latest: ManagedSnapshots.latest(id),
+      managed_last_drill: ManagedSnapshots.last_drill(id),
       managed_snapshot_current: ManagedSnapshots.current(id),
       managed_snapshot_restore_checked: ManagedSnapshots.last_restore_checked(id),
       managed_database_latest: ManagedSnapshots.latest(id, "postgres"),
@@ -916,10 +939,20 @@ defmodule BastionWeb.InstanceLive.Show do
             "нет данных"} · Цель {@instance.desired_state || "не задана"}
         </p>
         <p class="text-sm text-base-content/60">
-          Установлен {@node_placement && (@node_placement.observed_release || "нет данных")} · опубликован {@managed_latest ||
+          Установлен {@node_placement && (@node_placement.observed_release || "нет данных")} · опубликован {(@managed_latest &&
+                                                                                                               @managed_latest.version) ||
             "нет данных"}
         </p>
         <div :if={@node_placement} class="flex flex-wrap gap-2">
+          <.link id="move-franchise" navigate={~p"/instances/#{@instance.id}/move"} class="btn btn-sm">Перенести</.link>
+          <button
+            :if={@managed_latest && @managed_latest.version != @node_placement.observed_release}
+            id="managed-update"
+            type="button"
+            class="btn btn-sm btn-primary"
+            phx-click="managed_update"
+            data-confirm={"Обновить #{@instance.name} до v#{@managed_latest.version}?"}
+          >Обновить Delivest</button>
           <button
             :for={action <- ~w(status diagnostics stop start)}
             type="button"
@@ -955,6 +988,19 @@ defmodule BastionWeb.InstanceLive.Show do
             )} · целостность архива проверена · {if @managed_snapshot_latest.restore_checked_at,
               do: "восстановление проверено",
               else: "восстановление не проверено"}
+          </p>
+          <p
+            :if={@managed_last_drill}
+            id="managed-recovery-drill"
+          >
+            Автоматическая проверка PostgreSQL и тома медиа · {datetime(@managed_last_drill.drill_at)} · {if @managed_last_drill.drill_status ==
+                                                                                                               "ok",
+                                                                                                             do:
+                                                                                                               "Пройдена",
+                                                                                                             else:
+                                                                                                               @managed_last_drill.drill_result[
+                                                                                                                 "reason"
+                                                                                                               ]}
           </p>
           <div :if={@managed_snapshot_restore_checked} id="managed-restore-point">
             <p>

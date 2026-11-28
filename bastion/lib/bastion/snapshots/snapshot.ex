@@ -15,6 +15,9 @@ defmodule Bastion.Snapshots.Snapshot do
     field :restore_checked_at, :utc_datetime_usec
     field :restore_checked_by, :string
     field :restore_evidence, :string
+    field :drill_at, :utc_datetime_usec
+    field :drill_status, :string
+    field :drill_result, :map, default: %{}
     field :instance_name, :string
     field :status, :string, default: "pending"
     field :key, :string

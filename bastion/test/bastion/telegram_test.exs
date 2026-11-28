@@ -3,7 +3,7 @@ defmodule Bastion.TelegramTest do
 
   import Bastion.Fixtures
 
-  alias Bastion.{Alerts, Instances, Maintenance}
+  alias Bastion.{Alerts, Instances, Maintenance, Nodes}
   alias Bastion.Telegram.Bot
   alias Bastion.Telegram.Screens
   alias BastionWeb.Presence
@@ -38,13 +38,13 @@ defmodule Bastion.TelegramTest do
   defp message(text, chat \\ @chat),
     do: %{"update_id" => 1, "message" => %{"chat" => %{"id" => chat}, "text" => text}}
 
-  defp press(data) do
+  defp press(data, actor \\ 13) do
     Bot.handle_update(%{
       "update_id" => 2,
       "callback_query" => %{
         "id" => "q1",
         "data" => data,
-        "from" => %{"username" => "kirill"},
+        "from" => %{"id" => actor, "username" => "kirill"},
         "message" => %{"message_id" => 7, "chat" => %{"id" => @chat}}
       }
     })
@@ -120,6 +120,86 @@ defmodule Bastion.TelegramTest do
 
     Bot.handle_update(message("nothing"))
     assert_received {:telegram, "sendMessage", %{"text" => "Не нашёл «nothing»." <> _}}
+  end
+
+  test "managed cards distinguish site and heartbeat and the pinned confirmation queues only once" do
+    {:ok, node, token} = Nodes.create_node("Pilot")
+    {:ok, _, _} = Nodes.register(token, 1)
+    id = Ecto.UUID.generate()
+    {:ok, _} = Nodes.prepare_instance(node.id, id, "Managed Pizza", %{}, "managed-pizza", 18080)
+    instance = Instances.get_instance(id)
+
+    {:ok, _} =
+      Instances.update_checks(
+        instance,
+        %{"site" => %{"ok" => true}, "api" => %{"ok" => true}},
+        :ok
+      )
+
+    Nodes.placement_for(id)
+    |> Ecto.Changeset.change(observed_state: "running", observed_release: "1.2.0")
+    |> Repo.update!()
+
+    ref = self()
+
+    Req.Test.stub(Bastion.Http, fn conn ->
+      if conn.host == "api.github.com" do
+        Req.Test.json(conn, %{
+          "tag_name" => "v1.3.0",
+          "draft" => false,
+          "prerelease" => false,
+          "published_at" => "2026-11-28T09:00:00Z",
+          "assets" => [
+            %{
+              "name" => "delivest-deploy-1.3.0.tar.gz",
+              "digest" => "sha256:" <> String.duplicate("a", 64),
+              "browser_download_url" =>
+                "https://github.com/ShafranovKirill/delivest/releases/download/v1.3.0/delivest-deploy-1.3.0.tar.gz"
+            }
+          ]
+        })
+      else
+        {:ok, body, conn} = Plug.Conn.read_body(conn)
+        send(ref, {:telegram, List.last(conn.path_info), Jason.decode!(body)})
+        Req.Test.json(conn, %{"ok" => true, "result" => %{"message_id" => 7}})
+      end
+    end)
+
+    press("i:" <> id)
+    assert_receive {:telegram, "editMessageText", card}
+    assert card["text"] =~ "Витрина · Работает"
+    assert card["text"] =~ "Нет связи с нодой"
+    assert {"Обновить Delivest", "ma:" <> id} in buttons(card)
+    assert {"Обновить данные", "i:" <> id} in buttons(card)
+
+    press("ma:" <> id)
+    assert_receive {:telegram, "editMessageText", confirm}
+    assert confirm["text"] =~ "Managed Pizza · v1.3.0"
+    assert [{"Подтвердить", callback}, _] = buttons(confirm)
+
+    press(callback, 999)
+    assert Nodes.operations_for(id) == []
+
+    press(callback)
+    assert_receive {:telegram, "editMessageText", pending}
+    assert pending["text"] =~ "В очереди"
+    press(callback)
+    assert [operation] = Nodes.operations_for(id)
+    assert operation.args["release_version"] == "1.3.0"
+
+    assert {:ok, failed} =
+             Nodes.update_operation(node.id, operation.id, "command_result", %{
+               "status" => "error",
+               "result" => %{"reason" => "release check failed"}
+             })
+
+    Bot.node_operation_updated(failed)
+    assert_receive {:telegram, "editMessageText", failed_card}
+    # Replayed callback also refreshes the card before the failure notification.
+    if not String.contains?(failed_card["text"], "release check failed") do
+      assert_receive {:telegram, "editMessageText", final_card}
+      assert final_card["text"] =~ "release check failed"
+    end
   end
 
   test "planned maintenance renders in list and card without an alert" do

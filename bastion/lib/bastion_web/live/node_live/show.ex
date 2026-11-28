@@ -1,7 +1,7 @@
 defmodule BastionWeb.NodeLive.Show do
   use BastionWeb, :live_view
 
-  alias Bastion.Nodes
+  alias Bastion.{Fleet, NodeMaintenance, Nodes}
 
   @impl true
   def mount(%{"id" => id}, _session, socket) do
@@ -25,6 +25,18 @@ defmodule BastionWeb.NodeLive.Show do
   end
 
   @impl true
+  def handle_event("toggle_maintenance", _, socket) do
+    node = socket.assigns.node
+
+    case NodeMaintenance.set(node.id, !node.maintenance, socket.assigns.current_admin) do
+      {:ok, _} ->
+        {:noreply, load(socket)}
+
+      {:error, _} ->
+        {:noreply, put_flash(socket, :error, "Не удалось изменить режим обслуживания")}
+    end
+  end
+
   def handle_event("reset_registration", _, socket) do
     case Nodes.reset_registration(socket.assigns.node) do
       {:ok, node, token} -> {:noreply, assign(socket, node: node, registration_token: token)}
@@ -103,6 +115,7 @@ defmodule BastionWeb.NodeLive.Show do
 
     assign(socket,
       node: node,
+      resources: Fleet.node_resources(node),
       placements: Nodes.list_placements(node.id),
       operations: Enum.filter(Nodes.list_operations(), &(&1.node_id == node.id))
     )
@@ -134,6 +147,23 @@ defmodule BastionWeb.NodeLive.Show do
           <dt class="text-sm text-base-content/60">Франшиз</dt><dd>{length(@placements)}</dd>
         </div>
       </dl>
+      <section
+        id="node-maintenance"
+        class="rounded-xl border border-base-300 bg-base-100 p-5 space-y-3"
+      >
+        <h2 class="font-semibold">Режим обслуживания</h2>
+        <p :if={@node.maintenance} class="text-warning">
+          Новые размещения приостановлены. Действующие установки продолжают работать.
+        </p>
+        <button
+          type="button"
+          class="btn btn-sm"
+          phx-click="toggle_maintenance"
+          id="toggle-node-maintenance"
+        >
+          {if @node.maintenance, do: "Разрешить новые размещения", else: "Запретить новые размещения"}
+        </button>
+      </section>
       <section class="rounded-xl border border-base-300 bg-base-100 p-5 space-y-3">
         <h2 class="font-semibold">Подключение по SSH</h2>
         <p id="install-status">
@@ -182,9 +212,8 @@ defmodule BastionWeb.NodeLive.Show do
       <section class="rounded-xl border border-base-300 bg-base-100 p-5 space-y-3">
         <h2 class="font-semibold">Ресурсы сервера</h2>
         <p class="text-sm text-base-content/60">Замер: {format_time(@node.sampled_at)}</p>
-        <p :if={not fresh?(@node)} class="text-sm text-warning">
-          Связь с нодой потеряна. Показатели устарели.
-        </p>
+        <p :if={!@resources.connected} class="text-sm text-warning">Связь с нодой потеряна.</p>
+        <p :for={warning <- @resources.warnings} class="text-sm text-warning">{warning}</p>
         <div class="grid gap-4 sm:grid-cols-3">
           <div>
             <span class="text-sm text-base-content/60">CPU</span><p class="font-semibold">
@@ -256,7 +285,7 @@ defmodule BastionWeb.NodeLive.Show do
           />
           <.input name="placement[site_host]" value="" label="Адрес сайта" />
           <.input name="placement[api_host]" value="" label="Адрес API" />
-          <button class="btn btn-primary self-end">Подготовить</button>
+          <button class="btn btn-primary self-end" disabled={@node.maintenance}>Подготовить</button>
         </.form>
         <p :if={@created_instance_id} class="text-sm">
           ID подготовленной франшизы: <code class="select-all">{@created_instance_id}</code>
@@ -271,7 +300,18 @@ defmodule BastionWeb.NodeLive.Show do
           <.link navigate={~p"/instances/#{placement.instance_id}"} class="link font-semibold">{placement.instance.name}</.link>
           <span class="text-sm text-base-content/60">{placement.project_name} · 127.0.0.1:{placement.gateway_port} · {placement.observed_state ||
             "Нет данных"}</span>
+          <p :for={guard <- placement.restart_guard} class="text-sm text-warning">
+            {if guard["state"] == "tripped",
+              do: "Остановлены автоперезапуски · #{guard["service"]}",
+              else: "Не удалось проверить автоперезапуски"}
+          </p>
           <div class="ml-auto flex gap-2">
+            <.link
+              :if={placement.state == "active" && @node.maintenance}
+              navigate={~p"/instances/#{placement.instance_id}/move"}
+              id={"move-from-node-#{placement.instance_id}"}
+              class="btn btn-sm"
+            >Перенести</.link>
             <button
               :for={action <- ~w(status stop start)}
               type="button"
@@ -300,9 +340,6 @@ defmodule BastionWeb.NodeLive.Show do
   defp action_label("start"), do: "Запустить"
   defp format_time(nil), do: "Нет данных"
   defp format_time(at), do: Calendar.strftime(at, "%d.%m.%Y %H:%M UTC")
-  defp fresh?(%{last_seen_at: nil}), do: false
-  defp fresh?(%{credential_revoked_at: revoked}) when not is_nil(revoked), do: false
-  defp fresh?(%{last_seen_at: at}), do: DateTime.diff(DateTime.utc_now(), at) < 90
 
   defp percent(value) when is_number(value),
     do: :erlang.float_to_binary(value / 1, decimals: 1) <> "%"

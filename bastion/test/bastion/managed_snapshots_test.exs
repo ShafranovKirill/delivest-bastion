@@ -2,6 +2,7 @@ defmodule Bastion.ManagedSnapshotsTest do
   use Bastion.DataCase, async: false
 
   alias Bastion.{ManagedSnapshots, Nodes, Repo}
+  alias Bastion.ManagedSnapshots.RestoreDrillWorker
   alias Bastion.Snapshots.Snapshot
 
   setup do
@@ -349,6 +350,72 @@ defmodule Bastion.ManagedSnapshotsTest do
     assert repeated.error == nil
     assert repeated.restore_checked_by == "owner"
     assert Repo.get!(Snapshot, old.id).status == "obsolete"
+  end
+
+  test "automated restore records separate evidence without approving cleanup" do
+    Application.put_env(:bastion, :recovery_drill_ssh_config, "isolated-test")
+    Application.put_env(:bastion, :recovery_drill_adapter, __MODULE__)
+
+    on_exit(fn ->
+      Application.delete_env(:bastion, :recovery_drill_ssh_config)
+      Application.delete_env(:bastion, :recovery_drill_adapter)
+    end)
+
+    node = ready_node()
+    id = Ecto.UUID.generate()
+    {:ok, _} = Nodes.prepare_instance(node.id, id, "Pilot", %{}, "pilot", 18080)
+    snapshot = stored_full(id, "weekly-drill", DateTime.utc_now())
+
+    dir = Path.join(System.tmp_dir!(), "restore-drill-test-" <> Ecto.UUID.generate())
+    File.mkdir_p!(dir)
+    on_exit(fn -> File.rm_rf!(dir) end)
+    plain = archive(dir, id, "verify")
+    encrypted = Path.join(dir, "archive.enc")
+
+    assert {_, 0} =
+             System.cmd("openssl", [
+               "enc",
+               "-aes-256-cbc",
+               "-pbkdf2",
+               "-iter",
+               "200000",
+               "-in",
+               plain,
+               "-out",
+               encrypted,
+               "-pass",
+               "env:MANAGED_BACKUP_ENCRYPTION_KEY"
+             ])
+
+    {:ok, %{sha256: sha}} = Bastion.Snapshots.Archive.digest(plain)
+    snapshot |> Ecto.Changeset.change(checksum: sha) |> Repo.update!()
+
+    Req.Test.stub(Bastion.Http, fn conn ->
+      Plug.Conn.send_resp(conn, 200, File.read!(encrypted))
+    end)
+
+    assert :ok = RestoreDrillWorker.perform(%Oban.Job{args: %{"snapshot_id" => snapshot.id}})
+
+    assert %Snapshot{
+             drill_status: "ok",
+             drill_result: %{"release_version" => "1.24.0", "sha256" => ^sha},
+             restore_checked_at: nil
+           } = ManagedSnapshots.last_drill(id)
+
+    assert ManagedSnapshots.last_restore_checked(id) == nil
+  end
+
+  def run(path, "isolated-test", snapshot) do
+    assert {:ok, %{sha256: checksum}} = Bastion.Snapshots.Archive.digest(path)
+    assert checksum == snapshot.checksum
+
+    {Jason.encode!(%{
+       "status" => "ok",
+       "instance_id" => snapshot.instance_id,
+       "archive_sha256" => checksum,
+       "release_version" => "1.24.0",
+       "checks" => ~w(archive_integrity postgres_boot application_schema media_files)
+     }), 0}
   end
 
   defp stored_full(instance_id, label, at) do

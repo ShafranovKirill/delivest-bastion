@@ -15,6 +15,7 @@ defmodule Bastion.Nodes.Placement do
     field :observed_state, :string
     field :observed_release, :string
     field :observed_at, :utc_datetime_usec
+    field :restart_guard, {:array, :map}, default: []
     timestamps(type: :utc_datetime_usec)
   end
 

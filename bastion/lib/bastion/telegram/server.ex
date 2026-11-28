@@ -5,7 +5,7 @@ defmodule Bastion.Telegram.Server do
 
   require Logger
 
-  alias Bastion.{Instances, Telegram}
+  alias Bastion.{Instances, Nodes, Telegram}
   alias Bastion.Telegram.{Bot, UpdateWorker}
 
   @poll_timeout 10
@@ -16,6 +16,7 @@ defmodule Bastion.Telegram.Server do
   @impl true
   def init(_opts) do
     Instances.subscribe()
+    Nodes.subscribe_operation_updates()
     send(self(), :setup)
     {:ok, %{offset: nil, poll: nil}}
   end
@@ -62,6 +63,11 @@ defmodule Bastion.Telegram.Server do
       {:error, _reason} -> Logger.error("telegram command notification enqueue failed")
     end
 
+    {:noreply, state}
+  end
+
+  def handle_info({:node_operation_updated, operation}, state) do
+    if operation.action == "instance_update", do: UpdateWorker.enqueue_node_operation(operation)
     {:noreply, state}
   end
 
