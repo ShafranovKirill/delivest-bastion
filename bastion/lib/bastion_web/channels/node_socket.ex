@@ -1,7 +1,7 @@
 defmodule BastionWeb.NodeSocket do
   use Phoenix.Socket
 
-  channel "node:*", BastionWeb.NodeChannel
+  channel "node:*", BastionWeb.NodeChannel, log_handle_in: false
 
   @impl true
   def connect(_params, socket, connect_info) do

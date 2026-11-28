@@ -10,13 +10,25 @@ defmodule Bastion.ManagedInstances.FinalizeWorker do
   @impl true
   def perform(%Oban.Job{args: %{"operation_id" => id}}) do
     case Repo.get(Operation, id) do
-      %Operation{action: "instance_create", status: "ok"} = operation ->
+      %Operation{
+        action: "instance_create",
+        status: "waiting_external",
+        progress: %{"stage" => "verifying"}
+      } = operation ->
         finish(operation, &complete_create/1)
 
-      %Operation{action: "domain_activate", status: "ok"} = operation ->
+      %Operation{
+        action: "domain_activate",
+        status: "waiting_external",
+        progress: %{"stage" => "verifying"}
+      } = operation ->
         finish(operation, &complete_activation/1)
 
-      %Operation{action: "domain_rollback", status: "ok"} = operation ->
+      %Operation{
+        action: "domain_rollback",
+        status: "waiting_external",
+        progress: %{"stage" => "verifying"}
+      } = operation ->
         finish(operation, &complete_rollback/1)
 
       _ ->
@@ -30,14 +42,27 @@ defmodule Bastion.ManagedInstances.FinalizeWorker do
         :ok
 
       {:error, reason} ->
-        operation
-        |> Ecto.Changeset.change(
-          status: "error",
-          result: Map.put(operation.result, "reason", inspect(reason))
-        )
-        |> Repo.update!()
+        failed? =
+          Repo.transaction(fn ->
+            current = lock_operation(operation.id)
 
-        if operation.action == "domain_activate" do
+            if verifying?(current) do
+              current
+              |> Ecto.Changeset.change(
+                status: "error",
+                result: Map.put(current.result, "reason", inspect(reason)),
+                progress: Map.put(current.progress, "stage", "verification_failed"),
+                finished_at: DateTime.utc_now()
+              )
+              |> Repo.update!()
+
+              true
+            else
+              false
+            end
+          end)
+
+        if failed? == {:ok, true} and operation.action == "domain_activate" do
           case Nodes.queue(operation.instance_id, "domain_rollback", "system", operation.args) do
             {:ok, rollback} ->
               Nodes.dispatch_operation(rollback)
@@ -64,6 +89,38 @@ defmodule Bastion.ManagedInstances.FinalizeWorker do
     end
   end
 
+  defp lock_operation(id),
+    do: Repo.one!(from o in Operation, where: o.id == ^id, lock: "FOR UPDATE")
+
+  defp verifying?(%Operation{status: "waiting_external", progress: %{"stage" => "verifying"}}),
+    do: true
+
+  defp verifying?(_), do: false
+
+  defp finalize_operation(operation) do
+    current = lock_operation(operation.id)
+
+    if verifying?(current) do
+      current
+      |> Ecto.Changeset.change(
+        status: "ok",
+        progress:
+          current.progress
+          |> Map.put(
+            "stage",
+            if(current.action == "domain_rollback", do: "rolled_back", else: "ready")
+          )
+          |> Map.put("finalized", true),
+        finished_at: DateTime.utc_now()
+      )
+      |> Repo.update!()
+
+      :updated
+    else
+      :already_finalized
+    end
+  end
+
   defp complete_create(%Operation{args: args, result: result} = operation) do
     placement = Nodes.placement_for(operation.instance_id)
 
@@ -75,6 +132,8 @@ defmodule Bastion.ManagedInstances.FinalizeWorker do
              result["release_version"] == args["release_version"],
          :ok <- verify_hosts(args, operation.instance_id) do
       Repo.transaction(fn ->
+        if not verifying?(lock_operation(operation.id)), do: Repo.rollback(:already_finalized)
+
         Enum.each(~w(site_binding_id api_binding_id media_binding_id), fn key ->
           binding = Repo.get!(Binding, args[key])
 
@@ -93,9 +152,12 @@ defmodule Bastion.ManagedInstances.FinalizeWorker do
         Repo.get!(Instance, operation.instance_id)
         |> Ecto.Changeset.change(desired_state: "running")
         |> Repo.update!()
+
+        finalize_operation(operation)
       end)
       |> case do
         {:ok, _} -> :ok
+        {:error, :already_finalized} -> :ok
         {:error, reason} -> {:error, reason}
       end
     else
@@ -144,6 +206,8 @@ defmodule Bastion.ManagedInstances.FinalizeWorker do
          :ok <- verify_stable_hosts(id, addresses),
          :ok <- redirect_ok?(old.domain.hostname, new.domain.hostname) do
       Repo.transaction(fn ->
+        if not verifying?(lock_operation(operation.id)), do: Repo.rollback(:already_finalized)
+
         old = Repo.one!(from b in Binding, where: b.id == ^old.id, lock: "FOR UPDATE")
         new = Repo.one!(from b in Binding, where: b.id == ^new.id, lock: "FOR UPDATE")
         if !old.primary or new.primary, do: Repo.rollback(:primary_changed)
@@ -156,9 +220,12 @@ defmodule Bastion.ManagedInstances.FinalizeWorker do
         instance
         |> Ecto.Changeset.change(hosts: Map.put(instance.hosts || %{}, "site", args["hostname"]))
         |> Repo.update!()
+
+        finalize_operation(operation)
       end)
       |> case do
         {:ok, _} -> :ok
+        {:error, :already_finalized} -> :ok
         {:error, reason} -> {:error, reason}
       end
     else
@@ -175,7 +242,11 @@ defmodule Bastion.ManagedInstances.FinalizeWorker do
          {:ok, addresses} <- Domains.expected_addresses(id),
          {:ok, _} <- Domains.HttpsProbe.check(old.domain.hostname, old.id, addresses, "site"),
          :ok <- verify_stable_hosts(id, addresses) do
-      :ok
+      Repo.transaction(fn -> finalize_operation(operation) end)
+      |> case do
+        {:ok, _} -> :ok
+        {:error, reason} -> {:error, reason}
+      end
     else
       _ -> {:error, :rollback_unverified}
     end

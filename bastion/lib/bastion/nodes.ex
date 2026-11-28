@@ -994,7 +994,7 @@ defmodule Bastion.Nodes do
 
   defp transition(operation, "command_progress", %{"progress" => progress})
        when is_map(progress) do
-    if operation.status in @unresolved do
+    if operation.status in @unresolved and operation.progress["stage"] != "verifying" do
       status = if progress["waiting_external"] == true, do: "waiting_external", else: "running"
 
       operation
@@ -1011,19 +1011,40 @@ defmodule Bastion.Nodes do
 
   defp transition(operation, "command_result", %{"status" => status} = payload)
        when status in ~w(ok error unknown) do
+    if operation.status == "waiting_external" and operation.progress["stage"] == "verifying" do
+      operation
+    else
+      transition_result(operation, status, payload)
+    end
+  end
+
+  defp transition(_operation, _, _), do: Repo.rollback(:invalid_transition)
+
+  defp transition_result(operation, status, payload) do
     if operation.status in @unresolved do
       finished_at = if status == "unknown", do: nil, else: DateTime.utc_now()
       result = if is_map(payload["result"]), do: payload["result"], else: %{}
 
+      verifying =
+        status == "ok" and
+          operation.action in ~w(instance_create domain_activate domain_rollback)
+
       operation
-      |> Ecto.Changeset.change(status: status, result: result, finished_at: finished_at)
+      |> Ecto.Changeset.change(
+        status: if(verifying, do: "waiting_external", else: status),
+        result: result,
+        progress:
+          if(verifying,
+            do: Map.put(operation.progress, "stage", "verifying"),
+            else: operation.progress
+          ),
+        finished_at: if(verifying, do: nil, else: finished_at)
+      )
       |> Repo.update!()
     else
       operation
     end
   end
-
-  defp transition(_operation, _, _), do: Repo.rollback(:invalid_transition)
 
   def mark_stale_unknown do
     cutoff = DateTime.add(DateTime.utc_now(), -300)

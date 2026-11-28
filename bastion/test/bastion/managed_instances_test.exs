@@ -130,7 +130,7 @@ defmodule Bastion.ManagedInstancesTest do
       |> Plug.Conn.send_resp(200, "ready")
     end)
 
-    assert {:ok, %{status: "ok"}} =
+    assert {:ok, %{status: "waiting_external", progress: %{"stage" => "verifying"}}} =
              Nodes.update_operation(node.id, operation.id, "command_result", %{
                "status" => "ok",
                "result" => %{
@@ -142,8 +142,26 @@ defmodule Bastion.ManagedInstancesTest do
                }
              })
 
+    assert {:error, :busy} = Nodes.queue(id, "start", "owner", %{})
+
+    assert {:ok, %{status: "waiting_external", progress: %{"stage" => "verifying"}}} =
+             Nodes.update_operation(node.id, operation.id, "command_result", %{
+               "status" => "ok",
+               "result" => %{"stage" => "ready"}
+             })
+
     assert %{success: success, failure: 0} = Oban.drain_queue(queue: :default)
     assert success >= 1
+    assert Repo.get!(Operation, operation.id).status == "ok"
+    assert Repo.get!(Operation, operation.id).progress["finalized"] == true
+    assert Enum.all?(ManagedInstances.bindings(id), &(&1.state == "connected"))
+
+    assert :ok =
+             Bastion.ManagedInstances.FinalizeWorker.perform(%Oban.Job{
+               args: %{"operation_id" => operation.id}
+             })
+
+    assert Repo.get!(Operation, operation.id).status == "ok"
     assert Enum.all?(ManagedInstances.bindings(id), &(&1.state == "connected"))
     assert Repo.get!(Operation, operation.id).status == "ok"
   end
@@ -195,10 +213,22 @@ defmodule Bastion.ManagedInstancesTest do
                }
              })
 
-    assert %{success: 1, failure: 0} = Oban.drain_queue(queue: :default)
+    assert Repo.get!(Operation, activation.id).status == "waiting_external"
+    assert {:error, :busy} = Nodes.queue(id, "stop", "owner", %{})
+
+    assert %{success: success, failure: 0} = Oban.drain_queue(queue: :default)
+    assert success >= 1
     assert Repo.get!(Domains.Binding, new_binding.id).primary
     refute Repo.get!(Domains.Binding, args["site_binding_id"]).primary
     assert Repo.get!(Bastion.Instances.Instance, id).hosts["site"] == "new.example.org"
+
+    assert :ok =
+             Bastion.ManagedInstances.FinalizeWorker.perform(%Oban.Job{
+               args: %{"operation_id" => activation.id}
+             })
+
+    assert Repo.get!(Operation, activation.id).status == "ok"
+    assert Repo.get!(Domains.Binding, new_binding.id).primary
   end
 
   test "failed external redirect check keeps old primary and queues rollback with same verification" do
@@ -233,6 +263,41 @@ defmodule Bastion.ManagedInstancesTest do
     assert rollback.action == "domain_rollback"
     assert rollback.args == activation.args
     assert rollback.status == "pending"
+
+    Req.Test.stub(Bastion.Http, fn conn ->
+      binding_id =
+        case conn.host do
+          "cafe.delivest.ru" -> args["site_binding_id"]
+          "api-cafe.delivest.ru" -> args["api_binding_id"]
+          "media-cafe.delivest.ru" -> args["media_binding_id"]
+        end
+
+      conn
+      |> Plug.Conn.put_resp_header("x-delivest-binding-id", binding_id)
+      |> Plug.Conn.send_resp(200, "ok")
+    end)
+
+    assert {:ok, %{status: "waiting_external"}} =
+             Nodes.update_operation(node.id, rollback.id, "command_result", %{
+               "status" => "ok",
+               "result" => %{
+                 "restored" => true,
+                 "previous_binding_id" => args["site_binding_id"]
+               }
+             })
+
+    assert {:error, :busy} = Nodes.queue(id, "stop", "owner", %{})
+    assert %{success: success, failure: 0} = Oban.drain_queue(queue: :default)
+    assert success >= 1
+    assert Repo.get!(Operation, rollback.id).status == "ok"
+    assert Repo.get!(Operation, rollback.id).progress["finalized"] == true
+
+    assert :ok =
+             Bastion.ManagedInstances.FinalizeWorker.perform(%Oban.Job{
+               args: %{"operation_id" => rollback.id}
+             })
+
+    assert Repo.get!(Domains.Binding, args["site_binding_id"]).primary
   end
 
   defp created_instance do

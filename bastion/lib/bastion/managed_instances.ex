@@ -171,7 +171,10 @@ defmodule Bastion.ManagedInstances do
          ) do
       %Operation{status: status} = operation
       when status in ~w(waiting_external pending running unknown) ->
-        enqueue(operation.id)
+        if operation.status == "waiting_external" and
+             operation.progress["stage"] in ~w(waiting_dns dns_error),
+           do: enqueue(operation.id)
+
         {:ok, operation}
 
       %Operation{status: "error"} = operation ->
@@ -201,7 +204,9 @@ defmodule Bastion.ManagedInstances do
   def advance_pending do
     Repo.all(
       from o in Operation,
-        where: o.action == "instance_create" and o.status == "waiting_external",
+        where:
+          o.action == "instance_create" and o.status == "waiting_external" and
+            fragment("?->>'stage' IN ('waiting_dns', 'dns_error')", o.progress),
         select: o.id,
         limit: 100
     )
@@ -214,7 +219,12 @@ defmodule Bastion.ManagedInstances do
 
   defp do_advance(operation_id) do
     case Repo.get(Operation, operation_id) do
-      %Operation{action: "instance_create", status: "waiting_external"} = operation ->
+      %Operation{
+        action: "instance_create",
+        status: "waiting_external",
+        progress: %{"stage" => stage}
+      } = operation
+      when stage in ["waiting_dns", "dns_error"] ->
         ids =
           Enum.uniq(
             Enum.map(~w(site_binding_id api_binding_id media_binding_id), &operation.args[&1])

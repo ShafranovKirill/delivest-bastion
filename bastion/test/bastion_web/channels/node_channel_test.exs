@@ -89,9 +89,14 @@ defmodule BastionWeb.NodeChannelTest do
       "admin_password" => "a-unique-secret-123456"
     }
 
-    ref = push(socket, "bootstrap_credentials", payload)
-    assert_reply ref, :ok
-    assert_push "bootstrap_credentials_ack", %{instance_id: ^id, placement_revision: 1}
+    log =
+      ExUnit.CaptureLog.capture_log(fn ->
+        ref = push(socket, "bootstrap_credentials", payload)
+        assert_reply ref, :ok
+        assert_push "bootstrap_credentials_ack", %{instance_id: ^id, placement_revision: 1}
+      end)
+
+    refute log =~ payload["admin_password"]
 
     instance = Repo.get!(Bastion.Instances.Instance, id)
     assert instance.admin_login == "admin123"
