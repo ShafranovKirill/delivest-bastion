@@ -16,7 +16,9 @@ defmodule BastionWeb.InstanceLive.Show do
     Releases,
     SiteAlerts,
     Snapshots,
-    Nodes
+    Nodes,
+    ManagedInstances,
+    Domains
   }
 
   alias BastionWeb.Presence
@@ -246,6 +248,68 @@ defmodule BastionWeb.InstanceLive.Show do
 
       {:error, reason} ->
         {:noreply, put_flash(socket, :error, "Команда не принята: #{inspect(reason)}")}
+    end
+  end
+
+  def handle_event("managed_retry_create", _, socket) do
+    case ManagedInstances.retry_create(socket.assigns.instance.id) do
+      {:ok, _} ->
+        {:noreply,
+         socket |> reload() |> put_flash(:info, "Повтор создания запущен с прежним ID и релизом")}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Повтор невозможен: #{inspect(reason)}")}
+    end
+  end
+
+  def handle_event("managed_cleanup", _, socket) do
+    case ManagedInstances.request_cleanup(
+           socket.assigns.instance.id,
+           socket.assigns.current_admin
+         ) do
+      {:ok, _} ->
+        {:noreply,
+         socket
+         |> reload()
+         |> put_flash(:info, "Очистка неудачной установки запущена; данные сохранены")}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Очистка невозможна: #{inspect(reason)}")}
+    end
+  end
+
+  def handle_event("managed_prepare_domain", %{"binding-id" => id}, socket) do
+    case Domains.request_prepare(id, nil, socket.assigns.current_admin) do
+      {:ok, _} ->
+        {:noreply, socket |> reload() |> put_flash(:info, "Подготовка нового адреса запущена")}
+
+      {:error, :waiting_dns} ->
+        {:noreply, socket |> reload() |> put_flash(:info, "Ожидаем DNS")}
+
+      {:error, reason} ->
+        {:noreply, socket |> reload() |> put_flash(:error, "Адрес не готов: #{inspect(reason)}")}
+    end
+  end
+
+  def handle_event("managed_confirm_browser", %{"binding-id" => id}, socket) do
+    case ManagedInstances.confirm_browser(id, socket.assigns.current_admin) do
+      {:ok, _} ->
+        {:noreply, socket |> reload() |> put_flash(:info, "Проверка браузером записана")}
+
+      {:error, reason} ->
+        {:noreply,
+         socket |> reload() |> put_flash(:error, "Проверка не принята: #{inspect(reason)}")}
+    end
+  end
+
+  def handle_event("managed_activate_domain", %{"binding-id" => id}, socket) do
+    case ManagedInstances.activate(id, socket.assigns.current_admin) do
+      {:ok, _} ->
+        {:noreply, socket |> reload() |> put_flash(:info, "Переключение запущено")}
+
+      {:error, reason} ->
+        {:noreply,
+         socket |> reload() |> put_flash(:error, "Переключение невозможно: #{inspect(reason)}")}
     end
   end
 
@@ -517,7 +581,9 @@ defmodule BastionWeb.InstanceLive.Show do
       last_update_command: Instances.last_update_command(instance.id),
       maintenance_windows: Maintenance.windows(instance),
       node_placement: Nodes.placement_for(instance.id),
-      node_operations: Nodes.operations_for(instance.id)
+      node_operations: Nodes.operations_for(instance.id),
+      domain_bindings:
+        if(instance.transport == "node", do: ManagedInstances.bindings(instance.id), else: [])
     )
   end
 
@@ -719,6 +785,64 @@ defmodule BastionWeb.InstanceLive.Show do
             phx-click="managed_command"
             phx-value-action={action}
           >{action}</button>
+        </div>
+        <div id="managed-creation" class="rounded-lg bg-base-200 p-3 text-sm space-y-2">
+          <p>
+            Релиз: {@instance.desired_release || "не выбран"}. Создание: {case Enum.find(
+                                                                                 @node_operations,
+                                                                                 &(&1.action ==
+                                                                                     "instance_create")
+                                                                               ) do
+              nil -> "не начато"
+              op -> op.progress["stage"] || op.status
+            end}.
+          </p>
+          <div class="flex gap-2">
+            <button id="managed-retry-create" class="btn btn-sm" phx-click="managed_retry_create">Повторить создание</button>
+            <button
+              id="managed-cleanup"
+              class="btn btn-sm btn-outline"
+              phx-click="managed_cleanup"
+              data-confirm="Очистить только неудачную установку? Данные остаются на ноде."
+            >Очистить неудачную</button>
+          </div>
+        </div>
+        <div id="managed-domains" class="space-y-2">
+          <h3 class="font-semibold">Адреса</h3>
+          <p class="text-sm text-base-content/60">
+            Добавьте новый домен в разделе «Домены», затем подготовьте его при работающем сайте. После проверки HTTPS откройте адрес в браузере и подтвердите проверку.
+          </p>
+          <.link navigate={~p"/domains"} class="link text-sm">Реестр доменов</.link>
+          <div
+            :for={binding <- @domain_bindings}
+            id={"binding-#{binding.id}"}
+            class="flex flex-wrap items-center gap-2 text-sm rounded-lg border p-3"
+          >
+            <span>{binding.purpose}: {binding.domain.hostname}</span>
+            <span>{binding.state}{if binding.primary, do: " · основной", else: ""}</span>
+            <button
+              :if={binding.state in ~w(reserved waiting_dns error)}
+              class="btn btn-xs"
+              phx-click="managed_prepare_domain"
+              phx-value-binding-id={binding.id}
+            >Подготовить</button>
+            <button
+              :if={binding.purpose == "site" and binding.state == "connected" and !binding.primary}
+              class="btn btn-xs"
+              phx-click="managed_confirm_browser"
+              phx-value-binding-id={binding.id}
+              data-confirm="Вы открыли новый адрес в браузере и проверили витрину, вход и корзину?"
+            >Подтвердить браузер</button>
+            <button
+              :if={
+                binding.purpose == "site" and binding.state == "connected" and !binding.primary and
+                  binding.observed_records["browser_verification"]
+              }
+              class="btn btn-xs btn-primary"
+              phx-click="managed_activate_domain"
+              phx-value-binding-id={binding.id}
+            >Сделать основным</button>
+          </div>
         </div>
         <.form
           for={%{}}
@@ -1646,7 +1770,7 @@ defmodule BastionWeb.InstanceLive.Show do
                 >Изменить</button>
               </div>
               <div :if={!@editing_client?} class="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-                <div id="client-payment" class="space-y-2">
+                <div :if={@instance.transport != "node"} id="client-payment" class="space-y-2">
                   <div class="text-xs text-base-content/50">Подписка</div>
                   <.payment_date date={@instance.payment_due_on} />
                 </div>
@@ -1680,7 +1804,9 @@ defmodule BastionWeb.InstanceLive.Show do
                     >{if @revealed_password, do: "Скрыть", else: "Показать"}</button>
                   </div>
                   <p :if={!@instance.admin_password_encrypted} class="text-sm text-base-content/40">
-                    Пароль не сохранён
+                    {if @instance.transport == "node",
+                      do: "Ожидаем безопасную передачу доступа от ноды",
+                      else: "Пароль не сохранён"}
                   </p>
                 </div>
               </div>
@@ -1697,6 +1823,7 @@ defmodule BastionWeb.InstanceLive.Show do
                   label="Телефон клиента"
                 />
                 <.input
+                  :if={@instance.transport != "node"}
                   field={@client_form[:payment_due_on]}
                   type="date"
                   label="Дата оплаты / оплачено до"
@@ -1710,12 +1837,14 @@ defmodule BastionWeb.InstanceLive.Show do
                   />
                 </div>
                 <.input
+                  :if={@instance.transport != "node"}
                   field={@client_form[:admin_login]}
                   type="text"
                   label="Логин от админки"
                   autocomplete="off"
                 />
                 <.input
+                  :if={@instance.transport != "node"}
                   field={@client_form[:admin_password]}
                   type="password"
                   label="Новый пароль от админки"
@@ -1723,7 +1852,10 @@ defmodule BastionWeb.InstanceLive.Show do
                   autocomplete="new-password"
                   placeholder="Оставьте пустым, чтобы сохранить текущий"
                 />
-                <p class="sm:col-span-2 text-xs text-base-content/50">
+                <p
+                  :if={@instance.transport != "node"}
+                  class="sm:col-span-2 text-xs text-base-content/50"
+                >
                   Одно уведомление в Telegram в день оплаты, с 09:00 по Москве. {if !Bastion.Telegram.configured?(),
                     do: "Telegram пока не настроен."}
                 </p>

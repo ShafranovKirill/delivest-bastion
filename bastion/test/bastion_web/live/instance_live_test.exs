@@ -87,6 +87,8 @@ defmodule BastionWeb.InstanceLiveTest do
     {:ok, lv, html} = live(log_in(conn), ~p"/instances")
 
     assert html =~ "Pizza North"
+    assert has_element?(lv, "#managed-create-form")
+    assert has_element?(lv, "#managed-create-submit[disabled]")
     refute has_element?(lv, "#update-all")
     assert has_element?(lv, "h1", "Франшизы")
     assert has_element?(lv, "#instances thead th", "Админка")
@@ -118,6 +120,139 @@ defmodule BastionWeb.InstanceLiveTest do
     {:ok, _} = Instances.record_heartbeat(instance.id, healthy_status())
     refute has_element?(lv, "#problem-#{instance.id}")
     refute has_element?(lv, "#instances thead th", "Состояние")
+  end
+
+  test "owner creates a managed franchise and can retry the same operation", %{conn: conn} do
+    {:ok, node, token} = Bastion.Nodes.create_node("pilot")
+    {:ok, _, _} = Bastion.Nodes.register(token, 1)
+    {:ok, _} = Bastion.Nodes.update_public_addresses(node, %{"public_ipv4" => "8.8.8.8"})
+
+    :ok =
+      Bastion.Nodes.record_heartbeat(node.id, %{
+        "sample_id" => Ecto.UUID.generate(),
+        "sampled_at" => DateTime.utc_now() |> DateTime.to_iso8601(),
+        "version" => "0.1.0",
+        "metrics" => %{},
+        "instances" => [],
+        "infrastructure" => %{"ready" => true}
+      })
+
+    Req.Test.stub(Bastion.Http, fn req ->
+      Req.Test.json(req, %{
+        "tag_name" => "v1.25.0",
+        "draft" => false,
+        "prerelease" => false,
+        "published_at" => "2026-11-28T00:00:00Z",
+        "assets" => [
+          %{
+            "name" => "delivest-deploy-1.25.0.tar.gz",
+            "digest" => "sha256:" <> String.duplicate("a", 64),
+            "browser_download_url" =>
+              "https://github.com/ShafranovKirill/delivest/releases/download/v1.25.0/delivest-deploy-1.25.0.tar.gz"
+          }
+        ]
+      })
+    end)
+
+    {:ok, view, _} = live(log_in(conn), ~p"/instances")
+    assert has_element?(view, "#managed-create-form")
+    refute has_element?(view, "#managed-create-submit[disabled]")
+
+    view
+    |> form("#managed-create-form",
+      franchise: %{
+        "name" => "Cafe",
+        "short_name" => "cafe",
+        "node_id" => node.id,
+        "site_hostname" => "",
+        "dns_mode" => "regru",
+        "zone" => "delivest.ru"
+      }
+    )
+    |> render_submit()
+
+    {"/instances/" <> id, _flash} = assert_redirect(view)
+    {:ok, show, _} = live(log_in(conn), ~p"/instances/#{id}")
+    assert has_element?(show, "#managed-creation")
+    assert has_element?(show, "#managed-retry-create")
+    show |> element("#managed-retry-create") |> render_click()
+    assert length(Bastion.Nodes.operations_for(id)) == 1
+  end
+
+  test "owner confirms a prepared browser route and starts primary switch", %{conn: conn} do
+    Application.put_env(:bastion, :domain_dns_resolver, Bastion.TestDomainDNS)
+    Application.put_env(:bastion, :test_domain_addresses, {:ok, ["8.8.8.8"]})
+
+    on_exit(fn ->
+      Application.delete_env(:bastion, :domain_dns_resolver)
+      Application.delete_env(:bastion, :test_domain_addresses)
+    end)
+
+    {:ok, node, token} = Bastion.Nodes.create_node("pilot")
+    {:ok, _, _} = Bastion.Nodes.register(token, 1)
+    {:ok, _} = Bastion.Nodes.update_public_addresses(node, %{"public_ipv4" => "8.8.8.8"})
+    id = Ecto.UUID.generate()
+
+    {:ok, placement} =
+      Bastion.Nodes.prepare_instance(
+        node.id,
+        id,
+        "Cafe",
+        %{"site" => "old.example.org"},
+        "delivest-cafe",
+        20_000
+      )
+
+    {:ok, old_domain} =
+      Bastion.Domains.create_domain(%{"hostname" => "old.example.org", "dns_mode" => "external"})
+
+    {:ok, old} = Bastion.Domains.reserve(old_domain.id, id, "site", true)
+
+    {:ok, new_domain} =
+      Bastion.Domains.create_domain(%{"hostname" => "new.example.org", "dns_mode" => "external"})
+
+    {:ok, new} = Bastion.Domains.reserve(new_domain.id, id, "site", false)
+
+    prepare =
+      %Bastion.Nodes.Operation{
+        node_id: node.id,
+        instance_id: id,
+        placement_id: placement.id,
+        placement_revision: placement.revision
+      }
+      |> Bastion.Nodes.Operation.changeset(%{
+        action: "domain_prepare",
+        status: "ok",
+        args: %{"binding_id" => new.id},
+        requested_by: "admin"
+      })
+      |> Bastion.Repo.insert!()
+
+    old |> Ecto.Changeset.change(state: "connected") |> Bastion.Repo.update!()
+
+    new
+    |> Ecto.Changeset.change(
+      state: "connected",
+      observed_records: %{"prepare_operation_id" => prepare.id}
+    )
+    |> Bastion.Repo.update!()
+
+    Req.Test.stub(Bastion.Http, fn request ->
+      request
+      |> Plug.Conn.put_resp_header("x-delivest-binding-id", new.id)
+      |> Plug.Conn.send_resp(200, "site")
+    end)
+
+    {:ok, view, _} = live(log_in(conn), ~p"/instances/#{id}")
+    assert has_element?(view, "#binding-#{new.id} [phx-click=managed_confirm_browser]")
+    refute has_element?(view, "#binding-#{new.id} [phx-click=managed_activate_domain]")
+    view |> element("#binding-#{new.id} [phx-click=managed_confirm_browser]") |> render_click()
+    assert has_element?(view, "#binding-#{new.id} [phx-click=managed_activate_domain]")
+    view |> element("#binding-#{new.id} [phx-click=managed_activate_domain]") |> render_click()
+    assert [operation | _] = Bastion.Nodes.operations_for(id)
+    assert operation.action == "domain_activate"
+    assert operation.args["previous_binding_id"] == old.id
+    assert operation.args["binding_id"] == new.id
   end
 
   test "opens validated server and client URLs and mutes unsafe hosts", %{conn: conn} do

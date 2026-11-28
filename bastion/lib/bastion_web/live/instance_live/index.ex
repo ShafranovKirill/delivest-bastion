@@ -3,7 +3,7 @@ defmodule BastionWeb.InstanceLive.Index do
 
   import BastionWeb.InstanceLive.Components
 
-  alias Bastion.{Health, Images, Instances, Nodes, Rollout}
+  alias Bastion.{Health, Images, Instances, ManagedInstances, Nodes, Rollout}
   alias BastionWeb.Presence
 
   @tick :timer.seconds(15)
@@ -24,7 +24,8 @@ defmodule BastionWeb.InstanceLive.Index do
        search: "",
        rollout: Rollout.state(),
        checking_images?: false,
-       image_result: nil
+       image_result: nil,
+       create_form: new_create_form()
      )
      |> load()}
   end
@@ -32,6 +33,25 @@ defmodule BastionWeb.InstanceLive.Index do
   @impl true
   def handle_event("search", %{"search" => query}, socket),
     do: {:noreply, socket |> assign(search: query) |> load()}
+
+  def handle_event("create_managed", %{"franchise" => attrs}, socket) do
+    case ManagedInstances.create(attrs, socket.assigns.current_admin) do
+      {:ok, operation, proof} ->
+        message =
+          if proof,
+            do: "Ожидаем DNS. TXT _delivest-verification.#{attrs["site_hostname"]}: #{proof}",
+            else: "Создание запущено. Проверьте ход операции в карточке."
+
+        {:noreply,
+         socket
+         |> put_flash(:info, message)
+         |> push_navigate(to: ~p"/instances/#{operation.instance_id}")}
+
+      {:error, reason} ->
+        {:noreply,
+         put_flash(socket, :error, "Не удалось зарезервировать франшизу: #{inspect(reason)}")}
+    end
+  end
 
   @impl true
   def handle_event("rollout", _params, socket),
@@ -101,8 +121,28 @@ defmodule BastionWeb.InstanceLive.Index do
     instances = Enum.sort_by(instances, &health_rank(health[&1.id].level))
 
     socket
-    |> assign(instance_count: length(instances), health: health, placements: placements)
+    |> assign(
+      instance_count: length(instances),
+      health: health,
+      placements: placements,
+      ready_nodes: Enum.filter(Nodes.list_nodes(), &Nodes.ready?/1)
+    )
     |> stream(:instances, instances, reset: true, dom_id: &"instance-#{&1.id}")
+  end
+
+  defp new_create_form do
+    to_form(
+      %{
+        "instance_id" => Ecto.UUID.generate(),
+        "name" => "",
+        "short_name" => "",
+        "site_hostname" => "",
+        "dns_mode" => "regru",
+        "zone" => "delivest.ru",
+        "node_id" => ""
+      },
+      as: :franchise
+    )
   end
 
   defp health_rank(:down), do: 0
@@ -117,6 +157,54 @@ defmodule BastionWeb.InstanceLive.Index do
   def render(assigns) do
     ~H"""
     <Layouts.app flash={@flash} current_admin={@current_admin}>
+      <section id="managed-create" class="rounded-xl border border-base-300 bg-base-100 p-5 space-y-3">
+        <h2 class="text-lg font-semibold">Создать франшизу</h2>
+        <p class="text-sm text-base-content/60">
+          Пустой адрес витрины создаст короткий поддомен delivest.ru. Для внешнего DNS потребуется TXT подтверждение.
+        </p>
+        <.form
+          for={@create_form}
+          id="managed-create-form"
+          phx-submit="create_managed"
+          class="grid gap-3 md:grid-cols-2"
+        >
+          <.input field={@create_form[:instance_id]} type="hidden" />
+          <.input field={@create_form[:name]} label="Название" required />
+          <.input field={@create_form[:short_name]} label="Короткое имя" required />
+          <.input
+            field={@create_form[:site_hostname]}
+            label="Адрес витрины (необязательно)"
+          />
+          <.input
+            field={@create_form[:dns_mode]}
+            type="select"
+            label="DNS витрины"
+            options={[{"REG.RU", "regru"}, {"Внешний DNS", "external"}]}
+          />
+          <.input field={@create_form[:zone]} label="Управляемая DNS-зона" />
+          <.input
+            field={@create_form[:node_id]}
+            type="select"
+            label="Готовый сервер"
+            options={Enum.map(@ready_nodes, &{&1.name, &1.id})}
+            prompt="Выберите сервер"
+            required
+          />
+          <button
+            id="managed-create-submit"
+            class="btn btn-primary md:col-span-2"
+            disabled={@ready_nodes == []}
+          >Создать</button>
+        </.form>
+        <p :if={@ready_nodes == []} class="text-sm text-warning">
+          Нет готовой ноды с новым heartbeat и проверенной инфраструктурой.
+        </p>
+        <p :for={node <- @ready_nodes} class="text-xs text-base-content/60">
+          {node.name}: метрики {if node.sampled_at,
+            do: Calendar.strftime(node.sampled_at, "%d.%m %H:%M"),
+            else: "отсутствуют"}; свободная память и диск требуют проверки перед размещением.
+        </p>
+      </section>
       <div class="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 class="text-2xl font-bold">Франшизы</h1>
