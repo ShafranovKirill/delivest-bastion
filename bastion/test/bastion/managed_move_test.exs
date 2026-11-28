@@ -214,6 +214,9 @@ defmodule Bastion.ManagedMoveTest do
                "admin"
              )
 
+    assert {:error, :confirmation_required} =
+             ManagedMove.cancel(move.id, "admin", "target_removed_and_fenced", "            ")
+
     assert {:ok, _} =
              ManagedMove.cancel(
                move.id,

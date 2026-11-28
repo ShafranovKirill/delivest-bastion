@@ -141,27 +141,33 @@ defmodule Bastion.ManagedMove do
   def confirm(_, _), do: {:error, :invalid_request}
 
   def cancel(operation_id, actor, "target_removed_and_fenced", evidence)
-      when is_binary(actor) and is_binary(evidence) and byte_size(evidence) >= 10 do
-    Repo.transaction(fn ->
-      operation = lock_pending!(operation_id)
-      target = lock_target!(operation)
-      if not is_nil(target.observed_at), do: Repo.rollback(:target_already_observed)
+      when is_binary(actor) and is_binary(evidence) do
+    evidence = String.trim(evidence)
 
-      target |> Ecto.Changeset.change(state: "retired") |> Repo.update!()
+    if byte_size(evidence) < 10 do
+      {:error, :confirmation_required}
+    else
+      Repo.transaction(fn ->
+        operation = lock_pending!(operation_id)
+        target = lock_target!(operation)
+        if not is_nil(target.observed_at), do: Repo.rollback(:target_already_observed)
 
-      operation
-      |> Ecto.Changeset.change(
-        status: "error",
-        result: %{
-          "reason" => "reservation cancelled before target start",
-          "actor" => actor,
-          "target_removal_evidence" => String.trim(evidence)
-        },
-        finished_at: DateTime.utc_now()
-      )
-      |> Repo.update!()
-    end)
-    |> notify()
+        target |> Ecto.Changeset.change(state: "retired") |> Repo.update!()
+
+        operation
+        |> Ecto.Changeset.change(
+          status: "error",
+          result: %{
+            "reason" => "reservation cancelled before target start",
+            "actor" => actor,
+            "target_removal_evidence" => evidence
+          },
+          finished_at: DateTime.utc_now()
+        )
+        |> Repo.update!()
+      end)
+      |> notify()
+    end
   end
 
   def cancel(_, _, _, _), do: {:error, :confirmation_required}
