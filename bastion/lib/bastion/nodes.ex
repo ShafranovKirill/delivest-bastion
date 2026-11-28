@@ -799,7 +799,8 @@ defmodule Bastion.Nodes do
               lock: "FOR UPDATE"
           ) || Repo.rollback(:operation_not_found)
 
-        if operation.action == "provision_node", do: Repo.rollback(:local_operation)
+        if operation.action in ~w(provision_node instance_move node_maintenance),
+          do: Repo.rollback(:local_operation)
 
         if operation.instance_id && !current_placement?(operation) &&
              !(operation.action == "instance_delete" && operation.status == "ok"),
@@ -1125,11 +1126,18 @@ defmodule Bastion.Nodes do
 
   defp valid_restart_guard?(guard) when is_list(guard) and length(guard) <= 5 do
     Enum.all?(guard, fn item ->
-      is_map(item) and item["service"] in ~w(gateway server client postgres s3 node) and
-        item["state"] in ~w(tripped unknown) and
-        (is_nil(item["restarts"]) or
-           (is_integer(item["restarts"]) and item["restarts"] in 0..1000))
-    end)
+      case item do
+        %{"service" => "node", "state" => "unknown"} ->
+          map_size(item) == 2
+
+        %{"service" => service, "state" => "tripped", "restarts" => count} ->
+          map_size(item) == 3 and service in ~w(gateway server client postgres s3) and
+            is_integer(count) and count in 1..1000
+
+        _ ->
+          false
+      end
+    end) and length(Enum.uniq_by(guard, & &1["service"])) == length(guard)
   end
 
   defp valid_restart_guard?(_), do: false

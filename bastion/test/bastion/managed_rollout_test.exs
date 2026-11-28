@@ -159,6 +159,18 @@ defmodule Bastion.ManagedRolloutTest do
 
     invalid = put_in(updated, ["instances", Access.at(0), "release_version"], "bad")
     assert {:error, :invalid_heartbeat} = Nodes.record_heartbeat(node.id, invalid)
+
+    guard = [%{"service" => "server", "state" => "tripped", "restarts" => 3}]
+    guarded = put_in(updated, ["instances", Access.at(0), "restart_guard"], guard)
+    assert :ok = Nodes.record_heartbeat(node.id, %{guarded | "sample_id" => "guard"})
+    assert Nodes.placement_for(instance_id).restart_guard == guard
+
+    malformed =
+      put_in(guarded, ["instances", Access.at(0), "restart_guard"], [
+        %{"service" => "server", "state" => "unknown"}
+      ])
+
+    assert {:error, :invalid_heartbeat} = Nodes.record_heartbeat(node.id, malformed)
   end
 
   test "manual pause lets an in-flight command finish without dispatching the next" do

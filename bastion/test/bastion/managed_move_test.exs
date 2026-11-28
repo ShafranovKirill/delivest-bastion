@@ -74,6 +74,13 @@ defmodule Bastion.ManagedMoveTest do
     })
 
     assert {:ok, move} = ManagedMove.reserve(id, target.id, 18081, "planned", "", "admin")
+
+    assert {:error, :local_operation} =
+             Nodes.update_operation(source.id, move.id, "command_result", %{
+               "status" => "ok",
+               "result" => %{}
+             })
+
     info = ManagedMove.instructions(move)
     assert info.target.revision == 2
     assert info.target.project_name == "delivest-" <> String.replace(id, "-", "")
@@ -142,6 +149,17 @@ defmodule Bastion.ManagedMoveTest do
     assert Repo.get!(Instance, id).hosts == hosts
     assert Repo.get!(Instance, id).desired_state == "running"
     assert Repo.get!(Instance, id).desired_release == "1.0.0"
+
+    for binding <- Repo.all(Binding), binding.instance_id == id do
+      assert binding.expected_records == %{"addresses" => ["192.0.2.20"]}
+
+      assert binding.observed_records == %{
+               "addresses" => ["192.0.2.20"],
+               "expected" => ["192.0.2.20"]
+             }
+
+      assert binding.owned_records == %{}
+    end
   end
 
   test "reservation can be cancelled before target has been observed" do

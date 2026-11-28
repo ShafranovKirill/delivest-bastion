@@ -126,7 +126,11 @@ defmodule Bastion.ManagedMove do
          %Instance{} = instance <- Repo.get(Instance, operation.instance_id),
          :ok <- target_ready(target),
          :ok <- probe().check(instance, target.node) do
-      Repo.transaction(fn -> confirm_locked!(operation.id, target.id, actor) end)
+      checked_addresses = addresses(target.node)
+
+      Repo.transaction(fn ->
+        confirm_locked!(operation.id, target.id, checked_addresses, actor)
+      end)
       |> notify()
     else
       {:error, _} = error -> error
@@ -229,7 +233,7 @@ defmodule Bastion.ManagedMove do
     end)
   end
 
-  defp confirm_locked!(id, target_id, actor) do
+  defp confirm_locked!(id, target_id, checked_addresses, actor) do
     operation = lock_pending!(id)
 
     source =
@@ -250,6 +254,9 @@ defmodule Bastion.ManagedMove do
 
     if target.instance_id != source.instance_id or target.revision <= source.revision,
       do: Repo.rollback(:placement_changed)
+
+    if addresses(target.node) != checked_addresses,
+      do: Repo.rollback(:target_address_changed)
 
     if is_nil(instance) or instance.transport != "node", do: Repo.rollback(:not_managed)
     if target_ready(target) != :ok, do: Repo.rollback(:target_not_ready)
@@ -273,6 +280,21 @@ defmodule Bastion.ManagedMove do
 
     source |> Ecto.Changeset.change(state: "retired") |> Repo.update!()
     target |> Ecto.Changeset.change(state: "active") |> Repo.update!()
+
+    Repo.all(
+      from b in Binding,
+        where: b.instance_id == ^instance.id and b.state == "connected",
+        lock: "FOR UPDATE"
+    )
+    |> Enum.each(fn binding ->
+      binding
+      |> Ecto.Changeset.change(
+        expected_records: %{"addresses" => checked_addresses},
+        observed_records: %{"addresses" => checked_addresses, "expected" => checked_addresses},
+        last_checked_at: DateTime.utc_now()
+      )
+      |> Repo.update!()
+    end)
 
     instance
     |> Ecto.Changeset.change(desired_state: "running", desired_release: target.observed_release)
@@ -339,7 +361,9 @@ defmodule Bastion.ManagedMove do
          observed_release: version
        })
        when is_binary(version) and not is_nil(at) do
-    if Nodes.ready?(node) and DateTime.diff(DateTime.utc_now(), at) <= 90,
+    now = DateTime.utc_now()
+
+    if Nodes.ready?(node) and DateTime.diff(now, at) <= 90 and DateTime.diff(at, now) <= 30,
       do: :ok,
       else: {:error, :target_not_ready}
   end
