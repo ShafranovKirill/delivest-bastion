@@ -13,7 +13,7 @@ config :bastion,
 
 config :phoenix,
        :filter_parameters,
-       ~w(password token yandex_token new_yandex_token admin_password)
+       ~w(password token credential x-delivest-node-token yandex_token new_yandex_token admin_password)
 
 # Configure the endpoint
 config :bastion, BastionWeb.Endpoint,
@@ -71,6 +71,7 @@ config :bastion, Oban,
      crontab: [
        {"* * * * *", Bastion.Checks.Worker},
        {"* * * * *", Bastion.Instances.ExpireWorker},
+       {"* * * * *", Bastion.Nodes.DispatchWorker},
        {"*/5 * * * *", Bastion.PaymentReminderWorker},
        {"0 0 * * *", Bastion.Backups.Worker},
        {"30 0 * * *", Bastion.Snapshots.Worker},

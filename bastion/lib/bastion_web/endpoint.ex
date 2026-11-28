@@ -15,6 +15,10 @@ defmodule BastionWeb.Endpoint do
     websocket: [check_origin: false],
     longpoll: false
 
+  socket "/node", BastionWeb.NodeSocket,
+    websocket: [check_origin: false, connect_info: [:x_headers]],
+    longpoll: false
+
   socket "/live", Phoenix.LiveView.Socket,
     websocket: [connect_info: [session: @session_options]],
     longpoll: [connect_info: [session: @session_options]]

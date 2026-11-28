@@ -7,6 +7,11 @@ defmodule Bastion.Snapshots.Snapshot do
   schema "snapshots" do
     belongs_to :instance, Bastion.Instances.Instance
     belongs_to :command, Bastion.Instances.Command
+    belongs_to :node_operation, Bastion.Nodes.Operation
+    field :checksum, :string
+    field :release_compatibility, :map, default: %{}
+    field :integrity_checked_at, :utc_datetime_usec
+    field :restore_checked_at, :utc_datetime_usec
     field :instance_name, :string
     field :status, :string, default: "pending"
     field :key, :string

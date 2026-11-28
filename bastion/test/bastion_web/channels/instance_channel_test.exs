@@ -44,6 +44,20 @@ defmodule BastionWeb.InstanceChannelTest do
     assert MapSet.member?(Presence.online_ids(), id)
   end
 
+  test "an existing Agent connection is fenced after a franchise becomes Node managed" do
+    id = Ecto.UUID.generate()
+    socket = join_agent(id)
+    instance = Instances.get_instance(id)
+    instance |> Ecto.Changeset.change(transport: "node") |> Bastion.Repo.update!()
+
+    assert :error = connect_agent(id)
+    ref = push(socket, "heartbeat", Bastion.Fixtures.healthy_status())
+    assert_reply ref, :error, %{reason: "managed_by_node"}
+    ref = push(socket, "command_result", %{"id" => Ecto.UUID.generate(), "ok" => true})
+    assert_reply ref, :error, %{reason: "managed_by_node"}
+    assert {:error, :managed_by_node} = Instances.send_command(Instances.get_instance(id), "stop")
+  end
+
   test "heartbeats are stored and commands round trip" do
     id = Ecto.UUID.generate()
     socket = join_agent(id)

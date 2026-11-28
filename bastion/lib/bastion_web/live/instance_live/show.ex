@@ -15,7 +15,8 @@ defmodule BastionWeb.InstanceLive.Show do
     Metrics,
     Releases,
     SiteAlerts,
-    Snapshots
+    Snapshots,
+    Nodes
   }
 
   alias BastionWeb.Presence
@@ -36,11 +37,13 @@ defmodule BastionWeb.InstanceLive.Show do
   def mount(%{"id" => id}, _session, socket) do
     case Instances.get_instance(id) do
       nil ->
-        {:ok, socket |> put_flash(:error, "Экземпляр не найден") |> push_navigate(to: ~p"/")}
+        {:ok,
+         socket |> put_flash(:error, "Экземпляр не найден") |> push_navigate(to: ~p"/instances")}
 
       instance ->
         if connected?(socket) do
           Instances.subscribe()
+          Nodes.subscribe()
           Phoenix.PubSub.subscribe(Bastion.PubSub, Presence.topic())
           :timer.send_interval(@tick, :tick)
         end
@@ -233,6 +236,29 @@ defmodule BastionWeb.InstanceLive.Show do
 
   def handle_event("refresh_latest", _params, socket), do: {:noreply, fetch_latest(socket)}
 
+  def handle_event("managed_command", %{"action" => action}, socket) do
+    case Nodes.queue(socket.assigns.instance.id, action, socket.assigns.current_admin) do
+      {:ok, _operation} ->
+        {:noreply,
+         socket
+         |> assign_instance(socket.assigns.instance)
+         |> put_flash(:info, "Команда поставлена в очередь")}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Команда не принята: #{inspect(reason)}")}
+    end
+  end
+
+  def handle_event("rename_managed", %{"instance" => %{"name" => name}}, socket) do
+    case Nodes.rename_instance(socket.assigns.instance.id, name) do
+      {:ok, instance} ->
+        {:noreply, socket |> assign_instance(instance) |> put_flash(:info, "Название сохранено")}
+
+      {:error, _} ->
+        {:noreply, put_flash(socket, :error, "Не удалось сохранить название")}
+    end
+  end
+
   def handle_event("command", %{"action" => "agent_update"}, socket) do
     if "release_manifest_v1" in socket.assigns.instance.capabilities do
       handle_event("install_agent_release", %{}, socket)
@@ -377,7 +403,9 @@ defmodule BastionWeb.InstanceLive.Show do
 
   def handle_event("delete", _params, socket) do
     {:ok, _} = Instances.delete_instance(socket.assigns.instance)
-    {:noreply, socket |> put_flash(:info, "Экземпляр удалён") |> push_navigate(to: ~p"/")}
+
+    {:noreply,
+     socket |> put_flash(:info, "Экземпляр удалён") |> push_navigate(to: ~p"/instances")}
   end
 
   @impl true
@@ -405,7 +433,7 @@ defmodule BastionWeb.InstanceLive.Show do
     do: {:noreply, reload(socket)}
 
   def handle_info({:instance_deleted, %{id: id}}, %{assigns: %{instance: %{id: id}}} = socket),
-    do: {:noreply, push_navigate(socket, to: ~p"/")}
+    do: {:noreply, push_navigate(socket, to: ~p"/instances")}
 
   def handle_info(
         {:command_updated, %{instance_id: id} = command},
@@ -424,6 +452,7 @@ defmodule BastionWeb.InstanceLive.Show do
 
   def handle_info({:backup_updated, _backup}, socket), do: {:noreply, load_backups(socket)}
   def handle_info({:snapshot_updated, _snapshot}, socket), do: {:noreply, load_backups(socket)}
+  def handle_info(:nodes_updated, socket), do: {:noreply, reload(socket)}
 
   def handle_info({:env_loaded, %{id: id}, content}, %{assigns: %{env_request: id}} = socket) do
     {:noreply,
@@ -473,7 +502,7 @@ defmodule BastionWeb.InstanceLive.Show do
 
   defp reload(socket) do
     case Instances.get_instance(socket.assigns.instance.id) do
-      nil -> push_navigate(socket, to: ~p"/")
+      nil -> push_navigate(socket, to: ~p"/instances")
       instance -> assign_instance(socket, instance)
     end
   end
@@ -486,7 +515,9 @@ defmodule BastionWeb.InstanceLive.Show do
       incidents: Downtime.list_incidents(instance.id),
       operations: Instances.last_successful_operations(instance.id),
       last_update_command: Instances.last_update_command(instance.id),
-      maintenance_windows: Maintenance.windows(instance)
+      maintenance_windows: Maintenance.windows(instance),
+      node_placement: Nodes.placement_for(instance.id),
+      node_operations: Nodes.operations_for(instance.id)
     )
   end
 
@@ -649,7 +680,7 @@ defmodule BastionWeb.InstanceLive.Show do
     ~H"""
     <Layouts.app flash={@flash} current_admin={@current_admin}>
       <.link
-        navigate={~p"/"}
+        navigate={~p"/instances"}
         class="inline-flex items-center gap-1 text-sm text-base-content/60 hover:text-base-content"
       >
         <.icon name="hero-arrow-left" class="size-4" /> Все франшизы
@@ -664,8 +695,55 @@ defmodule BastionWeb.InstanceLive.Show do
         </div>
       </div>
 
+      <section
+        :if={@instance.transport == "node"}
+        class="rounded-xl border border-base-300 bg-base-100 p-5 space-y-4"
+      >
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-lg font-semibold">Управление через Delivest Node</h2>
+          <.link
+            :if={@node_placement}
+            navigate={~p"/nodes/#{@node_placement.node_id}"}
+            class="link text-sm"
+          >{@node_placement && @node_placement.node.name}</.link>
+        </div>
+        <p :if={@node_placement} class="text-sm text-base-content/60">
+          Compose-проект {@node_placement.project_name} · 127.0.0.1:{@node_placement.gateway_port} · Фактически {@node_placement.observed_state ||
+            "нет данных"} · Цель {@instance.desired_state || "не задана"}
+        </p>
+        <div class="flex flex-wrap gap-2">
+          <button
+            :for={action <- ~w(status stop start)}
+            type="button"
+            class="btn btn-sm"
+            phx-click="managed_command"
+            phx-value-action={action}
+          >{action}</button>
+        </div>
+        <.form
+          for={%{}}
+          as={:instance}
+          phx-submit="rename_managed"
+          class="flex flex-wrap items-end gap-2"
+        >
+          <.input
+            name="instance[name]"
+            value={@instance.name}
+            label="Название франшизы"
+            required
+          />
+          <button class="btn btn-sm">Переименовать</button>
+        </.form>
+        <h3 class="font-semibold">История операций</h3>
+        <p :for={operation <- @node_operations} class="text-sm">
+          {datetime(operation.inserted_at)} · {operation.action} · {operation.status} · {operation.result[
+            "reason"
+          ] || operation.result["message"]}
+        </p>
+      </section>
+
       <div
-        :if={Maintenance.active?(@instance)}
+        :if={@instance.transport != "node" and Maintenance.active?(@instance)}
         id="maintenance-active"
         class="rounded-xl border border-sky-300 bg-sky-50 p-4 text-sm text-sky-950 flex flex-wrap items-center justify-between gap-3"
       >
@@ -679,7 +757,11 @@ defmodule BastionWeb.InstanceLive.Show do
         >Завершить обслуживание</button>
       </div>
 
-      <div :if={@instance.stopped_at} id="instance-stopped" class="alert alert-info">
+      <div
+        :if={@instance.transport != "node" and @instance.stopped_at}
+        id="instance-stopped"
+        class="alert alert-info"
+      >
         <.icon name="hero-pause-circle" class="size-5" />
         <span>
           Сайт выключен по плану {datetime(@instance.stopped_at)}. Пока его не включат,
@@ -687,7 +769,11 @@ defmodule BastionWeb.InstanceLive.Show do
         </span>
       </div>
 
-      <div id="instance-overview" class="rounded-xl border border-base-300 bg-base-100 p-4 sm:p-5">
+      <div
+        :if={@instance.transport != "node"}
+        id="instance-overview"
+        class="rounded-xl border border-base-300 bg-base-100 p-4 sm:p-5"
+      >
         <div class="flex flex-wrap items-center justify-between gap-4">
           <div class="flex flex-wrap gap-6" id="instance-endpoints">
             <.open_link
@@ -707,7 +793,7 @@ defmodule BastionWeb.InstanceLive.Show do
         </div>
       </div>
 
-      <div id="instance-modules" class="space-y-3">
+      <div :if={@instance.transport != "node"} id="instance-modules" class="space-y-3">
         <.module_panel
           id="errors"
           title="Проблемы"
@@ -797,7 +883,10 @@ defmodule BastionWeb.InstanceLive.Show do
               <div class="overflow-x-auto">
                 <table class="table table-sm">
                   <tbody>
-                    <tr :for={order <- CrmAlerts.problems(@instance)} id={"crm-order-#{order["id"]}"}>
+                    <tr
+                      :for={order <- CrmAlerts.problems(@instance)}
+                      id={"crm-order-#{order["id"]}"}
+                    >
                       <td class="font-semibold whitespace-nowrap">№{order["number"]}</td>
                       <td class="whitespace-nowrap">
                         <span :if={order["status"] == "failed"} class="badge badge-error badge-sm">
@@ -893,7 +982,9 @@ defmodule BastionWeb.InstanceLive.Show do
                     class="btn btn-link btn-xs"
                     phx-click="refresh_latest"
                   >Повторить проверку</button>
-                  <p :if={@latest_error?} class="text-warning">Не удалось проверить релизы GitHub.</p>
+                  <p :if={@latest_error?} class="text-warning">
+                    Не удалось проверить релизы GitHub.
+                  </p>
                 </div>
                 <.form for={@release_form} id="release-form" phx-submit="install_release">
                   <button
@@ -1057,14 +1148,19 @@ defmodule BastionWeb.InstanceLive.Show do
                     <div class="text-xl font-bold tabular-nums">
                       {(@load.cpu && percent(@load.cpu)) || "—"}
                     </div>
-                    <div :if={@load.cpus} class="text-xs text-base-content/60">{@load.cpus} ядер</div>
+                    <div :if={@load.cpus} class="text-xs text-base-content/60">
+                      {@load.cpus} ядер
+                    </div>
                   </div>
                   <div class="rounded-box bg-base-200 p-3">
                     <div class="text-xs text-base-content/60">RAM хоста</div>
                     <div class="text-xl font-bold tabular-nums">
                       {(@load.memory && percent(@load.memory)) || "—"}
                     </div>
-                    <div :if={@load.memory_total_kb} class="text-xs text-base-content/60 tabular-nums">
+                    <div
+                      :if={@load.memory_total_kb}
+                      class="text-xs text-base-content/60 tabular-nums"
+                    >
                       {gigabytes(@load.memory_used_kb)} из {gigabytes(@load.memory_total_kb)}
                     </div>
                   </div>
@@ -1266,7 +1362,8 @@ defmodule BastionWeb.InstanceLive.Show do
                             phx-click="restore"
                             phx-value-backup_id={backup.id}
                             disabled={
-                              !@instance.online || busy?(@commands) || !backups_supported?(@instance)
+                              !@instance.online || busy?(@commands) ||
+                                !backups_supported?(@instance)
                             }
                             data-confirm={"Восстановить базу #{@instance.name} из бэкапа от #{datetime(backup.inserted_at)}? Всё, что появилось после него, пропадёт из рабочей базы."}
                           >
@@ -1336,7 +1433,10 @@ defmodule BastionWeb.InstanceLive.Show do
           open={MapSet.member?(@open_modules, "logs")}
         >
           <div id="tab-logs-panel" class="space-y-4">
-            <details id="technical-details" class="rounded-xl border border-base-300 bg-base-100 p-4">
+            <details
+              id="technical-details"
+              class="rounded-xl border border-base-300 bg-base-100 p-4"
+            >
               <summary class="cursor-pointer font-semibold">Технические подробности</summary>
               <p class="mt-2 mb-4 text-xs text-base-content/60">
                 Версия агента: {@instance.agent_version || "—"} · образ {agent_revision(@instance)}
@@ -1398,7 +1498,8 @@ defmodule BastionWeb.InstanceLive.Show do
                           <td><.check check={(@instance.status || %{})["checks"][kind]} /></td>
                           <td><.check check={@instance.external[kind]} /></td>
                           <td>
-                            <% days = cert_days((@instance.external[kind] || %{})["cert_expires_at"]) %>
+                            <% days =
+                              cert_days((@instance.external[kind] || %{})["cert_expires_at"]) %>
                             <span :if={days} class={days < 14 && "text-warning"}>{days} дн.</span>
                             <span :if={!days} class="text-base-content/40">—</span>
                           </td>
@@ -1406,7 +1507,8 @@ defmodule BastionWeb.InstanceLive.Show do
                       </tbody>
                     </table>
                     <p class="text-xs text-base-content/60">
-                      Диск: {(disk_percent(@instance) && "#{disk_percent(@instance)}% занято") || "—"} ·
+                      Диск: {(disk_percent(@instance) && "#{disk_percent(@instance)}% занято") ||
+                        "—"} ·
                       проверено снаружи {ago(@instance.checked_at)}
                     </p>
                   </div>
@@ -1453,7 +1555,9 @@ defmodule BastionWeb.InstanceLive.Show do
 
             <section class="space-y-2">
               <h2 class="font-bold">Команды и их вывод</h2>
-              <div :if={@commands == []} class="text-sm text-base-content/60">Команд ещё не было</div>
+              <div :if={@commands == []} class="text-sm text-base-content/60">
+                Команд ещё не было
+              </div>
               <details
                 :for={command <- @commands}
                 id={"command-#{command.id}"}

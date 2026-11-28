@@ -10,6 +10,9 @@ defmodule Bastion.Health do
       Maintenance.active?(instance, now) ->
         %{level: :maintenance, problems: []}
 
+      instance.transport == "node" ->
+        managed_health(instance, now)
+
       is_nil(instance.last_seen_at) ->
         %{level: :unknown, problems: []}
 
@@ -28,6 +31,29 @@ defmodule Bastion.Health do
           warnings != [] -> %{level: :warning, problems: warnings}
           true -> %{level: :ok, problems: []}
         end
+    end
+  end
+
+  defp managed_health(instance, now) do
+    external =
+      for {kind, %{"ok" => false} = check} <- instance.external || %{},
+          do: "#{label(kind)} не отвечает снаружи (#{reason(check)})"
+
+    cond do
+      external != [] ->
+        %{level: :down, problems: external}
+
+      instance.desired_state == "stopped" ->
+        %{level: :stopped, problems: []}
+
+      !instance.online ->
+        %{level: :offline, problems: ["нет связи с нодой"]}
+
+      is_nil(instance.checked_at) or DateTime.diff(now, instance.checked_at) > 180 ->
+        %{level: :unknown, problems: ["нет свежей внешней проверки"]}
+
+      true ->
+        %{level: :ok, problems: []}
     end
   end
 

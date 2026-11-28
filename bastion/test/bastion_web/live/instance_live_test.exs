@@ -73,7 +73,7 @@ defmodule BastionWeb.InstanceLiveTest do
 
   test "lists instances with their state and updates live", %{conn: conn} do
     instance = instance_fixture(%{info: %{"name" => "Pizza North"}})
-    {:ok, lv, html} = live(log_in(conn), ~p"/")
+    {:ok, lv, html} = live(log_in(conn), ~p"/instances")
 
     assert html =~ "Pizza North"
     refute has_element?(lv, "#update-all")
@@ -83,13 +83,13 @@ defmodule BastionWeb.InstanceLiveTest do
 
     assert has_element?(
              lv,
-             "#instances tbody[phx-update='stream'] #instance-#{instance.id} > td:nth-child(3)",
+             "#instances tbody[phx-update='stream'] #instance-#{instance.id} > td:nth-child(4)",
              "Админка"
            )
 
     assert has_element?(
              lv,
-             "#instances tbody[phx-update='stream'] #instance-#{instance.id} > td:nth-child(4)",
+             "#instances tbody[phx-update='stream'] #instance-#{instance.id} > td:nth-child(5)",
              "Сайт"
            )
 
@@ -139,7 +139,7 @@ defmodule BastionWeb.InstanceLiveTest do
         }
       })
 
-    {:ok, list, _} = live(log_in(conn), ~p"/")
+    {:ok, list, _} = live(log_in(conn), ~p"/instances")
     assert has_element?(list, "#server-open-#{good.id}[href='http://localhost:4000/staff']")
     assert has_element?(list, "#client-open-#{good.id}[href='http://localhost:3000/shop']")
     assert has_element?(list, "span#server-open-#{unsafe.id}", "Не настроен")
@@ -166,7 +166,7 @@ defmodule BastionWeb.InstanceLiveTest do
 
     {:ok, _} = Instances.record_heartbeat(broken.id, failing)
 
-    {:ok, list, _} = live(log_in(conn), ~p"/")
+    {:ok, list, _} = live(log_in(conn), ~p"/instances")
     assert has_element?(list, "#instances tbody tr:first-child[id='instance-#{broken.id}']")
     assert has_element?(list, "#problem-#{broken.id}", "Ошибки")
     refute has_element?(list, "#instance-#{broken.id}", "secret failure")
@@ -308,7 +308,7 @@ defmodule BastionWeb.InstanceLiveTest do
     lv |> element("#tab-settings") |> render_click()
     assert has_element?(lv, "#env-missing", "NEW_KEY")
 
-    {:ok, index, _html} = live(log_in(build_conn()), ~p"/")
+    {:ok, index, _html} = live(log_in(build_conn()), ~p"/instances")
     assert has_element?(index, "#instance-#{instance.id}", "Предупреждения")
     refute has_element?(index, "#instance-#{instance.id}", "Нет заказов")
   end
@@ -390,7 +390,7 @@ defmodule BastionWeb.InstanceLiveTest do
     conn: conn
   } do
     instance_fixture()
-    {:ok, lv, _html} = live(log_in(conn), ~p"/")
+    {:ok, lv, _html} = live(log_in(conn), ~p"/instances")
     refute has_element?(lv, "#rollout-start")
     refute has_element?(lv, "#instances thead th", "Действия")
     lv |> element("#check-images") |> render_click()
@@ -437,7 +437,7 @@ defmodule BastionWeb.InstanceLiveTest do
     assert lv |> element("#instance-update") |> render() =~ "disabled"
 
     lv |> element("#delete-instance") |> render_click()
-    assert_redirect(lv, ~p"/")
+    assert_redirect(lv, ~p"/instances")
     assert Instances.list_instances() == []
   end
 
@@ -553,14 +553,14 @@ defmodule BastionWeb.InstanceLiveTest do
     assert has_element?(lv, "#crm-order-o1", "A017")
     assert has_element?(lv, "#crm-order-o1", "не ушёл")
 
-    {:ok, list, _html} = live(log_in(conn), ~p"/")
+    {:ok, list, _html} = live(log_in(conn), ~p"/instances")
     refute has_element?(list, "#instance-#{instance.id}", "CRM: 1")
 
     lv |> element("#crm-order-o1 button", "Убрал") |> render_click()
     refute has_element?(lv, "#crm-order-o1")
     assert has_element?(lv, "#tab-errors-panel", "Ошибок нет")
 
-    {:ok, list, _html} = live(log_in(conn), ~p"/")
+    {:ok, list, _html} = live(log_in(conn), ~p"/instances")
     refute has_element?(list, "#instance-#{instance.id}", "CRM:")
   end
 
@@ -611,7 +611,7 @@ defmodule BastionWeb.InstanceLiveTest do
     assert Instances.get_instance(instance.id).admin_password_encrypted ==
              stored.admin_password_encrypted
 
-    {:ok, list, _} = live(log_in(build_conn()), ~p"/")
+    {:ok, list, _} = live(log_in(build_conn()), ~p"/instances")
 
     refute has_element?(list, "#subscription-#{instance.id}")
     refute has_element?(list, "#instances th", "Подписка")
@@ -661,7 +661,7 @@ defmodule BastionWeb.InstanceLiveTest do
       ])
 
     Instances.record_heartbeat(instance.id, status)
-    {:ok, lv, _} = live(log_in(conn), ~p"/")
+    {:ok, lv, _} = live(log_in(conn), ~p"/instances")
     assert has_element?(lv, "#version-#{instance.id}", "1.0.0")
     assert has_element?(lv, "#version-#{instance.id}", "2.0.0")
     assert has_element?(lv, "#version-#{instance.id}", "Доступна 2.0.0")
@@ -680,7 +680,7 @@ defmodule BastionWeb.InstanceLiveTest do
       )
       |> Bastion.Repo.update!()
 
-    {:ok, lv, _} = live(log_in(conn), ~p"/")
+    {:ok, lv, _} = live(log_in(conn), ~p"/instances")
 
     Instances.update_checks(
       instance,
@@ -706,7 +706,7 @@ defmodule BastionWeb.InstanceLiveTest do
       :down
     )
 
-    {:ok, lv, _} = live(log_in(conn), ~p"/")
+    {:ok, lv, _} = live(log_in(conn), ~p"/instances")
     refute has_element?(lv, "#problem-#{instance.id}", "Недоступен")
     assert has_element?(lv, "#problem-#{instance.id}", "Ошибки")
   end

@@ -3,7 +3,7 @@ defmodule BastionWeb.InstanceLive.Index do
 
   import BastionWeb.InstanceLive.Components
 
-  alias Bastion.{Health, Images, Instances, Rollout}
+  alias Bastion.{Health, Images, Instances, Nodes, Rollout}
   alias BastionWeb.Presence
 
   @tick :timer.seconds(15)
@@ -12,6 +12,7 @@ defmodule BastionWeb.InstanceLive.Index do
   def mount(_params, _session, socket) do
     if connected?(socket) do
       Instances.subscribe()
+      Nodes.subscribe()
       Phoenix.PubSub.subscribe(Bastion.PubSub, Presence.topic())
       :timer.send_interval(@tick, :tick)
     end
@@ -20,12 +21,17 @@ defmodule BastionWeb.InstanceLive.Index do
      socket
      |> assign(
        page_title: "Франшизы",
+       search: "",
        rollout: Rollout.state(),
        checking_images?: false,
        image_result: nil
      )
      |> load()}
   end
+
+  @impl true
+  def handle_event("search", %{"search" => query}, socket),
+    do: {:noreply, socket |> assign(search: query) |> load()}
 
   @impl true
   def handle_event("rollout", _params, socket),
@@ -65,6 +71,8 @@ defmodule BastionWeb.InstanceLive.Index do
   def handle_info({event, _record}, socket) when event in [:instance_updated, :instance_deleted],
     do: {:noreply, load(socket)}
 
+  def handle_info(:nodes_updated, socket), do: {:noreply, load(socket)}
+
   def handle_info(%Phoenix.Socket.Broadcast{event: "presence_diff"}, socket),
     do: {:noreply, load(socket)}
 
@@ -76,11 +84,24 @@ defmodule BastionWeb.InstanceLive.Index do
 
   defp load(socket) do
     instances = Instances.list_instances()
+    placements = Nodes.active_placements()
+    query = socket.assigns.search |> String.trim() |> String.downcase()
+
+    instances =
+      Enum.filter(instances, fn instance ->
+        query == "" or
+          String.contains?(String.downcase(instance.name), query) or
+          Enum.any?(
+            Map.values(instance.hosts || %{}),
+            &(is_binary(&1) and String.contains?(String.downcase(&1), query))
+          )
+      end)
+
     health = Map.new(instances, &{&1.id, Health.evaluate(&1)})
     instances = Enum.sort_by(instances, &health_rank(health[&1.id].level))
 
     socket
-    |> assign(instance_count: length(instances), health: health)
+    |> assign(instance_count: length(instances), health: health, placements: placements)
     |> stream(:instances, instances, reset: true, dom_id: &"instance-#{&1.id}")
   end
 
@@ -118,6 +139,15 @@ defmodule BastionWeb.InstanceLive.Index do
         </div>
       </div>
 
+      <form id="instance-search" phx-change="search" class="max-w-sm">
+        <.input
+          name="search"
+          value={@search}
+          label="Поиск по названию и домену"
+          phx-debounce="300"
+        />
+      </form>
+
       <p
         :if={@image_result}
         id="image-check-result"
@@ -154,7 +184,7 @@ defmodule BastionWeb.InstanceLive.Index do
         id="instances-empty"
         class="py-16 text-center text-base-content/60"
       >
-        Пока ни одна франшиза не подключена. Укажите в .env её агента BASTION_URL и BASTION_TOKEN.
+        Франшизы пока не найдены.
       </div>
 
       <div
@@ -165,6 +195,7 @@ defmodule BastionWeb.InstanceLive.Index do
           <thead class="hidden sm:table-header-group">
             <tr>
               <th class="px-5 py-3 text-xs font-medium text-base-content/50">Франшиза</th>
+              <th class="px-5 py-3 text-xs font-medium text-base-content/50">Сервер</th>
               <th class="px-5 py-3 text-xs font-medium text-base-content/50">Версия сайта</th>
               <th class="px-5 py-3 text-xs font-medium text-base-content/50">Админка</th>
               <th class="px-5 py-3 text-xs font-medium text-base-content/50">Сайт</th>
@@ -193,6 +224,14 @@ defmodule BastionWeb.InstanceLive.Index do
                 >
                   <.site_status instance={instance} level={@health[instance.id].level} />
                 </div>
+              </td>
+              <td class="p-0 sm:table-cell sm:px-5 sm:py-4">
+                <.link
+                  :if={@placements[instance.id]}
+                  navigate={~p"/nodes/#{@placements[instance.id].node_id}"}
+                  class="link text-sm"
+                >{@placements[instance.id] && @placements[instance.id].node.name}</.link>
+                <span :if={!@placements[instance.id]} class="text-sm text-base-content/60">Отдельная установка</span>
               </td>
               <td class="p-0 sm:table-cell sm:px-5 sm:py-4" id={"version-#{instance.id}"}>
                 <div class="mb-1 text-xs text-base-content/50 sm:hidden">Версия сайта</div>
