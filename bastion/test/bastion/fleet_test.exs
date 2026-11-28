@@ -6,6 +6,7 @@ defmodule Bastion.FleetTest do
 
   test "a connected node with two confirmed outages gets one incident and keeps it in history" do
     {node, first, second} = fleet()
+    assert "Высокая загрузка CPU" in Fleet.node_resources(node).warnings
     fail_site(first)
     fail_site(second)
 

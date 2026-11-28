@@ -184,6 +184,7 @@ defmodule Bastion.TelegramTest do
     assert_receive {:telegram, "editMessageText", pending}
     assert pending["text"] =~ "В очереди"
     press(callback)
+    assert_receive {:telegram, "editMessageText", _replayed}
     assert [operation] = Nodes.operations_for(id)
     assert operation.args["release_version"] == "1.3.0"
 
@@ -195,11 +196,27 @@ defmodule Bastion.TelegramTest do
 
     Bot.node_operation_updated(failed)
     assert_receive {:telegram, "editMessageText", failed_card}
-    # Replayed callback also refreshes the card before the failure notification.
-    if not String.contains?(failed_card["text"], "release check failed") do
-      assert_receive {:telegram, "editMessageText", final_card}
-      assert final_card["text"] =~ "release check failed"
-    end
+    assert failed_card["text"] =~ "release check failed"
+
+    press("ma:" <> id)
+    assert_receive {:telegram, "editMessageText", retry}
+    assert [{"Подтвердить", new_confirmation}, _] = buttons(retry)
+    assert new_confirmation != callback
+    press(new_confirmation)
+    assert_receive {:telegram, "editMessageText", _queued_retry}
+    assert [second_operation, ^failed] = Nodes.operations_for(id)
+
+    assert {:ok, successful} =
+             Nodes.update_operation(node.id, second_operation.id, "command_result", %{
+               "status" => "ok",
+               "result" => %{"release_version" => "1.3.0"}
+             })
+
+    Bot.node_operation_updated(successful)
+    assert_receive {:telegram, "editMessageText", final_card}
+    assert final_card["text"] =~ "Обновление Delivest · Успешно"
+    assert final_card["text"] =~ "Установлен 1.3.0"
+    assert Nodes.placement_for(id).observed_release == "1.3.0"
   end
 
   test "planned maintenance renders in list and card without an alert" do
