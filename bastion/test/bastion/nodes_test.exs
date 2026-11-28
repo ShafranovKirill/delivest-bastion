@@ -149,4 +149,36 @@ defmodule Bastion.NodesTest do
 
     assert Bastion.Health.evaluate(checked).level == :down
   end
+
+  test "a registered node is ready only after a fresh dependency report" do
+    {:ok, node, token} = Nodes.create_node("Pilot")
+    {:ok, _, _credential} = Nodes.register(token, 1)
+
+    base = %{
+      "sample_id" => "infra-1",
+      "sampled_at" => DateTime.utc_now() |> DateTime.to_iso8601(),
+      "version" => "0.1.0",
+      "metrics" => %{},
+      "instances" => []
+    }
+
+    assert :ok = Nodes.record_heartbeat(node.id, base)
+    refute Nodes.ready?(Nodes.get_node(node.id))
+
+    assert :ok =
+             Nodes.record_heartbeat(
+               node.id,
+               Map.merge(
+                 base,
+                 %{
+                   "sample_id" => "infra-2",
+                   "infrastructure" => %{"ready" => true, "checks" => %{"docker" => true}}
+                 }
+               )
+             )
+
+    assert Nodes.ready?(Nodes.get_node(node.id))
+    assert :ok = Nodes.record_heartbeat(node.id, Map.merge(base, %{"sample_id" => "infra-3"}))
+    refute Nodes.ready?(Nodes.get_node(node.id))
+  end
 end

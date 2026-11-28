@@ -78,6 +78,23 @@ defmodule BastionWeb.NodeLive.Show do
     end
   end
 
+  def handle_event("retry_install", %{"node" => attrs}, socket) do
+    case Nodes.retry_install(socket.assigns.node, attrs) do
+      {:ok, _, _} ->
+        {:noreply, socket |> load() |> put_flash(:info, "Повтор установки запущен")}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Повтор не начат: #{inspect(reason)}")}
+    end
+  end
+
+  def handle_event("public_addresses", %{"node" => attrs}, socket) do
+    case Nodes.update_public_addresses(socket.assigns.node, attrs) do
+      {:ok, _} -> {:noreply, socket |> load() |> put_flash(:info, "Адреса сохранены")}
+      {:error, _} -> {:noreply, put_flash(socket, :error, "Укажите публичный IP-адрес")}
+    end
+  end
+
   @impl true
   def handle_info(:nodes_updated, socket), do: {:noreply, load(socket)}
 
@@ -118,6 +135,51 @@ defmodule BastionWeb.NodeLive.Show do
         </div>
       </dl>
       <section class="rounded-xl border border-base-300 bg-base-100 p-5 space-y-3">
+        <h2 class="font-semibold">Подключение по SSH</h2>
+        <p id="install-status">
+          {@node.install_status} · {@node.install_error || "Ожидаем подключения"}
+        </p>
+        <p>{@node.ssh_login}@{@node.ssh_host}:{@node.ssh_port} · {@node.ssh_fingerprint}</p>
+        <.form
+          :if={@node.ssh_host}
+          for={to_form(%{}, as: :node)}
+          id="retry-node-install"
+          phx-submit="retry_install"
+          class="grid gap-3 sm:grid-cols-2"
+        >
+          <.input name="node[host]" value={@node.ssh_host} label="Адрес" required />
+          <.input name="node[port]" value={@node.ssh_port} type="number" label="Порт" required />
+          <.input name="node[login]" value={@node.ssh_login} label="Логин" required />
+          <.input
+            name="node[fingerprint]"
+            value={@node.ssh_fingerprint}
+            label="Отпечаток"
+            required
+          />
+          <.input name="node[password]" value="" type="password" label="Пароль" />
+          <.input name="node[private_key]" value="" type="textarea" label="Ключ" />
+          <button class="btn btn-sm self-end">Повторить установку</button>
+        </.form>
+        <.form
+          for={to_form(%{}, as: :node)}
+          id="node-public-addresses"
+          phx-submit="public_addresses"
+          class="flex gap-3"
+        >
+          <.input
+            name="node[public_ipv4]"
+            value={@node.public_ipv4 || ""}
+            label="Публичный IPv4"
+          />
+          <.input
+            name="node[public_ipv6]"
+            value={@node.public_ipv6 || ""}
+            label="Публичный IPv6"
+          />
+          <button class="btn btn-sm self-end">Сохранить IP</button>
+        </.form>
+      </section>
+      <section class="rounded-xl border border-base-300 bg-base-100 p-5 space-y-3">
         <h2 class="font-semibold">Ресурсы сервера</h2>
         <p class="text-sm text-base-content/60">Замер: {format_time(@node.sampled_at)}</p>
         <p :if={not fresh?(@node)} class="text-sm text-warning">
@@ -147,6 +209,20 @@ defmodule BastionWeb.NodeLive.Show do
             </p><p :if={List.wrap(@node.metrics["disks"]) == []}>Нет данных</p>
           </div>
         </div>
+      </section>
+      <section id="renewal-status" class="rounded-xl border border-base-300 bg-base-100 p-5">
+        <h2 class="font-semibold">Продление сертификатов</h2>
+        <p>
+          {if get_in(@node.infrastructure, ["renewal", "ok"]) == true,
+            do: "Проверено",
+            else: "Требует проверки"}
+        </p>
+        <p>
+          Последняя проверка: {get_in(@node.infrastructure, ["renewal", "checked_at"]) || "Нет данных"}
+        </p>
+        <p :if={get_in(@node.infrastructure, ["renewal", "error"])} class="text-error">
+          {get_in(@node.infrastructure, ["renewal", "error"])}
+        </p>
       </section>
       <section class="rounded-xl border border-base-300 bg-base-100 p-5 space-y-3">
         <h2 class="font-semibold">Доступ ноды</h2>

@@ -24,6 +24,16 @@ defmodule BastionWeb.NodeLive.Index do
     end
   end
 
+  def handle_event("install", %{"node" => attrs}, socket) do
+    case Nodes.start_install(attrs["name"], attrs) do
+      {:ok, node, _operation} ->
+        {:noreply, push_navigate(socket, to: ~p"/nodes/#{node.id}")}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Подключение не начато: #{inspect(reason)}")}
+    end
+  end
+
   @impl true
   def handle_info(:nodes_updated, socket), do: {:noreply, load(socket)}
 
@@ -38,6 +48,34 @@ defmodule BastionWeb.NodeLive.Index do
         <span class="text-sm text-base-content/60">{length(@nodes)} серверов</span>
       </div>
 
+      <section class="rounded-xl border border-base-300 bg-base-100 p-5">
+        <h2 class="mb-3 font-semibold">Подключить сервер по SSH</h2>
+        <.form
+          for={to_form(%{}, as: :node)}
+          id="install-node"
+          phx-submit="install"
+          class="grid gap-3 sm:grid-cols-2"
+        >
+          <.input name="node[name]" value="" label="Название сервера" required />
+          <.input name="node[host]" value="" label="IP или имя сервера" required />
+          <.input name="node[port]" value="22" type="number" label="SSH-порт" required />
+          <.input name="node[login]" value="root" label="SSH-логин" required />
+          <.input
+            name="node[fingerprint]"
+            value=""
+            label="Отпечаток SSH Ed25519 (SHA256:...)"
+            required
+          />
+          <.input name="node[password]" value="" type="password" label="SSH-пароль" />
+          <.input
+            name="node[private_key]"
+            value=""
+            type="textarea"
+            label="Приватный SSH-ключ"
+          />
+          <button class="btn btn-primary self-end">Подключить</button>
+        </.form>
+      </section>
       <section class="rounded-xl border border-base-300 bg-base-100 p-5">
         <h2 class="mb-3 font-semibold">Подготовить тестовую ноду</h2>
         <.form for={%{}} as={:node} phx-submit="create" class="flex flex-wrap gap-2">
@@ -63,7 +101,7 @@ defmodule BastionWeb.NodeLive.Index do
               <td>
                 <.link navigate={~p"/nodes/#{node.id}"} class="link font-semibold">{node.name}</.link>
               </td>
-              <td>{if fresh?(node), do: "На связи", else: "Нет связи"}</td>
+              <td>{if Nodes.ready?(node), do: "Готова", else: node.install_status}</td>
               <td>{node.version || "—"}</td>
               <td>{format_time(node.last_seen_at)}</td>
             </tr>
@@ -75,9 +113,6 @@ defmodule BastionWeb.NodeLive.Index do
     """
   end
 
-  defp fresh?(%{last_seen_at: nil}), do: false
-  defp fresh?(%{credential_revoked_at: revoked}) when not is_nil(revoked), do: false
-  defp fresh?(%{last_seen_at: at}), do: DateTime.diff(DateTime.utc_now(), at) < 90
   defp format_time(nil), do: "Нет данных"
   defp format_time(at), do: Calendar.strftime(at, "%d.%m.%Y %H:%M UTC")
 end

@@ -47,4 +47,43 @@ defmodule BastionWeb.NodeLiveTest do
     assert is_binary(body["credential"])
     assert conn |> post(~p"/node/register", payload) |> json_response(401)
   end
+
+  test "SSH form validates identity and retry keeps the same node", %{conn: conn} do
+    Application.put_env(:bastion, :node_ssh_runner, Bastion.FakeNodeSshRunner)
+    Application.put_env(:bastion, :ssh_test_pid, self())
+
+    on_exit(fn ->
+      Application.delete_env(:bastion, :node_ssh_runner)
+      Application.delete_env(:bastion, :ssh_test_pid)
+    end)
+
+    conn = init_test_session(conn, %{"admin" => "admin"})
+    {:ok, list, _} = live(conn, ~p"/nodes")
+
+    params = %{
+      name: "New pilot",
+      host: "pilot.example.org",
+      port: "22",
+      login: "root",
+      fingerprint: "SHA256:" <> String.duplicate("B", 43),
+      password: "secret"
+    }
+
+    list |> form("#install-node", node: %{params | fingerprint: "wrong"}) |> render_submit()
+    assert Nodes.list_nodes() == []
+    list |> form("#install-node", node: params) |> render_submit()
+    assert_receive {:ssh_started, task, id}
+    assert length(Nodes.list_nodes()) == 1
+    {:ok, detail, _} = live(conn, ~p"/nodes/#{id}")
+    assert has_element?(detail, "#retry-node-install")
+    ref = Process.monitor(task)
+    send(task, :continue)
+    assert_receive {:DOWN, ^ref, :process, ^task, :normal}
+    detail |> form("#retry-node-install", node: Map.delete(params, :name)) |> render_submit()
+    assert_receive {:ssh_started, task2, ^id}
+    assert length(Nodes.list_nodes()) == 1
+    ref2 = Process.monitor(task2)
+    send(task2, :continue)
+    assert_receive {:DOWN, ^ref2, :process, ^task2, :normal}
+  end
 end

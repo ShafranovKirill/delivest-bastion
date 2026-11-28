@@ -2,10 +2,10 @@ defmodule Bastion.Nodes do
   import Ecto.Query
 
   alias Bastion.Instances.Instance
-  alias Bastion.Nodes.{MetricSample, Node, Operation, Placement}
+  alias Bastion.Nodes.{MetricSample, Node, Operation, Placement, SshInstaller}
   alias Bastion.Repo
 
-  @actions ~w(status start stop)
+  @actions ~w(status start stop domain_prepare domain_release)
   @unresolved ~w(pending running waiting_external unknown)
   @deliverable ~w(pending running unknown)
   @topic "managed_nodes"
@@ -16,6 +16,41 @@ defmodule Bastion.Nodes do
     do: Phoenix.PubSub.subscribe(Bastion.PubSub, "node_commands:#{node_id}")
 
   def list_nodes, do: Repo.all(from n in Node, order_by: [asc: n.name])
+
+  def ready?(%Node{} = node) do
+    is_nil(node.credential_revoked_at) and not is_nil(node.credential_hash) and
+      not is_nil(node.last_seen_at) and
+      DateTime.diff(DateTime.utc_now(), node.last_seen_at) < 90 and
+      node.infrastructure["ready"] == true
+  end
+
+  def update_public_addresses(%Node{} = node, attrs) do
+    addresses = [attrs["public_ipv4"], attrs["public_ipv6"]] |> Enum.reject(&(&1 in [nil, ""]))
+
+    if addresses != [] and Enum.all?(addresses, &public_ip?/1) do
+      node |> Node.changeset(attrs) |> Repo.update()
+    else
+      {:error, :invalid_public_address}
+    end
+  end
+
+  defp public_ip?(value) do
+    case :inet.parse_address(String.to_charlist(value)) do
+      {:ok, {a, b, _, _}}
+      when a in [0, 10, 127] or a >= 224 or (a == 169 and b == 254) or (a == 172 and b in 16..31) or
+             (a == 192 and b == 168) ->
+        false
+
+      {:ok, {a, _, _, _}} when a in 1..223 ->
+        true
+
+      {:ok, {a, _, _, _, _, _, _, _}} when a >= 0x2000 and a < 0x4000 ->
+        true
+
+      _ ->
+        false
+    end
+  end
 
   def get_node(id) do
     case Ecto.UUID.cast(id) do
@@ -42,7 +77,7 @@ defmodule Bastion.Nodes do
       )
 
   def active_placements do
-    Repo.all(from p in Placement, where: p.state == "active", preload: [:node])
+    Repo.all(from p in Placement, where: p.state == "active", preload: [:node, :instance])
     |> Map.new(&{&1.instance_id, &1})
   end
 
@@ -102,13 +137,14 @@ defmodule Bastion.Nodes do
   def pending_operations(node_id) do
     Repo.all(
       from o in Operation,
-        where: o.node_id == ^node_id and o.status in ^@deliverable,
+        where:
+          o.node_id == ^node_id and o.status in ^@deliverable and o.action != "provision_node",
         order_by: [asc: o.inserted_at]
     )
     |> Enum.filter(&deliverable?/1)
   end
 
-  def deliverable?(%Operation{instance_id: nil}), do: true
+  def deliverable?(%Operation{instance_id: nil}), do: false
 
   def deliverable?(%Operation{} = operation) do
     Repo.exists?(
@@ -138,6 +174,191 @@ defmodule Bastion.Nodes do
 
       error ->
         error
+    end
+  end
+
+  def start_install(name, ssh_attrs) do
+    with {:ok, ssh} <- SshInstaller.validate(ssh_attrs) do
+      case Repo.get_by(Node, ssh_host: ssh.host, ssh_port: ssh.port) do
+        %Node{} = existing ->
+          retry_install(existing, ssh_attrs)
+
+        nil ->
+          token = secret()
+
+          changeset =
+            %Node{}
+            |> Node.changeset(%{
+              name: name,
+              ssh_host: ssh.host,
+              ssh_port: ssh.port,
+              ssh_login: ssh.login,
+              ssh_fingerprint: ssh.fingerprint
+            })
+            |> Ecto.Changeset.put_change(:registration_token_hash, hash(token))
+
+          with {:ok, node} <- Repo.insert(changeset),
+               {:ok, {operation, token}} <- new_install_attempt(node, ssh, token),
+               {:ok, _pid} <-
+                 Task.Supervisor.start_child(Bastion.TaskSupervisor, fn ->
+                   run_install(node, operation, token, ssh_attrs)
+                 end) do
+            broadcast()
+            {:ok, node, operation}
+          end
+      end
+    end
+  end
+
+  def retry_install(%Node{} = node, ssh_attrs) do
+    with {:ok, ssh} <- SshInstaller.validate(ssh_attrs),
+         true <-
+           node.ssh_host == ssh.host and node.ssh_port == ssh.port and
+             node.ssh_login == ssh.login and node.ssh_fingerprint == ssh.fingerprint,
+         {:ok, {operation, token}} <- new_install_attempt(node, ssh, nil),
+         {:ok, _pid} <-
+           Task.Supervisor.start_child(Bastion.TaskSupervisor, fn ->
+             run_install(node, operation, token, ssh_attrs)
+           end) do
+      {:ok, get_node(node.id), operation}
+    else
+      false -> {:error, :ssh_identity_changed}
+      error -> error
+    end
+  end
+
+  defp new_install_attempt(node, ssh, supplied_token) do
+    Repo.transaction(fn ->
+      locked = Repo.one!(from n in Node, where: n.id == ^node.id, lock: "FOR UPDATE")
+
+      active =
+        Repo.one(
+          from o in Operation,
+            where:
+              o.node_id == ^node.id and o.action == "provision_node" and
+                o.status in ["pending", "running", "waiting_external"],
+            limit: 1,
+            lock: "FOR UPDATE"
+        )
+
+      if active, do: Repo.rollback(:install_in_progress)
+      token = supplied_token || secret()
+
+      operation =
+        %Operation{node_id: node.id}
+        |> Operation.changeset(%{
+          action: "provision_node",
+          status: "running",
+          args: %{},
+          requested_by: "admin"
+        })
+        |> Repo.insert!()
+
+      locked
+      |> Ecto.Changeset.change(
+        ssh_host: ssh.host,
+        ssh_port: ssh.port,
+        ssh_login: ssh.login,
+        ssh_fingerprint: ssh.fingerprint,
+        registration_token_hash: hash(token),
+        install_status: "checking_ssh",
+        install_error: nil,
+        install_progress: %{"stage" => "checking_ssh", "operation_id" => operation.id}
+      )
+      |> Repo.update!()
+
+      {operation, token}
+    end)
+  end
+
+  defp run_install(node, operation, token, attrs) do
+    result =
+      try do
+        SshInstaller.install(node, token, attrs)
+      rescue
+        _ -> {:error, :installer_crashed}
+      catch
+        _, _ -> {:error, :installer_crashed}
+      end
+
+    current = Repo.get!(Node, node.id)
+
+    if current.install_progress["operation_id"] != operation.id,
+      do: raise("stale install attempt")
+
+    ready = current.infrastructure["ready"] == true and not is_nil(current.credential_hash)
+
+    status =
+      cond do
+        result != :ok -> "error"
+        ready -> "ready"
+        true -> "waiting_registration"
+      end
+
+    error = if result == :ok, do: nil, else: inspect(result)
+
+    Repo.get!(Node, node.id)
+    |> Ecto.Changeset.change(
+      install_status: status,
+      install_error: error,
+      install_progress: %{"stage" => status, "operation_id" => operation.id}
+    )
+    |> Repo.update!()
+
+    Repo.get!(Operation, operation.id)
+    |> Ecto.Changeset.change(
+      status: if(result != :ok, do: "error", else: if(ready, do: "ok", else: "waiting_external")),
+      progress: %{"stage" => status},
+      result:
+        if(result != :ok,
+          do: %{"reason" => error},
+          else: if(ready, do: %{"ready" => true}, else: %{})
+        ),
+      finished_at: if(result == :ok and not ready, do: nil, else: DateTime.utc_now())
+    )
+    |> Repo.update!()
+
+    broadcast()
+  end
+
+  def recover_interrupted_installs do
+    Repo.all(from o in Operation, where: o.action == "provision_node" and o.status == "running")
+    |> Enum.each(fn operation ->
+      Repo.transaction(fn ->
+        operation
+        |> Ecto.Changeset.change(
+          status: "unknown",
+          result: %{"reason" => "Bastion перезапущен во время SSH-установки"}
+        )
+        |> Repo.update!()
+
+        node = Repo.get!(Node, operation.node_id)
+
+        if node.install_progress["operation_id"] == operation.id do
+          node
+          |> Ecto.Changeset.change(
+            install_status: "interrupted",
+            install_error: "Результат установки неизвестен; повторите с тем же сервером"
+          )
+          |> Repo.update!()
+        end
+      end)
+    end)
+
+    broadcast()
+  end
+
+  def install_stage(node_id, stage)
+      when stage in ~w(preflight download packages release systemd registration ready) do
+    if node = Repo.get(Node, node_id) do
+      node
+      |> Ecto.Changeset.change(
+        install_status: stage,
+        install_progress: Map.put(node.install_progress, "stage", stage)
+      )
+      |> Repo.update!()
+
+      broadcast()
     end
   end
 
@@ -327,16 +548,63 @@ defmodule Bastion.Nodes do
 
   def queue(instance_id, action, requested_by, args \\ %{})
 
-  def queue(instance_id, action, requested_by, args) when action in @actions and args == %{} do
-    case Ecto.UUID.cast(instance_id) do
-      {:ok, id} -> do_queue(id, action, requested_by, args)
-      _ -> {:error, :invalid_target}
+  def queue(instance_id, action, requested_by, args) when action in @actions do
+    if valid_args?(action, args) do
+      case Ecto.UUID.cast(instance_id) do
+        {:ok, id} -> do_queue(id, action, requested_by, args, true)
+        _ -> {:error, :invalid_target}
+      end
+    else
+      {:error, :invalid_action_or_args}
     end
   end
 
   def queue(_, _, _, _), do: {:error, :invalid_action_or_args}
 
-  defp do_queue(instance_id, action, requested_by, args) do
+  def queue_deferred(instance_id, action, requested_by, args)
+      when action in ~w(domain_prepare domain_release) do
+    if valid_args?(action, args) do
+      case Ecto.UUID.cast(instance_id) do
+        {:ok, id} -> do_queue(id, action, requested_by, args, false)
+        _ -> {:error, :invalid_target}
+      end
+    else
+      {:error, :invalid_action_or_args}
+    end
+  end
+
+  def dispatch_operation(%Operation{} = operation) do
+    Phoenix.PubSub.broadcast(
+      Bastion.PubSub,
+      "node_commands:#{operation.node_id}",
+      {:push_operation, operation}
+    )
+
+    broadcast()
+    :ok
+  end
+
+  defp valid_args?(action, args) when action in ~w(status start stop), do: args == %{}
+
+  defp valid_args?(
+         action,
+         %{
+           "hostname" => host,
+           "binding_id" => binding_id,
+           "purpose" => purpose,
+           "expected_addresses" => addresses
+         } = args
+       )
+       when action in ~w(domain_prepare domain_release) do
+    Map.keys(args) |> Enum.sort() == ~w(binding_id expected_addresses hostname purpose) and
+      Bastion.Domains.Domain.normalize(host) == host and
+      match?({:ok, _}, Ecto.UUID.cast(binding_id)) and purpose in ~w(site admin api media) and
+      is_list(addresses) and addresses != [] and Enum.all?(addresses, &is_binary/1)
+  end
+
+  defp valid_args?(_, _), do: false
+
+  defp do_queue(instance_id, action, requested_by, args, dispatch?) do
     result =
       Repo.transaction(fn ->
         instance =
@@ -349,6 +617,20 @@ defmodule Bastion.Nodes do
           ) || Repo.rollback(:placement_not_found)
 
         if instance.transport != "node", do: Repo.rollback(:not_managed)
+
+        if action in ~w(domain_prepare domain_release) do
+          binding =
+            Repo.get(Bastion.Domains.Binding, args["binding_id"]) ||
+              Repo.rollback(:binding_not_found)
+
+          domain =
+            Repo.get(Bastion.Domains.Domain, binding.domain_id) ||
+              Repo.rollback(:domain_not_found)
+
+          if binding.instance_id != instance.id or domain.hostname != args["hostname"] or
+               binding.purpose != args["purpose"],
+             do: Repo.rollback(:binding_target_mismatch)
+        end
 
         if Repo.exists?(
              from o in Operation,
@@ -381,13 +663,7 @@ defmodule Bastion.Nodes do
 
     case result do
       {:ok, operation} ->
-        Phoenix.PubSub.broadcast(
-          Bastion.PubSub,
-          "node_commands:#{operation.node_id}",
-          {:push_operation, operation}
-        )
-
-        broadcast()
+        if dispatch?, do: dispatch_operation(operation)
         {:ok, operation}
 
       error ->
@@ -417,6 +693,8 @@ defmodule Bastion.Nodes do
               lock: "FOR UPDATE"
           ) || Repo.rollback(:operation_not_found)
 
+        if operation.action == "provision_node", do: Repo.rollback(:local_operation)
+
         if operation.instance_id && !current_placement?(operation),
           do: Repo.rollback(:stale_placement)
 
@@ -425,6 +703,12 @@ defmodule Bastion.Nodes do
 
     case result do
       {:ok, operation} ->
+        if event == "command_result" and operation.action in ~w(domain_prepare domain_release) do
+          %{operation_id: operation.id}
+          |> Bastion.Domains.FinalizeWorker.new()
+          |> Oban.insert()
+        end
+
         broadcast()
         {:ok, operation}
 
@@ -455,9 +739,52 @@ defmodule Bastion.Nodes do
              do: [sampled_at: sampled_at, metrics: metrics],
              else: []
 
+        infrastructure = payload["infrastructure"]
+
+        infrastructure =
+          if is_map(infrastructure) and is_boolean(infrastructure["ready"]),
+            do: infrastructure,
+            else: %{}
+
         current
-        |> Ecto.Changeset.change([last_seen_at: now, version: version] ++ observation)
+        |> Ecto.Changeset.change(
+          [
+            last_seen_at: now,
+            version: version,
+            infrastructure: infrastructure,
+            install_status:
+              cond do
+                infrastructure["ready"] == true and not is_nil(current.credential_hash) -> "ready"
+                current.install_status == "ready" -> "waiting_dependencies"
+                true -> current.install_status
+              end
+          ] ++ observation
+        )
         |> Repo.update!()
+
+        if infrastructure["ready"] == true and not is_nil(current.credential_hash) do
+          case Repo.one(
+                 from o in Operation,
+                   where:
+                     o.node_id == ^node.id and o.action == "provision_node" and
+                       o.status == "waiting_external",
+                   order_by: [desc: o.inserted_at],
+                   limit: 1
+               ) do
+            nil ->
+              :ok
+
+            operation ->
+              operation
+              |> Ecto.Changeset.change(
+                status: "ok",
+                result: %{"ready" => true},
+                progress: %{"stage" => "ready"},
+                finished_at: now
+              )
+              |> Repo.update!()
+          end
+        end
 
         %MetricSample{
           node_id: node.id,

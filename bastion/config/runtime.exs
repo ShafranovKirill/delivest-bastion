@@ -1,5 +1,22 @@
 import Config
 
+if key = System.get_env("DELIVEST_DNS_ENCRYPTION_KEY") do
+  config :bastion, dns_encryption_key: key
+end
+
+if installer_url = System.get_env("DELIVEST_NODE_INSTALLER_URL") do
+  config :bastion,
+    node_installer: %{
+      installer_url: installer_url,
+      installer_sha256: System.get_env("DELIVEST_NODE_INSTALLER_SHA256"),
+      archive_url: System.get_env("DELIVEST_NODE_ARCHIVE_URL"),
+      archive_sha256: System.get_env("DELIVEST_NODE_ARCHIVE_SHA256"),
+      version: System.get_env("DELIVEST_NODE_VERSION"),
+      bastion_url: System.get_env("DELIVEST_BASTION_URL"),
+      cert_email: System.get_env("DELIVEST_CERT_EMAIL")
+    }
+end
+
 # config/runtime.exs is executed for all environments, including
 # during releases. It is executed after compilation and before the
 # system starts, so it is typically used to load production configuration

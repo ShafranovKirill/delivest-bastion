@@ -70,6 +70,7 @@ defmodule BastionWeb.Layouts do
         <.link navigate={~p"/"} class="btn btn-ghost justify-start">Обзор</.link>
         <.link navigate={~p"/instances"} class="btn btn-ghost justify-start">Франшизы</.link>
         <.link navigate={~p"/nodes"} class="btn btn-ghost justify-start">Серверы</.link>
+        <.link navigate={~p"/domains"} class="btn btn-ghost justify-start">Домены</.link>
         <.link navigate={~p"/operations"} class="btn btn-ghost justify-start">Операции</.link>
         <.link navigate={~p"/landing"} class="btn btn-ghost justify-start">Лендинг</.link>
       </nav>

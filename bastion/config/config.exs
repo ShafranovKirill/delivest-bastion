@@ -13,7 +13,7 @@ config :bastion,
 
 config :phoenix,
        :filter_parameters,
-       ~w(password token credential x-delivest-node-token yandex_token new_yandex_token admin_password)
+       ~w(password private_key token credential secret reg_password regru_password x-delivest-node-token yandex_token new_yandex_token admin_password)
 
 # Configure the endpoint
 config :bastion, BastionWeb.Endpoint,

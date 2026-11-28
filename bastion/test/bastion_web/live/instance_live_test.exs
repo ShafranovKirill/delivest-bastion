@@ -1,7 +1,7 @@
 defmodule BastionWeb.InstanceLiveTest do
   use BastionWeb.ConnCase, async: false
 
-  import Phoenix.LiveViewTest
+  import Phoenix.LiveViewTest, except: [live: 2]
   import Bastion.Fixtures
 
   alias Bastion.Instances
@@ -31,6 +31,17 @@ defmodule BastionWeb.InstanceLiveTest do
   end
 
   defp log_in(conn), do: init_test_session(conn, %{"admin" => "admin"})
+
+  defp live(conn, path) do
+    case Phoenix.LiveViewTest.live(conn, path) do
+      {:ok, view, _html} = result ->
+        render_async(view, 1_000)
+        result
+
+      other ->
+        other
+    end
+  end
 
   defp bring_online(instance) do
     test_pid = self()
