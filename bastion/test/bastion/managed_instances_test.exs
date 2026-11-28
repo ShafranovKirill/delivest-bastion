@@ -263,6 +263,17 @@ defmodule Bastion.ManagedInstancesTest do
     assert rollback.action == "domain_rollback"
     assert rollback.args == activation.args
     assert rollback.status == "pending"
+    assert Repo.get!(Operation, activation.id).progress["rollback_operation_id"] == rollback.id
+
+    rollback |> Ecto.Changeset.change(status: "unknown") |> Repo.update!()
+    assert {:ok, %Operation{id: same_id}} = ManagedInstances.retry_rollback(id, "owner")
+    assert same_id == rollback.id
+    rollback |> Ecto.Changeset.change(status: "error") |> Repo.update!()
+    assert {:error, :not_verified} = ManagedInstances.activate(new_binding.id, "owner")
+    assert {:ok, retry} = ManagedInstances.retry_rollback(id, "owner")
+    refute retry.id == rollback.id
+    assert retry.args == rollback.args
+    assert {:error, :busy} = Nodes.queue(id, "stop", "owner", %{})
 
     Req.Test.stub(Bastion.Http, fn conn ->
       binding_id =
@@ -278,7 +289,7 @@ defmodule Bastion.ManagedInstancesTest do
     end)
 
     assert {:ok, %{status: "waiting_external"}} =
-             Nodes.update_operation(node.id, rollback.id, "command_result", %{
+             Nodes.update_operation(node.id, retry.id, "command_result", %{
                "status" => "ok",
                "result" => %{
                  "restored" => true,
@@ -289,15 +300,44 @@ defmodule Bastion.ManagedInstancesTest do
     assert {:error, :busy} = Nodes.queue(id, "stop", "owner", %{})
     assert %{success: success, failure: 0} = Oban.drain_queue(queue: :default)
     assert success >= 1
-    assert Repo.get!(Operation, rollback.id).status == "ok"
-    assert Repo.get!(Operation, rollback.id).progress["finalized"] == true
+    assert Repo.get!(Operation, retry.id).status == "ok"
+    assert Repo.get!(Operation, retry.id).progress["finalized"] == true
 
     assert :ok =
              Bastion.ManagedInstances.FinalizeWorker.perform(%Oban.Job{
-               args: %{"operation_id" => rollback.id}
+               args: %{"operation_id" => retry.id}
              })
 
     assert Repo.get!(Domains.Binding, args["site_binding_id"]).primary
+    assert {:ok, next_activation} = ManagedInstances.activate(new_binding.id, "owner")
+    assert next_activation.action == "domain_activate"
+  end
+
+  test "activation failure and rollback reservation commit together" do
+    {node, id, args} = created_instance()
+    new_binding = prepared_site(id)
+    {:ok, _} = ManagedInstances.confirm_browser(new_binding.id, "owner")
+    {:ok, activation} = ManagedInstances.activate(new_binding.id, "owner")
+
+    {:ok, _} =
+      Nodes.update_operation(node.id, activation.id, "command_result", %{
+        "status" => "ok",
+        "result" => %{"activated" => false}
+      })
+
+    Repo.get!(Operation, activation.id)
+    |> Ecto.Changeset.change(args: Map.delete(activation.args, "verification_id"))
+    |> Repo.update!()
+
+    assert {:error, {:rollback_queue_failed, :invalid_action_or_args}} =
+             Bastion.ManagedInstances.FinalizeWorker.perform(%Oban.Job{
+               args: %{"operation_id" => activation.id}
+             })
+
+    assert Repo.get!(Operation, activation.id).status == "waiting_external"
+    assert Repo.get!(Domains.Binding, args["site_binding_id"]).primary
+    refute Enum.any?(Nodes.operations_for(id), &(&1.action == "domain_rollback"))
+    assert {:error, :busy} = Nodes.queue(id, "stop", "owner", %{})
   end
 
   defp created_instance do

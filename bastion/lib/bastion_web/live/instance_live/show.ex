@@ -313,6 +313,20 @@ defmodule BastionWeb.InstanceLive.Show do
     end
   end
 
+  def handle_event("managed_retry_rollback", _, socket) do
+    case ManagedInstances.retry_rollback(
+           socket.assigns.instance.id,
+           socket.assigns.current_admin
+         ) do
+      {:ok, _} ->
+        {:noreply, socket |> reload() |> put_flash(:info, "Повтор отката запущен")}
+
+      {:error, reason} ->
+        {:noreply,
+         socket |> reload() |> put_flash(:error, "Повтор отката невозможен: #{inspect(reason)}")}
+    end
+  end
+
   def handle_event("rename_managed", %{"instance" => %{"name" => name}}, socket) do
     case Nodes.rename_instance(socket.assigns.instance.id, name) do
       {:ok, instance} ->
@@ -809,6 +823,17 @@ defmodule BastionWeb.InstanceLive.Show do
         </div>
         <div id="managed-domains" class="space-y-2">
           <h3 class="font-semibold">Адреса</h3>
+          <div :if={rollback = Enum.find(@node_operations, &(&1.action == "domain_rollback"))}>
+            <p :if={rollback.status in ~w(error unknown)} class="text-sm text-warning">
+              Откат адреса не завершён: {rollback.status}. Старый адрес остаётся основным в Bastion.
+            </p>
+            <button
+              :if={rollback.status in ~w(error unknown)}
+              id="managed-retry-rollback"
+              class="btn btn-sm btn-warning"
+              phx-click="managed_retry_rollback"
+            >Повторить откат</button>
+          </div>
           <p class="text-sm text-base-content/60">
             Добавьте новый домен в разделе «Домены», затем подготовьте его при работающем сайте. После проверки HTTPS откройте адрес в браузере и подтвердите проверку.
           </p>

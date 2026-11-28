@@ -42,50 +42,57 @@ defmodule Bastion.ManagedInstances.FinalizeWorker do
         :ok
 
       {:error, reason} ->
-        failed? =
-          Repo.transaction(fn ->
-            current = lock_operation(operation.id)
+        case Repo.transaction(fn -> fail_and_queue_rollback(operation, reason) end) do
+          {:ok, %Operation{action: "domain_rollback"} = rollback} ->
+            Nodes.dispatch_operation(rollback)
+            :ok
 
-            if verifying?(current) do
-              current
-              |> Ecto.Changeset.change(
-                status: "error",
-                result: Map.put(current.result, "reason", inspect(reason)),
-                progress: Map.put(current.progress, "stage", "verification_failed"),
-                finished_at: DateTime.utc_now()
-              )
-              |> Repo.update!()
+          {:ok, _} ->
+            :ok
 
-              true
-            else
-              false
-            end
-          end)
-
-        if failed? == {:ok, true} and operation.action == "domain_activate" do
-          case Nodes.queue(operation.instance_id, "domain_rollback", "system", operation.args) do
-            {:ok, rollback} ->
-              Nodes.dispatch_operation(rollback)
-
-              Repo.update_all(from(o in Operation, where: o.id == ^operation.id),
-                set: [
-                  progress: %{
-                    "stage" => "rollback_pending",
-                    "rollback_operation_id" => rollback.id
-                  }
-                ]
-              )
-
-            {:error, rollback_reason} ->
-              Repo.update_all(from(o in Operation, where: o.id == ^operation.id),
-                set: [
-                  progress: %{"stage" => "rollback_failed", "reason" => inspect(rollback_reason)}
-                ]
-              )
-          end
+          {:error, failure} ->
+            {:error, failure}
         end
+    end
+  end
 
-        :ok
+  defp fail_and_queue_rollback(operation, reason) do
+    if operation.action == "domain_activate" do
+      Repo.one!(from i in Instance, where: i.id == ^operation.instance_id, lock: "FOR UPDATE")
+    end
+
+    current = lock_operation(operation.id)
+
+    if verifying?(current) do
+      current
+      |> Ecto.Changeset.change(
+        status: "error",
+        result: Map.put(current.result, "reason", inspect(reason)),
+        progress: Map.put(current.progress, "stage", "verification_failed"),
+        finished_at: DateTime.utc_now()
+      )
+      |> Repo.update!()
+
+      if operation.action == "domain_activate" do
+        case Nodes.queue_deferred(
+               operation.instance_id,
+               "domain_rollback",
+               "system",
+               operation.args
+             ) do
+          {:ok, rollback} ->
+            current
+            |> Ecto.Changeset.change(
+              progress: %{"stage" => "rollback_pending", "rollback_operation_id" => rollback.id}
+            )
+            |> Repo.update!()
+
+            rollback
+
+          {:error, queue_reason} ->
+            Repo.rollback({:rollback_queue_failed, queue_reason})
+        end
+      end
     end
   end
 

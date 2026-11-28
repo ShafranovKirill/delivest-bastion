@@ -355,10 +355,36 @@ defmodule Bastion.ManagedInstances do
   end
 
   defp rollback_failed?(instance_id) do
-    Repo.exists?(
+    match?(%Operation{status: "error"}, latest_rollback(instance_id))
+  end
+
+  def retry_rollback(instance_id, actor) do
+    case latest_rollback(instance_id) do
+      %Operation{status: "error"} = failed ->
+        case Nodes.queue_deferred(instance_id, "domain_rollback", actor, failed.args) do
+          {:ok, retry} ->
+            Nodes.dispatch_operation(retry)
+            {:ok, retry}
+
+          error ->
+            error
+        end
+
+      %Operation{status: "unknown"} = uncertain ->
+        Nodes.dispatch_operation(uncertain)
+        {:ok, uncertain}
+
+      _ ->
+        {:error, :not_retryable}
+    end
+  end
+
+  defp latest_rollback(instance_id) do
+    Repo.one(
       from o in Operation,
-        where:
-          o.instance_id == ^instance_id and o.action == "domain_rollback" and o.status == "error"
+        where: o.instance_id == ^instance_id and o.action == "domain_rollback",
+        order_by: [desc: o.inserted_at, desc: o.id],
+        limit: 1
     )
   end
 

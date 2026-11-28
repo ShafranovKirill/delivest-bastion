@@ -253,6 +253,28 @@ defmodule BastionWeb.InstanceLiveTest do
     assert operation.action == "domain_activate"
     assert operation.args["previous_binding_id"] == old.id
     assert operation.args["binding_id"] == new.id
+
+    operation |> Ecto.Changeset.change(status: "error") |> Bastion.Repo.update!()
+
+    %Bastion.Nodes.Operation{
+      node_id: node.id,
+      instance_id: id,
+      placement_id: placement.id,
+      placement_revision: placement.revision
+    }
+    |> Bastion.Nodes.Operation.changeset(%{
+      action: "domain_rollback",
+      status: "error",
+      args: operation.args,
+      requested_by: "system"
+    })
+    |> Bastion.Repo.insert!()
+
+    {:ok, retry_view, _} = live(log_in(conn), ~p"/instances/#{id}")
+    assert has_element?(retry_view, "#managed-retry-rollback")
+    retry_view |> element("#managed-retry-rollback") |> render_click()
+    assert hd(Bastion.Nodes.operations_for(id)).action == "domain_rollback"
+    assert hd(Bastion.Nodes.operations_for(id)).status == "pending"
   end
 
   test "opens validated server and client URLs and mutes unsafe hosts", %{conn: conn} do
