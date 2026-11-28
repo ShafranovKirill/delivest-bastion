@@ -12,6 +12,8 @@ defmodule Bastion.Snapshots.Snapshot do
     field :release_compatibility, :map, default: %{}
     field :integrity_checked_at, :utc_datetime_usec
     field :restore_checked_at, :utc_datetime_usec
+    field :restore_checked_by, :string
+    field :restore_evidence, :string
     field :instance_name, :string
     field :status, :string, default: "pending"
     field :key, :string

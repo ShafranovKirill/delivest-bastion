@@ -17,7 +17,10 @@ defmodule Bastion.Snapshots do
 
   def latest(instance_id) do
     Snapshot
-    |> where([s], s.instance_id == ^instance_id and s.status == "ok")
+    |> where(
+      [s],
+      s.instance_id == ^instance_id and is_nil(s.node_operation_id) and s.status == "ok"
+    )
     |> order_by([s], desc: s.finished_at, desc: s.id)
     |> limit(1)
     |> Repo.one()
@@ -25,7 +28,7 @@ defmodule Bastion.Snapshots do
 
   def current(instance_id) do
     Snapshot
-    |> where([s], s.instance_id == ^instance_id)
+    |> where([s], s.instance_id == ^instance_id and is_nil(s.node_operation_id))
     |> order_by([s], desc: s.inserted_at, desc: s.id)
     |> limit(1)
     |> Repo.one()
@@ -122,7 +125,8 @@ defmodule Bastion.Snapshots do
                   Snapshot
                   |> where(
                     [s],
-                    s.instance_id == ^candidate.instance_id and s.status == "ok" and
+                    s.instance_id == ^candidate.instance_id and is_nil(s.node_operation_id) and
+                      s.status == "ok" and
                       s.id != ^candidate.id
                   )
                   |> Repo.update_all(set: [status: "obsolete"])
@@ -192,16 +196,24 @@ defmodule Bastion.Snapshots do
     since = DateTime.add(now(), -@stale_after_seconds)
 
     Snapshot
-    |> where([s], s.status == "pending" and s.inserted_at < ^since)
+    |> where(
+      [s],
+      is_nil(s.node_operation_id) and s.status == "pending" and s.inserted_at < ^since
+    )
     |> Repo.all()
     |> Enum.each(&fail(&1, "слепок не завершился за час"))
   end
 
   def run_daily do
     fail_stale()
+    Bastion.ManagedSnapshots.fail_stale()
 
     for instance <- Instances.list_instances(), supported?(instance) do
       Oban.insert(Bastion.Snapshots.Worker.new(%{instance_id: instance.id}))
+    end
+
+    for instance <- Instances.list_instances(), instance.transport == "node" do
+      Oban.insert(Bastion.ManagedSnapshots.Worker.new(%{instance_id: instance.id}))
     end
 
     :ok
@@ -209,7 +221,10 @@ defmodule Bastion.Snapshots do
 
   defp prune(instance_id) do
     Snapshot
-    |> where([s], s.instance_id == ^instance_id and s.status == "obsolete")
+    |> where(
+      [s],
+      s.instance_id == ^instance_id and is_nil(s.node_operation_id) and s.status == "obsolete"
+    )
     |> Repo.all()
     |> Enum.each(fn old ->
       if Storage.delete(old.key) == :ok, do: Repo.delete(old)

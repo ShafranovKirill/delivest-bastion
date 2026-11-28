@@ -5,7 +5,7 @@ defmodule Bastion.Nodes do
   alias Bastion.Nodes.{MetricSample, Node, Operation, Placement, SshInstaller}
   alias Bastion.Repo
 
-  @actions ~w(status start stop domain_prepare domain_release instance_create instance_cleanup domain_activate domain_rollback)
+  @actions ~w(status start stop diagnostics backup instance_delete domain_prepare domain_release instance_create instance_cleanup domain_activate domain_rollback)
   @unresolved ~w(pending running waiting_external unknown)
   @deliverable ~w(pending running unknown)
   @topic "managed_nodes"
@@ -562,7 +562,7 @@ defmodule Bastion.Nodes do
   def queue(_, _, _, _), do: {:error, :invalid_action_or_args}
 
   def queue_deferred(instance_id, action, requested_by, args)
-      when action in ~w(domain_prepare domain_release instance_create instance_cleanup domain_activate domain_rollback) do
+      when action in ~w(backup domain_prepare domain_release instance_create instance_cleanup domain_activate domain_rollback) do
     if valid_args?(action, args) do
       case Ecto.UUID.cast(instance_id) do
         {:ok, id} -> do_queue(id, action, requested_by, args, false)
@@ -584,7 +584,13 @@ defmodule Bastion.Nodes do
     :ok
   end
 
-  defp valid_args?(action, args) when action in ~w(status start stop), do: args == %{}
+  defp valid_args?(action, args) when action in ~w(status start stop diagnostics), do: args == %{}
+
+  defp valid_args?("backup", %{"backup_id" => id} = args),
+    do: map_size(args) == 1 and match?({:ok, _}, Ecto.UUID.cast(id))
+
+  defp valid_args?("instance_delete", %{"confirm_instance_id" => id} = args),
+    do: map_size(args) == 1 and match?({:ok, _}, Ecto.UUID.cast(id))
 
   defp valid_args?("instance_create", args) when is_map(args) do
     required =
@@ -685,6 +691,23 @@ defmodule Bastion.Nodes do
         if action == "instance_cleanup" and args["confirm_instance_id"] != instance.id,
           do: Repo.rollback(:instance_mismatch)
 
+        if action == "instance_delete" do
+          if args["confirm_instance_id"] != instance.id,
+            do: Repo.rollback(:instance_mismatch)
+
+          if instance.desired_state != "stopped" or placement.observed_state != "stopped" or
+               is_nil(placement.observed_at) or
+               DateTime.diff(DateTime.utc_now(), placement.observed_at) > 120 or
+               not ready?(Repo.get!(Node, placement.node_id)),
+             do: Repo.rollback(:not_confirmed_stopped)
+
+          if Repo.exists?(
+               from b in Bastion.Domains.Binding,
+                 where: b.instance_id == ^instance.id and b.state != "released"
+             ),
+             do: Repo.rollback(:active_domain_bindings)
+        end
+
         if Repo.exists?(
              from o in Operation,
                where: o.instance_id == ^instance.id and o.status in ^@unresolved
@@ -725,6 +748,13 @@ defmodule Bastion.Nodes do
   end
 
   def command_payload(%Operation{} = operation) do
+    args =
+      if operation.action == "backup" do
+        Bastion.ManagedSnapshots.delivery_args(operation)
+      else
+        operation.args
+      end
+
     %{
       protocol_version: 1,
       operation_id: operation.id,
@@ -732,7 +762,7 @@ defmodule Bastion.Nodes do
       instance_id: operation.instance_id,
       placement_revision: operation.placement_revision,
       action: operation.action,
-      args: operation.args
+      args: args
     }
   end
 
@@ -748,14 +778,34 @@ defmodule Bastion.Nodes do
 
         if operation.action == "provision_node", do: Repo.rollback(:local_operation)
 
-        if operation.instance_id && !current_placement?(operation),
-          do: Repo.rollback(:stale_placement)
+        if operation.instance_id && !current_placement?(operation) &&
+             !(operation.action == "instance_delete" && operation.status == "ok"),
+           do: Repo.rollback(:stale_placement)
 
-        transition(operation, event, payload)
+        operation = transition(operation, event, payload)
+
+        if event == "command_result" and operation.action == "instance_delete" and
+             operation.status == "ok" do
+          if operation.result["deleted"] != true or
+               operation.result["instance_id"] != operation.instance_id,
+             do: Repo.rollback(:invalid_delete_result)
+
+          Repo.update_all(
+            from(p in Placement,
+              where: p.id == ^operation.placement_id and p.state == "active"
+            ),
+            set: [state: "retired"]
+          )
+        end
+
+        operation
       end)
 
     case result do
       {:ok, operation} ->
+        if event == "command_result" and operation.action == "backup",
+          do: Bastion.ManagedSnapshots.operation_finished(operation)
+
         if event == "command_result" and operation.action in ~w(domain_prepare domain_release) do
           %{operation_id: operation.id}
           |> Bastion.Domains.FinalizeWorker.new()

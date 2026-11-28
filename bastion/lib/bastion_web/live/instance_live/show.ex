@@ -16,6 +16,7 @@ defmodule BastionWeb.InstanceLive.Show do
     Releases,
     SiteAlerts,
     Snapshots,
+    ManagedSnapshots,
     Nodes,
     ManagedInstances,
     Domains
@@ -60,6 +61,8 @@ defmodule BastionWeb.InstanceLive.Show do
            env_loaded?: false,
            maintenance_form: to_form(%{"minutes" => "30"}),
            release_form: to_form(%{}, as: :release),
+           delete_form: to_form(%{"confirm_instance_id" => ""}, as: :delete),
+           restore_check_form: to_form(%{"evidence" => ""}, as: :restore_check),
            agent_release_form: to_form(%{}, as: :agent_release),
            latest_release: nil,
            latest_loading?: false,
@@ -77,7 +80,8 @@ defmodule BastionWeb.InstanceLive.Show do
          |> assign_instance(instance)
          |> load_commands()
          |> load_backups()
-         |> load_metrics()}
+         |> load_metrics()
+         |> maybe_fetch_managed_latest()}
     end
   end
 
@@ -248,6 +252,36 @@ defmodule BastionWeb.InstanceLive.Show do
 
       {:error, reason} ->
         {:noreply, put_flash(socket, :error, "Команда не принята: #{inspect(reason)}")}
+    end
+  end
+
+  def handle_event("managed_release_domain", %{"binding-id" => id}, socket) do
+    if Enum.any?(socket.assigns.domain_bindings, &(&1.id == id)) do
+      case Domains.request_release(id, socket.assigns.current_admin) do
+        {:ok, _} ->
+          {:noreply, socket |> reload() |> put_flash(:info, "Освобождение адреса запущено")}
+
+        {:error, reason} ->
+          {:noreply, put_flash(socket, :error, "Адрес не освобождён: #{inspect(reason)}")}
+      end
+    else
+      {:noreply, put_flash(socket, :error, "Адрес не принадлежит франшизе")}
+    end
+  end
+
+  def handle_event("managed_delete", %{"delete" => %{"confirm_instance_id" => id}}, socket) do
+    if id == socket.assigns.instance.id do
+      case Nodes.queue(id, "instance_delete", socket.assigns.current_admin, %{
+             "confirm_instance_id" => id
+           }) do
+        {:ok, _} ->
+          {:noreply, socket |> reload() |> put_flash(:info, "Удаление установки запущено")}
+
+        {:error, reason} ->
+          {:noreply, put_flash(socket, :error, "Удаление не запущено: #{inspect(reason)}")}
+      end
+    else
+      {:noreply, put_flash(socket, :error, "Укажите точный ID франшизы")}
     end
   end
 
@@ -428,6 +462,54 @@ defmodule BastionWeb.InstanceLive.Show do
     {:noreply, load_backups(socket)}
   end
 
+  def handle_event("managed_snapshot", _, socket) do
+    socket =
+      case ManagedSnapshots.start(socket.assigns.instance, socket.assigns.current_admin) do
+        {:ok, _} -> put_flash(socket, :info, "Нода создаёт полную копию")
+        {:error, reason} -> put_flash(socket, :error, "Копия не начата: #{inspect(reason)}")
+      end
+
+    {:noreply, load_backups(socket)}
+  end
+
+  def handle_event(
+        "managed_restore_checked",
+        %{"snapshot_id" => id, "restore_check" => %{"evidence" => evidence}},
+        socket
+      ) do
+    if socket.assigns.instance.transport == "node" and socket.assigns.managed_snapshot_latest &&
+         socket.assigns.managed_snapshot_latest.id == id do
+      case ManagedSnapshots.confirm_restore(id, socket.assigns.current_admin, evidence) do
+        {:ok, _} ->
+          {:noreply,
+           socket |> load_backups() |> put_flash(:info, "Проверка восстановления записана")}
+
+        {:error, reason} ->
+          {:noreply, put_flash(socket, :error, "Проверка не записана: #{inspect(reason)}")}
+      end
+    else
+      {:noreply, put_flash(socket, :error, "Выберите текущую полную копию")}
+    end
+  end
+
+  def handle_event("managed_retry_prune", _, socket) do
+    case socket.assigns.managed_snapshot_latest do
+      %{restore_checked_at: checked, restore_evidence: evidence, error: error} = snapshot
+      when not is_nil(checked) and not is_nil(error) ->
+        case ManagedSnapshots.confirm_restore(snapshot.id, socket.assigns.current_admin, evidence) do
+          {:ok, _} ->
+            {:noreply,
+             socket |> load_backups() |> put_flash(:info, "Очистка прежних копий повторена")}
+
+          {:error, reason} ->
+            {:noreply, put_flash(socket, :error, "Очистка не выполнена: #{inspect(reason)}")}
+        end
+
+      _ ->
+        {:noreply, socket}
+    end
+  end
+
   def handle_event("maintenance_toggle", _params, socket),
     do: {:noreply, assign(socket, maintenance_open?: !socket.assigns.maintenance_open?)}
 
@@ -479,6 +561,11 @@ defmodule BastionWeb.InstanceLive.Show do
     {:noreply, socket}
   end
 
+  def handle_event("delete", _params, %{assigns: %{instance: %{transport: "node"}}} = socket) do
+    {:noreply,
+     put_flash(socket, :error, "Удаление управляемой франшизы требует отдельной операции")}
+  end
+
   def handle_event("delete", _params, socket) do
     {:ok, _} = Instances.delete_instance(socket.assigns.instance)
 
@@ -495,6 +582,20 @@ defmodule BastionWeb.InstanceLive.Show do
   def handle_async(:latest_release, _result, socket),
     do:
       {:noreply, assign(socket, latest_release: nil, latest_loading?: false, latest_error?: true)}
+
+  def handle_async(:managed_latest, {:ok, {:ok, release}}, socket),
+    do: {:noreply, assign(socket, managed_latest: release.version)}
+
+  def handle_async(:managed_latest, _result, socket),
+    do: {:noreply, assign(socket, managed_latest: nil)}
+
+  defp maybe_fetch_managed_latest(socket) do
+    socket = assign(socket, managed_latest: nil)
+
+    if connected?(socket) and socket.assigns.instance.transport == "node",
+      do: start_async(socket, :managed_latest, fn -> Releases.Managed.latest() end),
+      else: socket
+  end
 
   defp fetch_latest(socket) do
     if connected?(socket) do
@@ -607,7 +708,10 @@ defmodule BastionWeb.InstanceLive.Show do
     assign(socket,
       backups: Backups.list(id),
       snapshot_latest: Snapshots.latest(id),
-      snapshot_current: Snapshots.current(id)
+      snapshot_current: Snapshots.current(id),
+      managed_snapshot_latest: ManagedSnapshots.latest(id),
+      managed_snapshot_current: ManagedSnapshots.current(id),
+      managed_snapshot_restore_checked: ManagedSnapshots.last_restore_checked(id)
     )
   end
 
@@ -791,14 +895,110 @@ defmodule BastionWeb.InstanceLive.Show do
           Compose-проект {@node_placement.project_name} · 127.0.0.1:{@node_placement.gateway_port} · Фактически {@node_placement.observed_state ||
             "нет данных"} · Цель {@instance.desired_state || "не задана"}
         </p>
-        <div class="flex flex-wrap gap-2">
+        <p class="text-sm text-base-content/60">
+          Установлен {@node_placement && (@node_placement.observed_release || "нет данных")} · опубликован {@managed_latest ||
+            "нет данных"}
+        </p>
+        <div :if={@node_placement} class="flex flex-wrap gap-2">
           <button
-            :for={action <- ~w(status stop start)}
+            :for={action <- ~w(status diagnostics stop start)}
             type="button"
             class="btn btn-sm"
             phx-click="managed_command"
             phx-value-action={action}
           >{action}</button>
+        </div>
+        <div id="managed-backups" class="rounded-lg bg-base-200 p-3 space-y-2 text-sm">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <h3 class="font-semibold">Полная резервная копия</h3>
+            <button
+              id="managed-snapshot-now"
+              type="button"
+              class="btn btn-sm"
+              phx-click="managed_snapshot"
+              disabled={@managed_snapshot_current && @managed_snapshot_current.status == "pending"}
+              data-confirm="Создать полную копию? Выбранная франшиза остановится на время копирования."
+            >Создать копию</button>
+          </div>
+          <p :if={@managed_snapshot_current && @managed_snapshot_current.status == "pending"}>
+            Копирование выполняется.
+          </p>
+          <p
+            :if={@managed_snapshot_current && @managed_snapshot_current.status == "error"}
+            class="text-error"
+          >
+            Последняя попытка завершилась ошибкой: {@managed_snapshot_current.error}
+          </p>
+          <p :if={@managed_snapshot_latest}>
+            Последняя копия: {datetime(@managed_snapshot_latest.finished_at)} · {format_size(
+              @managed_snapshot_latest.size
+            )} · целостность архива проверена · {if @managed_snapshot_latest.restore_checked_at,
+              do: "восстановление проверено",
+              else: "восстановление не проверено"}
+          </p>
+          <p :if={@managed_snapshot_restore_checked} id="managed-restore-point">
+            Последняя подтверждённая точка восстановления: {datetime(
+              @managed_snapshot_restore_checked.finished_at
+            )}
+          </p>
+          <.link
+            :if={@managed_snapshot_latest}
+            id="managed-snapshot-download"
+            href={~p"/backups/snapshots/#{@managed_snapshot_latest.id}/download"}
+            class="btn btn-sm btn-outline"
+          >
+            Скачать копию
+          </.link>
+          <p :if={!@managed_snapshot_latest}>Пригодной копии пока нет.</p>
+          <p :if={@managed_snapshot_latest && @managed_snapshot_latest.error} class="text-warning">
+            {@managed_snapshot_latest.error}
+          </p>
+          <button
+            :if={
+              @managed_snapshot_latest && @managed_snapshot_latest.restore_checked_at &&
+                @managed_snapshot_latest.error
+            }
+            type="button"
+            class="btn btn-xs"
+            phx-click="managed_retry_prune"
+          >
+            Повторить очистку прежних копий
+          </button>
+          <.form
+            :if={@managed_snapshot_latest && !@managed_snapshot_latest.restore_checked_at}
+            for={@restore_check_form}
+            id="managed-restore-check-form"
+            phx-submit="managed_restore_checked"
+            class="space-y-2"
+          >
+            <input type="hidden" name="snapshot_id" value={@managed_snapshot_latest.id} />
+            <.input
+              field={@restore_check_form[:evidence]}
+              label="Протокол изолированного восстановления"
+              required
+              minlength="10"
+            />
+            <button
+              type="submit"
+              class="btn btn-sm btn-outline"
+              data-confirm="Подтвердить фактически выполненное восстановление этой копии? После отметки предыдущая копия может быть удалена по политике хранения."
+            >
+              Подтвердить проверку восстановления
+            </button>
+          </.form>
+          <p
+            :if={@managed_snapshot_latest && snapshot_stale?(@managed_snapshot_latest)}
+            class="text-warning"
+          >
+            Последней копии больше суток.
+          </p>
+        </div>
+        <div
+          :if={diagnostics = Enum.find(@node_operations, &(&1.action == "diagnostics"))}
+          id="managed-diagnostics"
+          class="rounded-lg bg-base-200 p-3 text-sm"
+        >
+          Диагностика: {diagnostics.status} · {inspect(diagnostics.result)}
         </div>
         <div id="managed-creation" class="rounded-lg bg-base-200 p-3 text-sm space-y-2">
           <p>
@@ -846,6 +1046,14 @@ defmodule BastionWeb.InstanceLive.Show do
             <span>{binding.purpose}: {binding.domain.hostname}</span>
             <span>{binding.state}{if binding.primary, do: " · основной", else: ""}</span>
             <button
+              id={"managed-release-#{binding.id}"}
+              type="button"
+              class="btn btn-xs btn-outline"
+              phx-click="managed_release_domain"
+              phx-value-binding-id={binding.id}
+              data-confirm="Освободить этот адрес? Витрина может перестать открываться."
+            >Освободить</button>
+            <button
               :if={binding.state in ~w(reserved waiting_dns error)}
               class="btn btn-xs"
               phx-click="managed_prepare_domain"
@@ -868,6 +1076,39 @@ defmodule BastionWeb.InstanceLive.Show do
               phx-value-binding-id={binding.id}
             >Сделать основным</button>
           </div>
+        </div>
+        <div
+          :if={@node_placement}
+          id="managed-delete"
+          class="rounded-lg border border-error/40 p-3 space-y-2 text-sm"
+        >
+          <h3 class="font-semibold">Удалить установку</h3>
+          <p>
+            Сначала остановите франшизу и освободите все адреса выше. После подтверждения нода удалит её контейнеры, тома, локальные файлы и маршруты. Внешние резервные копии сохраняются.
+          </p>
+          <p>ID франшизы: <code>{@instance.id}</code></p>
+          <.form
+            for={@delete_form}
+            id="managed-delete-form"
+            phx-submit="managed_delete"
+            class="flex flex-wrap items-end gap-2"
+          >
+            <.input
+              field={@delete_form[:confirm_instance_id]}
+              label="Введите ID франшизы"
+            />
+            <button
+              type="submit"
+              class="btn btn-error btn-sm"
+              disabled={
+                @domain_bindings != [] || @instance.desired_state != "stopped" ||
+                  @node_placement.observed_state != "stopped"
+              }
+              data-confirm="Удалить данные только этой франшизы с ноды?"
+            >
+              Удалить установку
+            </button>
+          </.form>
         </div>
         <.form
           for={%{}}

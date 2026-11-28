@@ -1,15 +1,15 @@
 defmodule BastionWeb.SnapshotController do
   use BastionWeb, :controller
 
-  alias Bastion.Snapshots
+  alias Bastion.{ManagedSnapshots, Snapshots}
 
   @max_size 20 * 1024 * 1024 * 1024
 
   def upload(conn, %{"id" => id}) do
-    with {:ok, snapshot} <- Snapshots.authorize_upload(id, bearer(conn)),
+    with {:ok, snapshot} <- authorize(id, bearer(conn)),
          {:ok, path, conn} <- receive_file(conn) do
       try do
-        case Snapshots.store(snapshot, path) do
+        case store(snapshot, path) do
           {:ok, snapshot} ->
             json(conn, %{ok: true, size: snapshot.size})
 
@@ -45,10 +45,10 @@ defmodule BastionWeb.SnapshotController do
     path = Plug.Upload.random_file!("snapshot-download")
 
     try do
-      case Snapshots.fetch(snapshot, path) do
+      case fetch(snapshot, path) do
         :ok ->
           send_download(conn, {:file, path},
-            filename: Snapshots.filename(snapshot),
+            filename: filename(snapshot),
             content_type: "application/octet-stream"
           )
 
@@ -66,6 +66,31 @@ defmodule BastionWeb.SnapshotController do
       _ -> nil
     end
   end
+
+  defp authorize(id, token) do
+    case Snapshots.get(id) do
+      %{node_operation_id: operation_id} when not is_nil(operation_id) ->
+        ManagedSnapshots.authorize_upload(id, token)
+
+      _ ->
+        Snapshots.authorize_upload(id, token)
+    end
+  end
+
+  defp store(%{node_operation_id: id} = snapshot, path) when not is_nil(id),
+    do: ManagedSnapshots.store(snapshot, path)
+
+  defp store(snapshot, path), do: Snapshots.store(snapshot, path)
+
+  defp fetch(%{node_operation_id: id} = snapshot, path) when not is_nil(id),
+    do: ManagedSnapshots.fetch(snapshot, path)
+
+  defp fetch(snapshot, path), do: Snapshots.fetch(snapshot, path)
+
+  defp filename(%{node_operation_id: id} = snapshot) when not is_nil(id),
+    do: "#{snapshot.id}-managed.tar.gz"
+
+  defp filename(snapshot), do: Snapshots.filename(snapshot)
 
   defp receive_file(conn) do
     path = Plug.Upload.random_file!("snapshot-upload")
