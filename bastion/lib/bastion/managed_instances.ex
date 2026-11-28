@@ -169,12 +169,14 @@ defmodule Bastion.ManagedInstances do
              order_by: [desc: o.inserted_at],
              limit: 1
          ) do
-      %Operation{status: status} = operation
-      when status in ~w(waiting_external pending running unknown) ->
-        if operation.status == "waiting_external" and
-             operation.progress["stage"] in ~w(waiting_dns dns_error),
-           do: enqueue(operation.id)
+      %Operation{status: "waiting_external"} = operation ->
+        if operation.progress["stage"] in ~w(waiting_dns dns_error),
+          do: enqueue(operation.id)
 
+        {:ok, operation}
+
+      %Operation{status: status} = operation when status in ~w(pending running unknown) ->
+        Nodes.dispatch_operation(operation)
         {:ok, operation}
 
       %Operation{status: "error"} = operation ->

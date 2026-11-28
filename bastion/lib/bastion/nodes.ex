@@ -804,7 +804,10 @@ defmodule Bastion.Nodes do
                where:
                  o.instance_id == ^instance_id and o.placement_id == ^placement.id and
                    o.action == "instance_create" and
-                   o.status in ["pending", "running", "unknown", "ok"]
+                   (o.status in ["pending", "running", "unknown", "ok"] or
+                      (o.status == "waiting_external" and
+                         fragment("?->>'stage' = 'verifying'", o.progress) and
+                         fragment("?->>'stage' = 'ready'", o.result)))
            ),
            do: Repo.rollback(:creation_not_dispatched)
 

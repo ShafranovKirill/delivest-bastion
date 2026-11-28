@@ -66,14 +66,19 @@ defmodule BastionWeb.NodeChannelTest do
     id = Ecto.UUID.generate()
     {:ok, placement} = Nodes.prepare_instance(node.id, id, "Cafe", %{}, "delivest-cafe", 20_000)
 
-    %Operation{
-      node_id: node.id,
-      instance_id: id,
-      placement_id: placement.id,
-      placement_revision: placement.revision
-    }
-    |> Operation.changeset(%{action: "instance_create", status: "running", args: %{}})
-    |> Repo.insert!()
+    operation =
+      %Operation{
+        node_id: node.id,
+        instance_id: id,
+        placement_id: placement.id,
+        placement_revision: placement.revision
+      }
+      |> Operation.changeset(%{action: "instance_create", status: "waiting_external", args: %{}})
+      |> Repo.insert!()
+
+    operation
+    |> Ecto.Changeset.change(progress: %{"stage" => "waiting_dns"})
+    |> Repo.update!()
 
     {:ok, socket} =
       connect(NodeSocket, %{},
@@ -89,6 +94,24 @@ defmodule BastionWeb.NodeChannelTest do
       "admin_password" => "a-unique-secret-123456"
     }
 
+    ref = push(socket, "bootstrap_credentials", payload)
+    assert_reply ref, :error, %{reason: "invalid_bootstrap_credentials"}
+
+    operation
+    |> Ecto.Changeset.change(status: "running", progress: %{"stage" => "started"})
+    |> Repo.update!()
+
+    ref =
+      push(socket, "command_result", %{
+        "operation_id" => operation.id,
+        "status" => "ok",
+        "result" => %{"stage" => "ready"}
+      })
+
+    assert_reply ref, :ok
+    assert Repo.get!(Operation, operation.id).status == "waiting_external"
+    assert Repo.get!(Operation, operation.id).progress["stage"] == "verifying"
+
     log =
       ExUnit.CaptureLog.capture_log(fn ->
         ref = push(socket, "bootstrap_credentials", payload)
@@ -97,6 +120,7 @@ defmodule BastionWeb.NodeChannelTest do
       end)
 
     refute log =~ payload["admin_password"]
+    assert Repo.get!(Operation, operation.id).status == "waiting_external"
 
     instance = Repo.get!(Bastion.Instances.Instance, id)
     assert instance.admin_login == "admin123"

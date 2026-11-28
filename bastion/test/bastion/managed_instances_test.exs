@@ -83,6 +83,10 @@ defmodule Bastion.ManagedInstancesTest do
     assert {:error, :release_unavailable} =
              ManagedInstances.create(%{attrs | "instance_id" => Ecto.UUID.generate()}, "owner")
 
+    operation |> Ecto.Changeset.change(status: "pending") |> Repo.update!()
+    assert {:ok, %Operation{id: ^same_id}} = ManagedInstances.retry_create(id)
+    operation |> Ecto.Changeset.change(status: "unknown") |> Repo.update!()
+    assert {:ok, %Operation{id: ^same_id}} = ManagedInstances.retry_create(id)
     assert length(Nodes.operations_for(id)) == 1
   end
 
