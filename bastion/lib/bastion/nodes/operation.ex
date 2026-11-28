@@ -17,6 +17,7 @@ defmodule Bastion.Nodes.Operation do
     field :progress, :map, default: %{}
     field :result, :map, default: %{}
     field :requested_by, :string
+    field :request_key, :string
     field :acknowledged_at, :utc_datetime_usec
     field :started_at, :utc_datetime_usec
     field :finished_at, :utc_datetime_usec

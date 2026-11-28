@@ -5,12 +5,15 @@ defmodule Bastion.Nodes do
   alias Bastion.Nodes.{MetricSample, Node, Operation, Placement, SshInstaller}
   alias Bastion.Repo
 
-  @actions ~w(status start stop diagnostics backup backup_database instance_delete domain_prepare domain_release instance_create instance_cleanup domain_activate domain_rollback)
+  @actions ~w(status start stop diagnostics backup backup_database instance_delete instance_update domain_prepare domain_release instance_create instance_cleanup domain_activate domain_rollback)
   @unresolved ~w(pending running waiting_external unknown)
   @deliverable ~w(pending running unknown)
   @topic "managed_nodes"
 
   def subscribe, do: Phoenix.PubSub.subscribe(Bastion.PubSub, @topic)
+
+  def subscribe_operation_updates,
+    do: Phoenix.PubSub.subscribe(Bastion.PubSub, "managed_node_operations")
 
   def subscribe_commands(node_id),
     do: Phoenix.PubSub.subscribe(Bastion.PubSub, "node_commands:#{node_id}")
@@ -516,7 +519,11 @@ defmodule Bastion.Nodes do
 
     if instance.transport != "node", do: Repo.rollback(:legacy_conversion_out_of_scope)
 
-    node = Repo.get(Node, node_id) || Repo.rollback(:node_not_found)
+    node =
+      Repo.one(from n in Node, where: n.id == ^node_id, lock: "FOR UPDATE") ||
+        Repo.rollback(:node_not_found)
+
+    if node.maintenance, do: Repo.rollback(:node_in_maintenance)
 
     existing =
       Repo.one(from p in Placement, where: p.instance_id == ^instance.id and p.state == "active")
@@ -562,7 +569,7 @@ defmodule Bastion.Nodes do
   def queue(_, _, _, _), do: {:error, :invalid_action_or_args}
 
   def queue_deferred(instance_id, action, requested_by, args)
-      when action in ~w(backup backup_database domain_prepare domain_release instance_create instance_cleanup domain_activate domain_rollback) do
+      when action in ~w(backup backup_database instance_update domain_prepare domain_release instance_create instance_cleanup domain_activate domain_rollback) do
     if valid_args?(action, args) do
       case Ecto.UUID.cast(instance_id) do
         {:ok, id} -> do_queue(id, action, requested_by, args, false)
@@ -585,6 +592,17 @@ defmodule Bastion.Nodes do
   end
 
   defp valid_args?(action, args) when action in ~w(status start stop diagnostics), do: args == %{}
+
+  defp valid_args?("instance_update", args) when is_map(args) do
+    version = args["release_version"]
+
+    Map.keys(args) |> Enum.sort() == ~w(release_sha256 release_url release_version) and
+      is_binary(version) and Regex.match?(~r/\A\d+\.\d+\.\d+\z/, version) and
+      args["release_url"] ==
+        "https://github.com/ShafranovKirill/delivest/releases/download/v#{version}/delivest-deploy-#{version}.tar.gz" and
+      is_binary(args["release_sha256"]) and
+      Regex.match?(~r/\A[0-9a-f]{64}\z/, args["release_sha256"])
+  end
 
   defp valid_args?(action, %{"backup_id" => id} = args) when action in ~w(backup backup_database),
     do: map_size(args) == 1 and match?({:ok, _}, Ecto.UUID.cast(id))
@@ -687,6 +705,11 @@ defmodule Bastion.Nodes do
                instance.desired_release != args["release_version"],
              do: Repo.rollback(:release_or_port_mismatch)
         end
+
+        if action == "instance_update" and
+             (placement.observed_state != "running" or
+                is_nil(placement.observed_release)),
+           do: Repo.rollback(:installation_not_ready)
 
         if action == "instance_cleanup" and args["confirm_instance_id"] != instance.id,
           do: Repo.rollback(:instance_mismatch)
@@ -798,6 +821,24 @@ defmodule Bastion.Nodes do
           )
         end
 
+        if event == "command_result" and operation.action == "instance_update" and
+             operation.status == "ok" do
+          version = operation.result["release_version"]
+
+          if version != operation.args["release_version"],
+            do: Repo.rollback(:invalid_update_result)
+
+          Repo.update_all(
+            from(p in Placement, where: p.id == ^operation.placement_id and p.state == "active"),
+            set: [observed_release: version, observed_at: DateTime.utc_now()]
+          )
+
+          Repo.update_all(
+            from(i in Instance, where: i.id == ^operation.instance_id),
+            set: [desired_release: version]
+          )
+        end
+
         operation
       end)
 
@@ -817,6 +858,14 @@ defmodule Bastion.Nodes do
           %{operation_id: operation.id}
           |> Bastion.ManagedInstances.FinalizeWorker.new()
           |> Oban.insert()
+        end
+
+        if operation.action == "instance_update" do
+          Phoenix.PubSub.broadcast(
+            Bastion.PubSub,
+            "managed_node_operations",
+            {:node_operation_updated, operation}
+          )
         end
 
         broadcast()
@@ -1009,20 +1058,30 @@ defmodule Bastion.Nodes do
           p.node_id == ^node_id and p.instance_id == ^instance_id and p.revision == ^revision and
             p.state == "active" and (is_nil(p.observed_at) or p.observed_at <= ^sampled_at)
 
-    Repo.update_all(query,
-      set: [observed_state: status, observed_release: data["release"], observed_at: sampled_at]
-    )
+    observed = [observed_state: status, observed_at: sampled_at]
+
+    observed =
+      if is_binary(data["release_version"]),
+        do: [{:observed_release, data["release_version"]} | observed],
+        else: observed
+
+    Repo.update_all(query, set: observed)
   end
 
   defp record_instance_observation(_, _, _), do: :ok
 
-  defp valid_instance_observation?(%{
-         "instance_id" => id,
-         "placement_revision" => revision,
-         "status" => status
-       }) do
+  defp valid_instance_observation?(
+         %{
+           "instance_id" => id,
+           "placement_revision" => revision,
+           "status" => status
+         } = data
+       ) do
     match?({:ok, _}, Ecto.UUID.cast(id)) and is_integer(revision) and revision > 0 and
-      status in ~w(running stopped degraded unknown)
+      status in ~w(running stopped degraded unknown) and
+      (is_nil(data["release_version"]) or
+         (is_binary(data["release_version"]) and
+            Regex.match?(~r/\A\d+\.\d+\.\d+\z/, data["release_version"])))
   end
 
   defp valid_instance_observation?(_), do: false

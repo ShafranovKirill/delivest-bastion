@@ -3,7 +3,7 @@ defmodule BastionWeb.InstanceLive.Index do
 
   import BastionWeb.InstanceLive.Components
 
-  alias Bastion.{Health, Images, Instances, ManagedInstances, Nodes, Rollout}
+  alias Bastion.{Health, Images, Instances, ManagedInstances, ManagedRollout, Nodes, Rollout}
   alias BastionWeb.Presence
 
   @tick :timer.seconds(15)
@@ -23,6 +23,7 @@ defmodule BastionWeb.InstanceLive.Index do
        page_title: "Франшизы",
        search: "",
        rollout: Rollout.state(),
+       managed_rollout: ManagedRollout.latest(),
        checking_images?: false,
        image_result: nil,
        create_form: new_create_form()
@@ -60,6 +61,40 @@ defmodule BastionWeb.InstanceLive.Index do
   def handle_event("rollout_cancel", _params, socket) do
     :ok = Rollout.cancel(socket.assigns.current_admin)
     {:noreply, assign(socket, rollout: Rollout.state())}
+  end
+
+  def handle_event("managed_rollout", %{"managed_rollout" => attrs}, socket) do
+    ids = Map.get(attrs, "instance_ids", [])
+
+    result =
+      case attrs["scope"] do
+        "all" ->
+          ManagedRollout.start([], attrs["canary_id"], socket.assigns.current_admin)
+
+        "selected" when ids != [] ->
+          ManagedRollout.start(ids, attrs["canary_id"], socket.assigns.current_admin)
+
+        _ ->
+          {:error, :empty_selection}
+      end
+
+    case result do
+      {:ok, _} ->
+        {:noreply, socket |> put_flash(:info, "Обновление запущено") |> load()}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Не удалось запустить: #{inspect(reason)}")}
+    end
+  end
+
+  def handle_event("managed_rollout_resume", %{"id" => id}, socket) do
+    case ManagedRollout.resume(id, socket.assigns.current_admin) do
+      {:ok, _} ->
+        {:noreply, socket |> put_flash(:info, "Очередь продолжена") |> load()}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Не удалось продолжить: #{inspect(reason)}")}
+    end
   end
 
   def handle_event("check_images", _params, socket) do
@@ -125,7 +160,9 @@ defmodule BastionWeb.InstanceLive.Index do
       instance_count: length(instances),
       health: health,
       placements: placements,
-      ready_nodes: Enum.filter(Nodes.list_nodes(), &Nodes.ready?/1)
+      ready_nodes: Enum.filter(Nodes.list_nodes(), &(Nodes.ready?(&1) and not &1.maintenance)),
+      managed_instances: Enum.filter(instances, &(&1.transport == "node")),
+      managed_rollout: ManagedRollout.latest()
     )
     |> stream(:instances, instances, reset: true, dom_id: &"instance-#{&1.id}")
   end
@@ -203,6 +240,9 @@ defmodule BastionWeb.InstanceLive.Index do
           {node.name}: метрики {if node.sampled_at,
             do: Calendar.strftime(node.sampled_at, "%d.%m %H:%M"),
             else: "отсутствуют"}; свободная память и диск требуют проверки перед размещением.
+          <span :for={warning <- Bastion.Fleet.node_resources(node).warnings} class="text-warning">
+            {warning}
+          </span>
         </p>
       </section>
       <div class="flex flex-wrap items-center justify-between gap-3">
@@ -226,6 +266,75 @@ defmodule BastionWeb.InstanceLive.Index do
           </button>
         </div>
       </div>
+
+      <section
+        id="managed-rollout"
+        class="rounded-xl border border-base-300 bg-base-100 p-5 space-y-3"
+      >
+        <h2 class="text-lg font-semibold">Обновить управляемые франшизы</h2>
+        <.form
+          for={to_form(%{}, as: :managed_rollout)}
+          id="managed-rollout-form"
+          phx-submit="managed_rollout"
+          class="space-y-3"
+        >
+          <.input
+            name="managed_rollout[scope]"
+            type="select"
+            value="all"
+            label="Состав"
+            options={[{"Все", "all"}, {"Выбранные", "selected"}]}
+          />
+          <.input
+            name="managed_rollout[canary_id]"
+            type="select"
+            value=""
+            label="Контрольная франшиза"
+            options={Enum.map(@managed_instances, &{&1.name, &1.id})}
+            prompt="Выберите франшизу"
+            required
+          />
+          <div class="grid gap-2 sm:grid-cols-2">
+            <label :for={instance <- @managed_instances} class="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                name="managed_rollout[instance_ids][]"
+                value={instance.id}
+                class="checkbox checkbox-sm"
+              />
+              {instance.name}
+            </label>
+          </div>
+          <button
+            class="btn btn-primary btn-sm"
+            disabled={
+              @managed_instances == [] or (@managed_rollout && @managed_rollout.status == "running")
+            }
+          >Начать обновление</button>
+        </.form>
+        <div :if={@managed_rollout} id="managed-rollout-progress" class="text-sm space-y-2">
+          <p>
+            Релиз {@managed_rollout.version}. Состояние {@managed_rollout.status}. Завершено {Enum.count(
+              @managed_rollout.items,
+              &(&1.status == "ok")
+            )} из {length(@managed_rollout.items)}.
+          </p>
+          <p :if={@managed_rollout.paused_reason} class="text-warning">
+            {@managed_rollout.paused_reason}
+          </p>
+          <button
+            :if={@managed_rollout.status == "paused"}
+            phx-click="managed_rollout_resume"
+            phx-value-id={@managed_rollout.id}
+            class="btn btn-warning btn-sm"
+          >Продолжить очередь</button>
+          <ul class="space-y-1">
+            <li :for={item <- Enum.sort_by(@managed_rollout.items, & &1.position)}>
+              {item.instance.name} — {item.status}<span :if={item.error}>: {item.error}</span>
+            </li>
+          </ul>
+        </div>
+      </section>
 
       <form id="instance-search" phx-change="search" class="max-w-sm">
         <.input
