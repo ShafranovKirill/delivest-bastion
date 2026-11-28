@@ -78,12 +78,12 @@ FROM ${RUNNER_IMAGE} AS final
 
 # pg_restore from PGDG checks the backups; it must not be older than the sites' postgres.
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends libstdc++6 openssl libncurses6 locales ca-certificates curl \
+  && apt-get install -y --no-install-recommends libstdc++6 openssl libncurses6 locales ca-certificates curl openssh-client sshpass \
   && install -d /usr/share/postgresql-common/pgdg \
   && curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc \
   && echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt bookworm-pgdg main" > /etc/apt/sources.list.d/pgdg.list \
   && apt-get update \
-  && apt-get install -y --no-install-recommends postgresql-client-17 tar \
+  && apt-get install -y --no-install-recommends postgresql-client-17 tar python3 \
   && rm -rf /var/lib/apt/lists/*
 
 # Set the locale

@@ -24,6 +24,18 @@ defmodule Bastion.Telegram.UpdateWorker do
     |> persisted()
   end
 
+  def enqueue_node_operation(operation) do
+    %{
+      kind: "node_operation",
+      id: operation.id,
+      status: operation.status,
+      stage: operation.progress["stage"] || ""
+    }
+    |> new(unique: [period: 86_400, keys: [:kind, :id, :status, :stage]])
+    |> Oban.insert()
+    |> persisted()
+  end
+
   # Oban's Basic engine may report a lock conflict without inserting a row.
   # Telegram must retry that update instead of receiving an acknowledgement.
   defp persisted({:ok, %Oban.Job{id: nil}}), do: {:error, :enqueue_conflict}
@@ -38,6 +50,20 @@ defmodule Bastion.Telegram.UpdateWorker do
     case Repo.get(Bastion.Instances.Command, id) do
       %{status: ^status} = command -> normalize(Bot.command_updated(command))
       _ -> :ok
+    end
+  end
+
+  def perform(%Oban.Job{
+        args: %{"kind" => "node_operation", "id" => id, "status" => status, "stage" => stage}
+      }) do
+    case Repo.get(Bastion.Nodes.Operation, id) do
+      %{status: ^status} = operation ->
+        if (operation.progress["stage"] || "") == stage,
+          do: normalize(Bot.node_operation_updated(operation)),
+          else: :ok
+
+      _ ->
+        :ok
     end
   end
 

@@ -4,8 +4,19 @@ defmodule Bastion.Telegram.Bot do
   that card while it runs; other finished commands are reported with a new message.
   """
 
-  alias Bastion.{Alerts, Backups, CrmAlerts, Instances, Telegram, Updates}
-  alias Bastion.Telegram.{Cards, Screens}
+  alias Bastion.{
+    Alerts,
+    Backups,
+    CrmAlerts,
+    Instances,
+    ManagedUpdates,
+    Nodes,
+    Releases,
+    Telegram,
+    Updates
+  }
+
+  alias Bastion.Telegram.{Cards, FleetScreens, Screens}
 
   require Logger
 
@@ -78,6 +89,21 @@ defmodule Bastion.Telegram.Bot do
 
   def command_finished(_command), do: :skipped
 
+  def node_operation_updated(%{request_key: "telegram:" <> key} = operation) do
+    with [chat_id, message, _nonce] <- String.split(key, ":", parts: 3),
+         {chat_id, ""} <- Integer.parse(chat_id),
+         {message_id, ""} <- Integer.parse(message),
+         true <- Telegram.allowed_chat?(chat_id),
+         %{} = instance <- Instances.get_instance(operation.instance_id) do
+      screen = FleetScreens.instance(instance, nil, operation.args["release_version"], operation)
+      edit({chat_id, message_id}, screen)
+    else
+      _ -> :skipped
+    end
+  end
+
+  def node_operation_updated(_), do: :skipped
+
   defp notify?(%{action: action}) when action in @notify_actions, do: true
   defp notify?(%{action: "logs", requested_by: "telegram" <> _}), do: true
   defp notify?(_command), do: false
@@ -120,6 +146,9 @@ defmodule Bastion.Telegram.Bot do
   end
 
   # Any text that is not a command looks for a site by its name or host.
+  defp screen("/overview"), do: FleetScreens.overview()
+  defp screen("/servers"), do: FleetScreens.servers()
+  defp screen("/operations"), do: FleetScreens.operations()
   defp screen("/" <> _command), do: Screens.instances()
 
   defp screen(text) do
@@ -140,6 +169,27 @@ defmodule Bastion.Telegram.Bot do
 
   defp handle_callback(%{"data" => data} = query) do
     case String.split(data, ":", parts: 3) do
+      ["fleet"] ->
+        show(query, FleetScreens.overview())
+
+      ["servers"] ->
+        show(query, FleetScreens.servers())
+
+      ["operations"] ->
+        show(query, FleetScreens.operations())
+
+      ["n", id] ->
+        case Nodes.get_node(id) do
+          nil -> answer(query, "Сервер не найден")
+          node -> show(query, FleetScreens.node(node))
+        end
+
+      ["ma", id] ->
+        with_instance(query, id, &ask_managed_update(query, &1))
+
+      ["my", token] ->
+        confirm_managed_update(query, token)
+
       [list] when list in ["l", "m", "d"] ->
         show(query, Screens.instances())
 
@@ -149,7 +199,7 @@ defmodule Bastion.Telegram.Bot do
       ["f", id] ->
         with_instance(query, id, fn instance ->
           answer(query)
-          send_screen(Screens.instance(instance), query["message"]["chat"]["id"])
+          send_screen({:instance, instance}, query["message"]["chat"]["id"])
         end)
 
       ["o", id] ->
@@ -304,7 +354,54 @@ defmodule Bastion.Telegram.Bot do
     end
   end
 
-  defp show_instance(query, instance), do: show(query, Screens.instance(instance))
+  defp show_instance(query, instance), do: show(query, instance_screen(instance))
+
+  defp instance_screen(%{transport: "node"} = instance), do: FleetScreens.instance(instance)
+  defp instance_screen(instance), do: Screens.instance(instance)
+
+  defp ask_managed_update(query, %{transport: "node"} = instance) do
+    with true <- is_integer(get_in(query, ["from", "id"])),
+         {:ok, release} <- Releases.Managed.latest() do
+      token =
+        Cards.confirm(%{
+          instance_id: instance.id,
+          release: release,
+          identity: callback_identity(query)
+        })
+
+      show(query, FleetScreens.confirm(instance, release, token))
+    else
+      _ -> answer(query, "Опубликованный релиз недоступен")
+    end
+  end
+
+  defp ask_managed_update(query, _instance), do: answer(query, "Действие недоступно")
+
+  defp confirm_managed_update(query, token) do
+    {chat_id, message_id, actor_id} = identity = callback_identity(query)
+
+    with true <-
+           Telegram.allowed_chat?(chat_id) and is_integer(actor_id) and is_integer(message_id),
+         %{identity: ^identity, instance_id: id, release: release} <- Cards.confirmation(token),
+         %{transport: "node"} = instance <- Instances.get_instance(id) do
+      key = "telegram:#{chat_id}:#{message_id}:#{token}"
+
+      case ManagedUpdates.start(id, requester(query["from"]), key, release) do
+        {:ok, operation} ->
+          show(query, FleetScreens.instance(instance, nil, release.version, operation))
+
+        {:error, reason} ->
+          answer(query, "Обновление не принято: #{inspect(reason)}")
+      end
+    else
+      _ -> answer(query, "Подтверждение устарело. Откройте карточку заново.")
+    end
+  end
+
+  defp callback_identity(query) do
+    {get_in(query, ["message", "chat", "id"]), get_in(query, ["message", "message_id"]),
+     get_in(query, ["from", "id"])}
+  end
 
   defp answer(query, text \\ nil)
 
@@ -364,7 +461,7 @@ defmodule Bastion.Telegram.Bot do
   defp send_screen(screen, chat_id, params \\ %{})
 
   defp send_screen({:instance, instance}, chat_id, params) do
-    send_screen(Screens.instance(instance), chat_id, params)
+    send_screen(instance_screen(instance), chat_id, params)
   end
 
   defp send_screen({text, buttons}, chat_id, params) do

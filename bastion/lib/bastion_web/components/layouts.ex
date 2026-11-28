@@ -62,19 +62,25 @@ defmodule BastionWeb.Layouts do
         </.link>
       </div>
     </header>
-    <nav
-      :if={@current_admin}
-      class="flex flex-wrap gap-2 border-b border-base-300 px-4 py-1 sm:px-6 lg:px-8"
-    >
-      <.link navigate={~p"/"} class="btn btn-ghost btn-sm">Франшизы</.link>
-      <.link navigate={~p"/landing"} class="btn btn-ghost btn-sm">Настройки лендинга</.link>
-    </nav>
+    <div class="lg:flex lg:min-h-[calc(100vh-4rem)]">
+      <nav
+        :if={@current_admin}
+        class="flex flex-wrap gap-1 border-b border-base-300 bg-base-100 px-4 py-3 lg:w-56 lg:flex-col lg:border-b-0 lg:border-r lg:px-3"
+      >
+        <.link navigate={~p"/"} class="btn btn-ghost justify-start">Обзор</.link>
+        <.link navigate={~p"/instances"} class="btn btn-ghost justify-start">Франшизы</.link>
+        <.link navigate={~p"/nodes"} class="btn btn-ghost justify-start">Серверы</.link>
+        <.link navigate={~p"/domains"} class="btn btn-ghost justify-start">Домены</.link>
+        <.link navigate={~p"/operations"} class="btn btn-ghost justify-start">Операции</.link>
+        <.link navigate={~p"/landing"} class="btn btn-ghost justify-start">Лендинг</.link>
+      </nav>
 
-    <main class="px-4 py-6 sm:px-6 lg:px-8">
-      <div class="mx-auto max-w-6xl space-y-6">
-        {render_slot(@inner_block)}
-      </div>
-    </main>
+      <main class="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-8">
+        <div class="mx-auto max-w-6xl space-y-6">
+          {render_slot(@inner_block)}
+        </div>
+      </main>
+    </div>
 
     <.flash_group flash={@flash} />
     """

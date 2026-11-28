@@ -7,7 +7,8 @@ defmodule BastionWeb.AgentSocket do
   def connect(%{"token" => token, "instance_id" => instance_id}, socket, _connect_info)
       when is_binary(token) and is_binary(instance_id) do
     with true <- valid_token?(token),
-         {:ok, instance_id} <- Ecto.UUID.cast(instance_id) do
+         {:ok, instance_id} <- Ecto.UUID.cast(instance_id),
+         true <- legacy_instance?(instance_id) do
       {:ok, assign(socket, :instance_id, instance_id)}
     else
       _ -> :error
@@ -22,5 +23,12 @@ defmodule BastionWeb.AgentSocket do
   defp valid_token?(token) do
     expected = Application.get_env(:bastion, :agent_token)
     is_binary(expected) and Plug.Crypto.secure_compare(token, expected)
+  end
+
+  defp legacy_instance?(id) do
+    case Bastion.Repo.get(Bastion.Instances.Instance, id) do
+      %{transport: "node"} -> false
+      _ -> true
+    end
   end
 end

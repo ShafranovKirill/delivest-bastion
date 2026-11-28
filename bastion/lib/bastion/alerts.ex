@@ -75,6 +75,36 @@ defmodule Bastion.Alerts do
     end
   end
 
+  def notify_once(instance, key, nil), do: close_thread(instance.id, key)
+
+  def notify_once(instance, key, text) do
+    if muted?(instance) do
+      :muted
+    else
+      now = DateTime.utc_now(:second)
+
+      case Repo.insert_all(
+             Thread,
+             [
+               %{
+                 id: Ecto.UUID.generate(),
+                 instance_id: instance.id,
+                 key: key,
+                 message_id: 0,
+                 text: text,
+                 inserted_at: now,
+                 updated_at: now
+               }
+             ],
+             on_conflict: :nothing,
+             conflict_target: [:instance_id, :key]
+           ) do
+        {1, _} -> notify(instance, text, open: key)
+        {0, _} -> :skipped
+      end
+    end
+  end
+
   def muted?(%Instance{muted_until: nil}), do: false
 
   def muted?(%Instance{muted_until: until}),
@@ -144,14 +174,14 @@ defmodule Bastion.Alerts do
     end
   end
 
-  defp reply_to(params, %Thread{message_id: message_id}),
+  defp reply_to(params, %Thread{message_id: message_id}) when message_id > 0,
     do:
       Map.put(params, :reply_parameters, %{
         message_id: message_id,
         allow_sending_without_reply: true
       })
 
-  defp reply_to(params, nil), do: params
+  defp reply_to(params, _thread), do: params
 
   defp get_thread(instance_id, key), do: Repo.get_by(Thread, instance_id: instance_id, key: key)
 
@@ -169,7 +199,7 @@ defmodule Bastion.Alerts do
       Repo.delete(thread)
       took = Downtime.format_duration(DateTime.diff(DateTime.utc_now(), thread.inserted_at))
 
-      if Telegram.configured?() do
+      if thread.message_id > 0 and Telegram.configured?() do
         Telegram.call("editMessageText", %{
           chat_id: Telegram.chat_id(),
           message_id: thread.message_id,

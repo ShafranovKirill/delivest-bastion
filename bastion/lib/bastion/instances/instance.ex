@@ -13,6 +13,9 @@ defmodule Bastion.Instances.Instance do
     field :admin_password, :string, virtual: true, redact: true
     field :admin_password_encrypted, :string, redact: true
     field :name, :string
+    field :transport, :string, default: "agent"
+    field :desired_state, :string
+    field :desired_release, :string
     field :hosts, :map, default: %{}
     field :agent_version, :string
     field :actions, {:array, :string}, default: []
@@ -33,6 +36,8 @@ defmodule Bastion.Instances.Instance do
     field :online, :boolean, virtual: true, default: false
 
     has_many :commands, Bastion.Instances.Command
+    has_many :placements, Bastion.Nodes.Placement
+    has_many :node_operations, Bastion.Nodes.Operation
     has_many :incidents, Bastion.Downtime.Incident
     has_many :maintenance_windows, Bastion.Maintenance.Window
 

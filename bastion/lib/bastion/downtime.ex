@@ -55,6 +55,14 @@ defmodule Bastion.Downtime do
     |> Repo.all()
   end
 
+  def recent_incidents(limit \\ 10) do
+    Incident
+    |> order_by([i], desc: i.started_at)
+    |> limit(^limit)
+    |> preload(:instance)
+    |> Repo.all()
+  end
+
   @doc "Downtime and uptime percent for the last day, week and month."
   def summary(%Instance{} = instance, now \\ now()) do
     month_ago = DateTime.add(now, -Keyword.fetch!(@periods, :month))

@@ -1,5 +1,44 @@
 import Config
 
+config :bastion,
+  managed_postgres_backups: System.get_env("MANAGED_POSTGRES_BACKUP_ENABLED") == "true"
+
+fleet_number = fn name, default ->
+  case Integer.parse(System.get_env(name, "")) do
+    {value, ""} when value > 0 -> value
+    _ -> default
+  end
+end
+
+config :bastion, :fleet,
+  metrics_seconds: fleet_number.("MANAGED_METRICS_STALE_SECONDS", 90),
+  cpu_percent: fleet_number.("MANAGED_CPU_WARNING_PERCENT", 90),
+  ram_kib: fleet_number.("MANAGED_RAM_WARNING_KIB", 524_288),
+  disk_kib: fleet_number.("MANAGED_DISK_WARNING_KIB", 5_242_880),
+  backup_seconds: fleet_number.("MANAGED_BACKUP_WARNING_SECONDS", 129_600),
+  notify: System.get_env("MANAGED_FLEET_ALERTS_ENABLED") == "true"
+
+if verifier = System.get_env("MANAGED_RECOVERY_DRILL_SSH_CONFIG") do
+  config :bastion, recovery_drill_ssh_config: verifier
+end
+
+if key = System.get_env("DELIVEST_DNS_ENCRYPTION_KEY") do
+  config :bastion, dns_encryption_key: key
+end
+
+if installer_url = System.get_env("DELIVEST_NODE_INSTALLER_URL") do
+  config :bastion,
+    node_installer: %{
+      installer_url: installer_url,
+      installer_sha256: System.get_env("DELIVEST_NODE_INSTALLER_SHA256"),
+      archive_url: System.get_env("DELIVEST_NODE_ARCHIVE_URL"),
+      archive_sha256: System.get_env("DELIVEST_NODE_ARCHIVE_SHA256"),
+      version: System.get_env("DELIVEST_NODE_VERSION"),
+      bastion_url: System.get_env("DELIVEST_BASTION_URL"),
+      cert_email: System.get_env("DELIVEST_CERT_EMAIL")
+    }
+end
+
 # config/runtime.exs is executed for all environments, including
 # during releases. It is executed after compilation and before the
 # system starts, so it is typically used to load production configuration

@@ -1,5 +1,5 @@
 defmodule Bastion.Health do
-  alias Bastion.Maintenance
+  alias Bastion.{Fleet, Maintenance}
   alias Bastion.Instances.Instance
 
   @disk_warning 0.9
@@ -9,6 +9,9 @@ defmodule Bastion.Health do
     cond do
       Maintenance.active?(instance, now) ->
         %{level: :maintenance, problems: []}
+
+      instance.transport == "node" ->
+        managed_health(instance, now)
 
       is_nil(instance.last_seen_at) ->
         %{level: :unknown, problems: []}
@@ -28,6 +31,34 @@ defmodule Bastion.Health do
           warnings != [] -> %{level: :warning, problems: warnings}
           true -> %{level: :ok, problems: []}
         end
+    end
+  end
+
+  defp managed_health(instance, now) do
+    external =
+      for {kind, check} <- instance.external || %{},
+          Fleet.public_state(instance, kind, now) == :down,
+          do: "#{label(kind)} не отвечает снаружи (#{reason(check)})"
+
+    cond do
+      instance.desired_state == "stopped" ->
+        %{level: :stopped, problems: []}
+
+      external != [] ->
+        %{level: :down, problems: external}
+
+      !instance.online ->
+        %{level: :offline, problems: ["нет связи с нодой"]}
+
+      Fleet.public_state(instance, "site", now) == :unknown or
+          Fleet.public_state(instance, "api", now) == :unknown ->
+        %{level: :unknown, problems: ["нет свежей внешней проверки"]}
+
+      warnings(instance, now) != [] ->
+        %{level: :warning, problems: warnings(instance, now)}
+
+      true ->
+        %{level: :ok, problems: []}
     end
   end
 

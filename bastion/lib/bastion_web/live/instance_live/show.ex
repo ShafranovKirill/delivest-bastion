@@ -15,7 +15,12 @@ defmodule BastionWeb.InstanceLive.Show do
     Metrics,
     Releases,
     SiteAlerts,
-    Snapshots
+    Snapshots,
+    ManagedSnapshots,
+    Nodes,
+    ManagedInstances,
+    ManagedUpdates,
+    Domains
   }
 
   alias BastionWeb.Presence
@@ -36,11 +41,13 @@ defmodule BastionWeb.InstanceLive.Show do
   def mount(%{"id" => id}, _session, socket) do
     case Instances.get_instance(id) do
       nil ->
-        {:ok, socket |> put_flash(:error, "Экземпляр не найден") |> push_navigate(to: ~p"/")}
+        {:ok,
+         socket |> put_flash(:error, "Экземпляр не найден") |> push_navigate(to: ~p"/instances")}
 
       instance ->
         if connected?(socket) do
           Instances.subscribe()
+          Nodes.subscribe()
           Phoenix.PubSub.subscribe(Bastion.PubSub, Presence.topic())
           :timer.send_interval(@tick, :tick)
         end
@@ -55,6 +62,8 @@ defmodule BastionWeb.InstanceLive.Show do
            env_loaded?: false,
            maintenance_form: to_form(%{"minutes" => "30"}),
            release_form: to_form(%{}, as: :release),
+           delete_form: to_form(%{"confirm_instance_id" => ""}, as: :delete),
+           restore_check_form: to_form(%{"evidence" => ""}, as: :restore_check),
            agent_release_form: to_form(%{}, as: :agent_release),
            latest_release: nil,
            latest_loading?: false,
@@ -72,7 +81,8 @@ defmodule BastionWeb.InstanceLive.Show do
          |> assign_instance(instance)
          |> load_commands()
          |> load_backups()
-         |> load_metrics()}
+         |> load_metrics()
+         |> maybe_fetch_managed_latest()}
     end
   end
 
@@ -233,6 +243,156 @@ defmodule BastionWeb.InstanceLive.Show do
 
   def handle_event("refresh_latest", _params, socket), do: {:noreply, fetch_latest(socket)}
 
+  def handle_event("managed_update", _params, socket) do
+    instance = socket.assigns.instance
+
+    case {instance.transport, socket.assigns.managed_latest} do
+      {"node", %{} = release} ->
+        case ManagedUpdates.start(instance.id, socket.assigns.current_admin, nil, release) do
+          {:ok, _operation} ->
+            {:noreply,
+             socket
+             |> assign_instance(instance)
+             |> put_flash(:info, "Обновление поставлено в очередь")}
+
+          {:error, reason} ->
+            {:noreply, put_flash(socket, :error, "Обновление не принято: #{inspect(reason)}")}
+        end
+
+      _ ->
+        {:noreply, put_flash(socket, :error, "Опубликованный релиз недоступен")}
+    end
+  end
+
+  def handle_event("managed_command", %{"action" => action}, socket) do
+    case Nodes.queue(socket.assigns.instance.id, action, socket.assigns.current_admin) do
+      {:ok, _operation} ->
+        {:noreply,
+         socket
+         |> assign_instance(socket.assigns.instance)
+         |> put_flash(:info, "Команда поставлена в очередь")}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Команда не принята: #{inspect(reason)}")}
+    end
+  end
+
+  def handle_event("managed_release_domain", %{"binding-id" => id}, socket) do
+    if Enum.any?(socket.assigns.domain_bindings, &(&1.id == id)) do
+      case Domains.request_release(id, socket.assigns.current_admin) do
+        {:ok, _} ->
+          {:noreply, socket |> reload() |> put_flash(:info, "Освобождение адреса запущено")}
+
+        {:error, reason} ->
+          {:noreply, put_flash(socket, :error, "Адрес не освобождён: #{inspect(reason)}")}
+      end
+    else
+      {:noreply, put_flash(socket, :error, "Адрес не принадлежит франшизе")}
+    end
+  end
+
+  def handle_event("managed_delete", %{"delete" => %{"confirm_instance_id" => id}}, socket) do
+    if id == socket.assigns.instance.id do
+      case Nodes.queue(id, "instance_delete", socket.assigns.current_admin, %{
+             "confirm_instance_id" => id
+           }) do
+        {:ok, _} ->
+          {:noreply, socket |> reload() |> put_flash(:info, "Удаление установки запущено")}
+
+        {:error, reason} ->
+          {:noreply, put_flash(socket, :error, "Удаление не запущено: #{inspect(reason)}")}
+      end
+    else
+      {:noreply, put_flash(socket, :error, "Укажите точный ID франшизы")}
+    end
+  end
+
+  def handle_event("managed_retry_create", _, socket) do
+    case ManagedInstances.retry_create(socket.assigns.instance.id) do
+      {:ok, _} ->
+        {:noreply,
+         socket |> reload() |> put_flash(:info, "Повтор создания запущен с прежним ID и релизом")}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Повтор невозможен: #{inspect(reason)}")}
+    end
+  end
+
+  def handle_event("managed_cleanup", _, socket) do
+    case ManagedInstances.request_cleanup(
+           socket.assigns.instance.id,
+           socket.assigns.current_admin
+         ) do
+      {:ok, _} ->
+        {:noreply,
+         socket
+         |> reload()
+         |> put_flash(:info, "Очистка неудачной установки запущена; данные сохранены")}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Очистка невозможна: #{inspect(reason)}")}
+    end
+  end
+
+  def handle_event("managed_prepare_domain", %{"binding-id" => id}, socket) do
+    case Domains.request_prepare(id, nil, socket.assigns.current_admin) do
+      {:ok, _} ->
+        {:noreply, socket |> reload() |> put_flash(:info, "Подготовка нового адреса запущена")}
+
+      {:error, :waiting_dns} ->
+        {:noreply, socket |> reload() |> put_flash(:info, "Ожидаем DNS")}
+
+      {:error, reason} ->
+        {:noreply, socket |> reload() |> put_flash(:error, "Адрес не готов: #{inspect(reason)}")}
+    end
+  end
+
+  def handle_event("managed_confirm_browser", %{"binding-id" => id}, socket) do
+    case ManagedInstances.confirm_browser(id, socket.assigns.current_admin) do
+      {:ok, _} ->
+        {:noreply, socket |> reload() |> put_flash(:info, "Проверка браузером записана")}
+
+      {:error, reason} ->
+        {:noreply,
+         socket |> reload() |> put_flash(:error, "Проверка не принята: #{inspect(reason)}")}
+    end
+  end
+
+  def handle_event("managed_activate_domain", %{"binding-id" => id}, socket) do
+    case ManagedInstances.activate(id, socket.assigns.current_admin) do
+      {:ok, _} ->
+        {:noreply, socket |> reload() |> put_flash(:info, "Переключение запущено")}
+
+      {:error, reason} ->
+        {:noreply,
+         socket |> reload() |> put_flash(:error, "Переключение невозможно: #{inspect(reason)}")}
+    end
+  end
+
+  def handle_event("managed_retry_rollback", _, socket) do
+    case ManagedInstances.retry_rollback(
+           socket.assigns.instance.id,
+           socket.assigns.current_admin
+         ) do
+      {:ok, _} ->
+        {:noreply, socket |> reload() |> put_flash(:info, "Повтор отката запущен")}
+
+      {:error, reason} ->
+        {:noreply,
+         socket |> reload() |> put_flash(:error, "Повтор отката невозможен: #{inspect(reason)}")}
+    end
+  end
+
+  def handle_event("rename_managed", %{"instance" => %{"name" => name}}, socket) do
+    case Nodes.rename_instance(socket.assigns.instance.id, name) do
+      {:ok, instance} ->
+        {:noreply, socket |> assign_instance(instance) |> put_flash(:info, "Название сохранено")}
+
+      {:error, _} ->
+        {:noreply, put_flash(socket, :error, "Не удалось сохранить название")}
+    end
+  end
+
   def handle_event("command", %{"action" => "agent_update"}, socket) do
     if "release_manifest_v1" in socket.assigns.instance.capabilities do
       handle_event("install_agent_release", %{}, socket)
@@ -324,6 +484,65 @@ defmodule BastionWeb.InstanceLive.Show do
     {:noreply, load_backups(socket)}
   end
 
+  def handle_event("managed_snapshot", _, socket) do
+    socket =
+      case ManagedSnapshots.start(socket.assigns.instance, socket.assigns.current_admin) do
+        {:ok, _} -> put_flash(socket, :info, "Нода создаёт полную копию")
+        {:error, reason} -> put_flash(socket, :error, "Копия не начата: #{inspect(reason)}")
+      end
+
+    {:noreply, load_backups(socket)}
+  end
+
+  def handle_event("managed_database_backup", _, socket) do
+    socket =
+      case ManagedSnapshots.start_database(socket.assigns.instance, socket.assigns.current_admin) do
+        {:ok, _} -> put_flash(socket, :info, "Нода создаёт дамп PostgreSQL")
+        {:error, :not_running} -> put_flash(socket, :error, "Сначала запустите франшизу")
+        {:error, reason} -> put_flash(socket, :error, "Дамп не начат: #{inspect(reason)}")
+      end
+
+    {:noreply, load_backups(socket)}
+  end
+
+  def handle_event(
+        "managed_restore_checked",
+        %{"snapshot_id" => id, "restore_check" => %{"evidence" => evidence}},
+        socket
+      ) do
+    if socket.assigns.instance.transport == "node" and socket.assigns.managed_snapshot_latest &&
+         socket.assigns.managed_snapshot_latest.id == id do
+      case ManagedSnapshots.confirm_restore(id, socket.assigns.current_admin, evidence) do
+        {:ok, _} ->
+          {:noreply,
+           socket |> load_backups() |> put_flash(:info, "Проверка восстановления записана")}
+
+        {:error, reason} ->
+          {:noreply, put_flash(socket, :error, "Проверка не записана: #{inspect(reason)}")}
+      end
+    else
+      {:noreply, put_flash(socket, :error, "Выберите текущую полную копию")}
+    end
+  end
+
+  def handle_event("managed_retry_prune", _, socket) do
+    case socket.assigns.managed_snapshot_latest do
+      %{restore_checked_at: checked, restore_evidence: evidence, error: error} = snapshot
+      when not is_nil(checked) and not is_nil(error) ->
+        case ManagedSnapshots.confirm_restore(snapshot.id, socket.assigns.current_admin, evidence) do
+          {:ok, _} ->
+            {:noreply,
+             socket |> load_backups() |> put_flash(:info, "Очистка прежних копий повторена")}
+
+          {:error, reason} ->
+            {:noreply, put_flash(socket, :error, "Очистка не выполнена: #{inspect(reason)}")}
+        end
+
+      _ ->
+        {:noreply, socket}
+    end
+  end
+
   def handle_event("maintenance_toggle", _params, socket),
     do: {:noreply, assign(socket, maintenance_open?: !socket.assigns.maintenance_open?)}
 
@@ -375,9 +594,16 @@ defmodule BastionWeb.InstanceLive.Show do
     {:noreply, socket}
   end
 
+  def handle_event("delete", _params, %{assigns: %{instance: %{transport: "node"}}} = socket) do
+    {:noreply,
+     put_flash(socket, :error, "Удаление управляемой франшизы требует отдельной операции")}
+  end
+
   def handle_event("delete", _params, socket) do
     {:ok, _} = Instances.delete_instance(socket.assigns.instance)
-    {:noreply, socket |> put_flash(:info, "Экземпляр удалён") |> push_navigate(to: ~p"/")}
+
+    {:noreply,
+     socket |> put_flash(:info, "Экземпляр удалён") |> push_navigate(to: ~p"/instances")}
   end
 
   @impl true
@@ -389,6 +615,20 @@ defmodule BastionWeb.InstanceLive.Show do
   def handle_async(:latest_release, _result, socket),
     do:
       {:noreply, assign(socket, latest_release: nil, latest_loading?: false, latest_error?: true)}
+
+  def handle_async(:managed_latest, {:ok, {:ok, release}}, socket),
+    do: {:noreply, assign(socket, managed_latest: release)}
+
+  def handle_async(:managed_latest, _result, socket),
+    do: {:noreply, assign(socket, managed_latest: nil)}
+
+  defp maybe_fetch_managed_latest(socket) do
+    socket = assign(socket, managed_latest: nil)
+
+    if connected?(socket) and socket.assigns.instance.transport == "node",
+      do: start_async(socket, :managed_latest, fn -> Releases.Managed.latest() end),
+      else: socket
+  end
 
   defp fetch_latest(socket) do
     if connected?(socket) do
@@ -405,7 +645,7 @@ defmodule BastionWeb.InstanceLive.Show do
     do: {:noreply, reload(socket)}
 
   def handle_info({:instance_deleted, %{id: id}}, %{assigns: %{instance: %{id: id}}} = socket),
-    do: {:noreply, push_navigate(socket, to: ~p"/")}
+    do: {:noreply, push_navigate(socket, to: ~p"/instances")}
 
   def handle_info(
         {:command_updated, %{instance_id: id} = command},
@@ -424,6 +664,7 @@ defmodule BastionWeb.InstanceLive.Show do
 
   def handle_info({:backup_updated, _backup}, socket), do: {:noreply, load_backups(socket)}
   def handle_info({:snapshot_updated, _snapshot}, socket), do: {:noreply, load_backups(socket)}
+  def handle_info(:nodes_updated, socket), do: {:noreply, reload(socket)}
 
   def handle_info({:env_loaded, %{id: id}, content}, %{assigns: %{env_request: id}} = socket) do
     {:noreply,
@@ -473,7 +714,7 @@ defmodule BastionWeb.InstanceLive.Show do
 
   defp reload(socket) do
     case Instances.get_instance(socket.assigns.instance.id) do
-      nil -> push_navigate(socket, to: ~p"/")
+      nil -> push_navigate(socket, to: ~p"/instances")
       instance -> assign_instance(socket, instance)
     end
   end
@@ -486,7 +727,11 @@ defmodule BastionWeb.InstanceLive.Show do
       incidents: Downtime.list_incidents(instance.id),
       operations: Instances.last_successful_operations(instance.id),
       last_update_command: Instances.last_update_command(instance.id),
-      maintenance_windows: Maintenance.windows(instance)
+      maintenance_windows: Maintenance.windows(instance),
+      node_placement: Nodes.placement_for(instance.id),
+      node_operations: Nodes.operations_for(instance.id),
+      domain_bindings:
+        if(instance.transport == "node", do: ManagedInstances.bindings(instance.id), else: [])
     )
   end
 
@@ -496,7 +741,13 @@ defmodule BastionWeb.InstanceLive.Show do
     assign(socket,
       backups: Backups.list(id),
       snapshot_latest: Snapshots.latest(id),
-      snapshot_current: Snapshots.current(id)
+      snapshot_current: Snapshots.current(id),
+      managed_snapshot_latest: ManagedSnapshots.latest(id),
+      managed_last_drill: ManagedSnapshots.last_drill(id),
+      managed_snapshot_current: ManagedSnapshots.current(id),
+      managed_snapshot_restore_checked: ManagedSnapshots.last_restore_checked(id),
+      managed_database_latest: ManagedSnapshots.latest(id, "postgres"),
+      managed_database_current: ManagedSnapshots.current(id, "postgres")
     )
   end
 
@@ -517,6 +768,13 @@ defmodule BastionWeb.InstanceLive.Show do
   end
 
   defp since_label(_), do: nil
+
+  defp snapshot_point(snapshot) do
+    case DateTime.from_iso8601(snapshot.release_compatibility["captured_at"] || "") do
+      {:ok, at, _offset} -> datetime(at)
+      _ -> datetime(snapshot.finished_at)
+    end
+  end
 
   defp gigabytes(kb), do: :erlang.float_to_binary(kb / 1_048_576, decimals: 1) <> " ГБ"
 
@@ -649,7 +907,7 @@ defmodule BastionWeb.InstanceLive.Show do
     ~H"""
     <Layouts.app flash={@flash} current_admin={@current_admin}>
       <.link
-        navigate={~p"/"}
+        navigate={~p"/instances"}
         class="inline-flex items-center gap-1 text-sm text-base-content/60 hover:text-base-content"
       >
         <.icon name="hero-arrow-left" class="size-4" /> Все франшизы
@@ -664,8 +922,339 @@ defmodule BastionWeb.InstanceLive.Show do
         </div>
       </div>
 
+      <section
+        :if={@instance.transport == "node"}
+        class="rounded-xl border border-base-300 bg-base-100 p-5 space-y-4"
+      >
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-lg font-semibold">Управление через Delivest Node</h2>
+          <.link
+            :if={@node_placement}
+            navigate={~p"/nodes/#{@node_placement.node_id}"}
+            class="link text-sm"
+          >{@node_placement && @node_placement.node.name}</.link>
+        </div>
+        <p :if={@node_placement} class="text-sm text-base-content/60">
+          Compose-проект {@node_placement.project_name} · 127.0.0.1:{@node_placement.gateway_port} · Фактически {@node_placement.observed_state ||
+            "нет данных"} · Цель {@instance.desired_state || "не задана"}
+        </p>
+        <p class="text-sm text-base-content/60">
+          Установлен {@node_placement && (@node_placement.observed_release || "нет данных")} · опубликован {(@managed_latest &&
+                                                                                                               @managed_latest.version) ||
+            "нет данных"}
+        </p>
+        <div :if={@node_placement} class="flex flex-wrap gap-2">
+          <.link id="move-franchise" navigate={~p"/instances/#{@instance.id}/move"} class="btn btn-sm">Перенести</.link>
+          <button
+            :if={@managed_latest && @managed_latest.version != @node_placement.observed_release}
+            id="managed-update"
+            type="button"
+            class="btn btn-sm btn-primary"
+            phx-click="managed_update"
+            data-confirm={"Обновить #{@instance.name} до v#{@managed_latest.version}?"}
+          >Обновить Delivest</button>
+          <button
+            :for={action <- ~w(status diagnostics stop start)}
+            type="button"
+            class="btn btn-sm"
+            phx-click="managed_command"
+            phx-value-action={action}
+          >{action}</button>
+        </div>
+        <div id="managed-backups" class="rounded-lg bg-base-200 p-3 space-y-2 text-sm">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <h3 class="font-semibold">Полная резервная копия</h3>
+            <button
+              id="managed-snapshot-now"
+              type="button"
+              class="btn btn-sm"
+              phx-click="managed_snapshot"
+              disabled={@managed_snapshot_current && @managed_snapshot_current.status == "pending"}
+              data-confirm="Создать полную копию? Выбранная франшиза остановится на время копирования."
+            >Создать копию</button>
+          </div>
+          <p :if={@managed_snapshot_current && @managed_snapshot_current.status == "pending"}>
+            Копирование выполняется.
+          </p>
+          <p
+            :if={@managed_snapshot_current && @managed_snapshot_current.status == "error"}
+            class="text-error"
+          >
+            Последняя попытка завершилась ошибкой: {@managed_snapshot_current.error}
+          </p>
+          <p :if={@managed_snapshot_latest}>
+            Последняя копия: {snapshot_point(@managed_snapshot_latest)} · {format_size(
+              @managed_snapshot_latest.size
+            )} · целостность архива проверена · {if @managed_snapshot_latest.restore_checked_at,
+              do: "восстановление проверено",
+              else: "восстановление не проверено"}
+          </p>
+          <p
+            :if={@managed_last_drill}
+            id="managed-recovery-drill"
+          >
+            Автоматическая проверка PostgreSQL и тома медиа · {datetime(@managed_last_drill.drill_at)} · {if @managed_last_drill.drill_status ==
+                                                                                                               "ok",
+                                                                                                             do:
+                                                                                                               "Пройдена",
+                                                                                                             else:
+                                                                                                               @managed_last_drill.drill_result[
+                                                                                                                 "reason"
+                                                                                                               ]}
+          </p>
+          <div :if={@managed_snapshot_restore_checked} id="managed-restore-point">
+            <p>
+              Последняя подтверждённая точка восстановления: {snapshot_point(
+                @managed_snapshot_restore_checked
+              )}
+            </p>
+            <.link
+              :if={
+                !@managed_snapshot_latest ||
+                  @managed_snapshot_latest.id != @managed_snapshot_restore_checked.id
+              }
+              href={~p"/backups/snapshots/#{@managed_snapshot_restore_checked.id}/download"}
+              class="link"
+            >Скачать проверенную копию</.link>
+            <code class="block break-all">SHA-256 {@managed_snapshot_restore_checked.checksum}</code>
+          </div>
+          <.link
+            :if={@managed_snapshot_latest}
+            id="managed-snapshot-download"
+            href={~p"/backups/snapshots/#{@managed_snapshot_latest.id}/download"}
+            class="btn btn-sm btn-outline"
+          >
+            Скачать копию
+          </.link>
+          <code
+            :if={@managed_snapshot_latest && !@managed_snapshot_latest.restore_checked_at}
+            class="block break-all"
+          >SHA-256 {@managed_snapshot_latest.checksum}</code>
+          <p :if={!@managed_snapshot_latest}>Пригодной копии пока нет.</p>
+          <p :if={@managed_snapshot_latest && @managed_snapshot_latest.error} class="text-warning">
+            {@managed_snapshot_latest.error}
+          </p>
+          <button
+            :if={
+              @managed_snapshot_latest && @managed_snapshot_latest.restore_checked_at &&
+                @managed_snapshot_latest.error
+            }
+            type="button"
+            class="btn btn-xs"
+            phx-click="managed_retry_prune"
+          >
+            Повторить очистку прежних копий
+          </button>
+          <.form
+            :if={@managed_snapshot_latest && !@managed_snapshot_latest.restore_checked_at}
+            for={@restore_check_form}
+            id="managed-restore-check-form"
+            phx-submit="managed_restore_checked"
+            class="space-y-2"
+          >
+            <input type="hidden" name="snapshot_id" value={@managed_snapshot_latest.id} />
+            <.input
+              field={@restore_check_form[:evidence]}
+              label="Протокол изолированного восстановления"
+              required
+              minlength="10"
+            />
+            <button
+              type="submit"
+              class="btn btn-sm btn-outline"
+              data-confirm="Подтвердить фактически выполненное восстановление этой копии? После отметки предыдущая копия может быть удалена по политике хранения."
+            >
+              Подтвердить проверку восстановления
+            </button>
+          </.form>
+          <p
+            :if={@managed_snapshot_latest && snapshot_stale?(@managed_snapshot_latest)}
+            class="text-warning"
+          >
+            Последней копии больше суток.
+          </p>
+        </div>
+        <div id="managed-database-backups" class="rounded-lg bg-base-200 p-3 space-y-2 text-sm">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <h3 class="font-semibold">Дамп PostgreSQL</h3>
+            <button
+              id="managed-database-backup-now"
+              type="button"
+              class="btn btn-sm"
+              phx-click="managed_database_backup"
+              disabled={
+                !@node_placement || @node_placement.observed_state != "running" ||
+                  (@managed_database_current &&
+                     @managed_database_current.status in ["pending", "uploaded"])
+              }
+            >Создать дамп</button>
+          </div>
+          <p class="text-base-content/70">
+            Содержит только базу данных. Для полного восстановления нужна копия с файлами.
+          </p>
+          <p :if={
+            @managed_database_current && @managed_database_current.status in ["pending", "uploaded"]
+          }>
+            Подготавливается дамп PostgreSQL.
+          </p>
+          <p
+            :if={@managed_database_current && @managed_database_current.status == "error"}
+            class="text-error"
+          >
+            Последняя попытка завершилась ошибкой: {@managed_database_current.error}
+          </p>
+          <p :if={@managed_database_latest}>
+            Последний дамп: {snapshot_point(@managed_database_latest)} · {format_size(
+              @managed_database_latest.size
+            )}
+          </p>
+          <.link
+            :if={@managed_database_latest}
+            href={~p"/backups/snapshots/#{@managed_database_latest.id}/download"}
+            class="btn btn-sm btn-outline"
+          >Скачать дамп</.link>
+        </div>
+        <div
+          :if={diagnostics = Enum.find(@node_operations, &(&1.action == "diagnostics"))}
+          id="managed-diagnostics"
+          class="rounded-lg bg-base-200 p-3 text-sm"
+        >
+          Диагностика: {diagnostics.status} · {inspect(diagnostics.result)}
+        </div>
+        <div id="managed-creation" class="rounded-lg bg-base-200 p-3 text-sm space-y-2">
+          <p>
+            Релиз: {@instance.desired_release || "не выбран"}. Создание: {case Enum.find(
+                                                                                 @node_operations,
+                                                                                 &(&1.action ==
+                                                                                     "instance_create")
+                                                                               ) do
+              nil -> "не начато"
+              op -> op.progress["stage"] || op.status
+            end}.
+          </p>
+          <div class="flex gap-2">
+            <button id="managed-retry-create" class="btn btn-sm" phx-click="managed_retry_create">Повторить создание</button>
+            <button
+              id="managed-cleanup"
+              class="btn btn-sm btn-outline"
+              phx-click="managed_cleanup"
+              data-confirm="Очистить только неудачную установку? Данные остаются на ноде."
+            >Очистить неудачную</button>
+          </div>
+        </div>
+        <div id="managed-domains" class="space-y-2">
+          <h3 class="font-semibold">Адреса</h3>
+          <div :if={rollback = Enum.find(@node_operations, &(&1.action == "domain_rollback"))}>
+            <p :if={rollback.status in ~w(error unknown)} class="text-sm text-warning">
+              Откат адреса не завершён: {rollback.status}. Старый адрес остаётся основным в Bastion.
+            </p>
+            <button
+              :if={rollback.status in ~w(error unknown)}
+              id="managed-retry-rollback"
+              class="btn btn-sm btn-warning"
+              phx-click="managed_retry_rollback"
+            >Повторить откат</button>
+          </div>
+          <p class="text-sm text-base-content/60">
+            Добавьте новый домен в разделе «Домены», затем подготовьте его при работающем сайте. После проверки HTTPS откройте адрес в браузере и подтвердите проверку.
+          </p>
+          <.link navigate={~p"/domains"} class="link text-sm">Реестр доменов</.link>
+          <div
+            :for={binding <- @domain_bindings}
+            id={"binding-#{binding.id}"}
+            class="flex flex-wrap items-center gap-2 text-sm rounded-lg border p-3"
+          >
+            <span>{binding.purpose}: {binding.domain.hostname}</span>
+            <span>{binding.state}{if binding.primary, do: " · основной", else: ""}</span>
+            <button
+              id={"managed-release-#{binding.id}"}
+              type="button"
+              class="btn btn-xs btn-outline"
+              phx-click="managed_release_domain"
+              phx-value-binding-id={binding.id}
+              data-confirm="Освободить этот адрес? Витрина может перестать открываться."
+            >Освободить</button>
+            <button
+              :if={binding.state in ~w(reserved waiting_dns error)}
+              class="btn btn-xs"
+              phx-click="managed_prepare_domain"
+              phx-value-binding-id={binding.id}
+            >Подготовить</button>
+            <button
+              :if={binding.purpose == "site" and binding.state == "connected" and !binding.primary}
+              class="btn btn-xs"
+              phx-click="managed_confirm_browser"
+              phx-value-binding-id={binding.id}
+              data-confirm="Вы открыли новый адрес в браузере и проверили витрину, вход и корзину?"
+            >Подтвердить браузер</button>
+            <button
+              :if={
+                binding.purpose == "site" and binding.state == "connected" and !binding.primary and
+                  binding.observed_records["browser_verification"]
+              }
+              class="btn btn-xs btn-primary"
+              phx-click="managed_activate_domain"
+              phx-value-binding-id={binding.id}
+            >Сделать основным</button>
+          </div>
+        </div>
+        <div
+          :if={@node_placement}
+          id="managed-delete"
+          class="rounded-lg border border-error/40 p-3 space-y-2 text-sm"
+        >
+          <h3 class="font-semibold">Удалить установку</h3>
+          <p>
+            Сначала остановите франшизу и освободите все адреса выше. После подтверждения нода удалит её контейнеры, тома, локальные файлы и маршруты. Внешние резервные копии сохраняются.
+          </p>
+          <p>ID франшизы: <code>{@instance.id}</code></p>
+          <.form
+            for={@delete_form}
+            id="managed-delete-form"
+            phx-submit="managed_delete"
+            class="flex flex-wrap items-end gap-2"
+          >
+            <.input
+              field={@delete_form[:confirm_instance_id]}
+              label="Введите ID франшизы"
+            />
+            <button
+              type="submit"
+              class="btn btn-error btn-sm"
+              disabled={
+                @domain_bindings != [] || @instance.desired_state != "stopped" ||
+                  @node_placement.observed_state != "stopped"
+              }
+              data-confirm="Удалить данные только этой франшизы с ноды?"
+            >
+              Удалить установку
+            </button>
+          </.form>
+        </div>
+        <.form
+          for={%{}}
+          as={:instance}
+          phx-submit="rename_managed"
+          class="flex flex-wrap items-end gap-2"
+        >
+          <.input
+            name="instance[name]"
+            value={@instance.name}
+            label="Название франшизы"
+            required
+          />
+          <button class="btn btn-sm">Переименовать</button>
+        </.form>
+        <h3 class="font-semibold">История операций</h3>
+        <p :for={operation <- @node_operations} class="text-sm">
+          {datetime(operation.inserted_at)} · {operation.action} · {operation.status} · {operation.result[
+            "reason"
+          ] || operation.result["message"]}
+        </p>
+      </section>
+
       <div
-        :if={Maintenance.active?(@instance)}
+        :if={@instance.transport != "node" and Maintenance.active?(@instance)}
         id="maintenance-active"
         class="rounded-xl border border-sky-300 bg-sky-50 p-4 text-sm text-sky-950 flex flex-wrap items-center justify-between gap-3"
       >
@@ -679,7 +1268,11 @@ defmodule BastionWeb.InstanceLive.Show do
         >Завершить обслуживание</button>
       </div>
 
-      <div :if={@instance.stopped_at} id="instance-stopped" class="alert alert-info">
+      <div
+        :if={@instance.transport != "node" and @instance.stopped_at}
+        id="instance-stopped"
+        class="alert alert-info"
+      >
         <.icon name="hero-pause-circle" class="size-5" />
         <span>
           Сайт выключен по плану {datetime(@instance.stopped_at)}. Пока его не включат,
@@ -687,7 +1280,11 @@ defmodule BastionWeb.InstanceLive.Show do
         </span>
       </div>
 
-      <div id="instance-overview" class="rounded-xl border border-base-300 bg-base-100 p-4 sm:p-5">
+      <div
+        :if={@instance.transport != "node"}
+        id="instance-overview"
+        class="rounded-xl border border-base-300 bg-base-100 p-4 sm:p-5"
+      >
         <div class="flex flex-wrap items-center justify-between gap-4">
           <div class="flex flex-wrap gap-6" id="instance-endpoints">
             <.open_link
@@ -707,7 +1304,7 @@ defmodule BastionWeb.InstanceLive.Show do
         </div>
       </div>
 
-      <div id="instance-modules" class="space-y-3">
+      <div :if={@instance.transport != "node"} id="instance-modules" class="space-y-3">
         <.module_panel
           id="errors"
           title="Проблемы"
@@ -797,7 +1394,10 @@ defmodule BastionWeb.InstanceLive.Show do
               <div class="overflow-x-auto">
                 <table class="table table-sm">
                   <tbody>
-                    <tr :for={order <- CrmAlerts.problems(@instance)} id={"crm-order-#{order["id"]}"}>
+                    <tr
+                      :for={order <- CrmAlerts.problems(@instance)}
+                      id={"crm-order-#{order["id"]}"}
+                    >
                       <td class="font-semibold whitespace-nowrap">№{order["number"]}</td>
                       <td class="whitespace-nowrap">
                         <span :if={order["status"] == "failed"} class="badge badge-error badge-sm">
@@ -893,7 +1493,9 @@ defmodule BastionWeb.InstanceLive.Show do
                     class="btn btn-link btn-xs"
                     phx-click="refresh_latest"
                   >Повторить проверку</button>
-                  <p :if={@latest_error?} class="text-warning">Не удалось проверить релизы GitHub.</p>
+                  <p :if={@latest_error?} class="text-warning">
+                    Не удалось проверить релизы GitHub.
+                  </p>
                 </div>
                 <.form for={@release_form} id="release-form" phx-submit="install_release">
                   <button
@@ -1057,14 +1659,19 @@ defmodule BastionWeb.InstanceLive.Show do
                     <div class="text-xl font-bold tabular-nums">
                       {(@load.cpu && percent(@load.cpu)) || "—"}
                     </div>
-                    <div :if={@load.cpus} class="text-xs text-base-content/60">{@load.cpus} ядер</div>
+                    <div :if={@load.cpus} class="text-xs text-base-content/60">
+                      {@load.cpus} ядер
+                    </div>
                   </div>
                   <div class="rounded-box bg-base-200 p-3">
                     <div class="text-xs text-base-content/60">RAM хоста</div>
                     <div class="text-xl font-bold tabular-nums">
                       {(@load.memory && percent(@load.memory)) || "—"}
                     </div>
-                    <div :if={@load.memory_total_kb} class="text-xs text-base-content/60 tabular-nums">
+                    <div
+                      :if={@load.memory_total_kb}
+                      class="text-xs text-base-content/60 tabular-nums"
+                    >
                       {gigabytes(@load.memory_used_kb)} из {gigabytes(@load.memory_total_kb)}
                     </div>
                   </div>
@@ -1266,7 +1873,8 @@ defmodule BastionWeb.InstanceLive.Show do
                             phx-click="restore"
                             phx-value-backup_id={backup.id}
                             disabled={
-                              !@instance.online || busy?(@commands) || !backups_supported?(@instance)
+                              !@instance.online || busy?(@commands) ||
+                                !backups_supported?(@instance)
                             }
                             data-confirm={"Восстановить базу #{@instance.name} из бэкапа от #{datetime(backup.inserted_at)}? Всё, что появилось после него, пропадёт из рабочей базы."}
                           >
@@ -1336,7 +1944,10 @@ defmodule BastionWeb.InstanceLive.Show do
           open={MapSet.member?(@open_modules, "logs")}
         >
           <div id="tab-logs-panel" class="space-y-4">
-            <details id="technical-details" class="rounded-xl border border-base-300 bg-base-100 p-4">
+            <details
+              id="technical-details"
+              class="rounded-xl border border-base-300 bg-base-100 p-4"
+            >
               <summary class="cursor-pointer font-semibold">Технические подробности</summary>
               <p class="mt-2 mb-4 text-xs text-base-content/60">
                 Версия агента: {@instance.agent_version || "—"} · образ {agent_revision(@instance)}
@@ -1398,7 +2009,8 @@ defmodule BastionWeb.InstanceLive.Show do
                           <td><.check check={(@instance.status || %{})["checks"][kind]} /></td>
                           <td><.check check={@instance.external[kind]} /></td>
                           <td>
-                            <% days = cert_days((@instance.external[kind] || %{})["cert_expires_at"]) %>
+                            <% days =
+                              cert_days((@instance.external[kind] || %{})["cert_expires_at"]) %>
                             <span :if={days} class={days < 14 && "text-warning"}>{days} дн.</span>
                             <span :if={!days} class="text-base-content/40">—</span>
                           </td>
@@ -1406,7 +2018,8 @@ defmodule BastionWeb.InstanceLive.Show do
                       </tbody>
                     </table>
                     <p class="text-xs text-base-content/60">
-                      Диск: {(disk_percent(@instance) && "#{disk_percent(@instance)}% занято") || "—"} ·
+                      Диск: {(disk_percent(@instance) && "#{disk_percent(@instance)}% занято") ||
+                        "—"} ·
                       проверено снаружи {ago(@instance.checked_at)}
                     </p>
                   </div>
@@ -1453,7 +2066,9 @@ defmodule BastionWeb.InstanceLive.Show do
 
             <section class="space-y-2">
               <h2 class="font-bold">Команды и их вывод</h2>
-              <div :if={@commands == []} class="text-sm text-base-content/60">Команд ещё не было</div>
+              <div :if={@commands == []} class="text-sm text-base-content/60">
+                Команд ещё не было
+              </div>
               <details
                 :for={command <- @commands}
                 id={"command-#{command.id}"}
@@ -1542,7 +2157,7 @@ defmodule BastionWeb.InstanceLive.Show do
                 >Изменить</button>
               </div>
               <div :if={!@editing_client?} class="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-                <div id="client-payment" class="space-y-2">
+                <div :if={@instance.transport != "node"} id="client-payment" class="space-y-2">
                   <div class="text-xs text-base-content/50">Подписка</div>
                   <.payment_date date={@instance.payment_due_on} />
                 </div>
@@ -1576,7 +2191,9 @@ defmodule BastionWeb.InstanceLive.Show do
                     >{if @revealed_password, do: "Скрыть", else: "Показать"}</button>
                   </div>
                   <p :if={!@instance.admin_password_encrypted} class="text-sm text-base-content/40">
-                    Пароль не сохранён
+                    {if @instance.transport == "node",
+                      do: "Ожидаем безопасную передачу доступа от ноды",
+                      else: "Пароль не сохранён"}
                   </p>
                 </div>
               </div>
@@ -1593,6 +2210,7 @@ defmodule BastionWeb.InstanceLive.Show do
                   label="Телефон клиента"
                 />
                 <.input
+                  :if={@instance.transport != "node"}
                   field={@client_form[:payment_due_on]}
                   type="date"
                   label="Дата оплаты / оплачено до"
@@ -1606,12 +2224,14 @@ defmodule BastionWeb.InstanceLive.Show do
                   />
                 </div>
                 <.input
+                  :if={@instance.transport != "node"}
                   field={@client_form[:admin_login]}
                   type="text"
                   label="Логин от админки"
                   autocomplete="off"
                 />
                 <.input
+                  :if={@instance.transport != "node"}
                   field={@client_form[:admin_password]}
                   type="password"
                   label="Новый пароль от админки"
@@ -1619,7 +2239,10 @@ defmodule BastionWeb.InstanceLive.Show do
                   autocomplete="new-password"
                   placeholder="Оставьте пустым, чтобы сохранить текущий"
                 />
-                <p class="sm:col-span-2 text-xs text-base-content/50">
+                <p
+                  :if={@instance.transport != "node"}
+                  class="sm:col-span-2 text-xs text-base-content/50"
+                >
                   Одно уведомление в Telegram в день оплаты, с 09:00 по Москве. {if !Bastion.Telegram.configured?(),
                     do: "Telegram пока не настроен."}
                 </p>

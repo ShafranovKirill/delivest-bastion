@@ -4,6 +4,7 @@ defmodule Bastion.Metrics.PruneWorker do
   @impl Oban.Worker
   def perform(_job) do
     Bastion.Metrics.prune()
+    Bastion.Nodes.prune_metrics()
     :ok
   end
 end
