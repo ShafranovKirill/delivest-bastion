@@ -161,6 +161,37 @@ defmodule Bastion.ManagedRolloutTest do
     assert {:error, :invalid_heartbeat} = Nodes.record_heartbeat(node.id, invalid)
   end
 
+  test "manual pause lets an in-flight command finish without dispatching the next" do
+    {first_node, first_id} = installation("first-pause", 18086)
+    {_second_node, second_id} = installation("second-pause", 18087)
+
+    assert {:ok, rollout} =
+             ManagedRollout.start([first_id, second_id], first_id, "admin", @release)
+
+    assert :ok = ManagedRollout.advance(rollout.id)
+    first = hd(Nodes.operations_for(first_id))
+
+    assert {:ok, _} = ManagedRollout.pause(rollout.id, "admin")
+    assert :ok = ManagedRollout.advance(rollout.id)
+
+    assert {:ok, _} =
+             Nodes.update_operation(first_node.id, first.id, "command_result", %{
+               "status" => "ok",
+               "result" => %{"release_version" => "9.0.0"}
+             })
+
+    assert :ok = ManagedRollout.reconcile_paused()
+
+    assert Enum.find(ManagedRollout.get(rollout.id).items, &(&1.instance_id == first_id)).status ==
+             "ok"
+
+    assert Nodes.operations_for(second_id) == []
+
+    assert {:ok, _} = ManagedRollout.resume(rollout.id, "admin")
+    assert :ok = ManagedRollout.advance(rollout.id)
+    assert length(Nodes.operations_for(second_id)) == 1
+  end
+
   defp installation(name, port) do
     {:ok, node, _} = Nodes.create_node(name)
     id = Ecto.UUID.generate()

@@ -23,7 +23,7 @@ defmodule BastionWeb.InstanceLive.Index do
        page_title: "Франшизы",
        search: "",
        rollout: Rollout.state(),
-       managed_rollout: ManagedRollout.latest(),
+       managed_rollout: ManagedRollout.current(),
        checking_images?: false,
        image_result: nil,
        create_form: new_create_form()
@@ -97,6 +97,17 @@ defmodule BastionWeb.InstanceLive.Index do
     end
   end
 
+  def handle_event("managed_rollout_pause", %{"id" => id}, socket) do
+    case ManagedRollout.pause(id, socket.assigns.current_admin) do
+      {:ok, _} ->
+        {:noreply,
+         socket |> put_flash(:info, "Выдача следующих заданий приостановлена") |> load()}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Не удалось приостановить: #{inspect(reason)}")}
+    end
+  end
+
   def handle_event("check_images", _params, socket) do
     if socket.assigns.checking_images? do
       {:noreply, socket}
@@ -162,7 +173,7 @@ defmodule BastionWeb.InstanceLive.Index do
       placements: placements,
       ready_nodes: Enum.filter(Nodes.list_nodes(), &(Nodes.ready?(&1) and not &1.maintenance)),
       managed_instances: Enum.filter(instances, &(&1.transport == "node")),
-      managed_rollout: ManagedRollout.latest()
+      managed_rollout: ManagedRollout.current()
     )
     |> stream(:instances, instances, reset: true, dom_id: &"instance-#{&1.id}")
   end
@@ -322,6 +333,12 @@ defmodule BastionWeb.InstanceLive.Index do
           <p :if={@managed_rollout.paused_reason} class="text-warning">
             {@managed_rollout.paused_reason}
           </p>
+          <button
+            :if={@managed_rollout.status == "running"}
+            phx-click="managed_rollout_pause"
+            phx-value-id={@managed_rollout.id}
+            class="btn btn-ghost btn-sm"
+          >Приостановить выдачу следующих заданий</button>
           <button
             :if={@managed_rollout.status == "paused"}
             phx-click="managed_rollout_resume"

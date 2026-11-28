@@ -17,6 +17,23 @@ defmodule Bastion.ManagedRollout do
     )
   end
 
+  def current do
+    active =
+      Repo.one(from r in Rollout, where: r.status == "running", limit: 1) ||
+        Repo.one(
+          from r in Rollout,
+            where: r.status == "paused",
+            order_by: [desc: r.inserted_at],
+            limit: 1
+        )
+
+    if active, do: get(active.id), else: latest()
+  end
+
+  def running do
+    Repo.one(from r in Rollout, where: r.status == "running", limit: 1)
+  end
+
   def get(id), do: Repo.get(Rollout, id) |> Repo.preload(items: [:instance, :operation])
 
   def start(ids, canary_id, requested_by, release \\ nil)
@@ -63,6 +80,22 @@ defmodule Bastion.ManagedRollout do
   end
 
   def start(_, _, _, _), do: {:error, :invalid_selection}
+
+  def pause(id, actor) when is_binary(actor) do
+    Repo.transaction(fn ->
+      rollout =
+        Repo.one(from r in Rollout, where: r.id == ^id, lock: "FOR UPDATE") ||
+          Repo.rollback(:not_found)
+
+      if rollout.status != "running", do: Repo.rollback(:not_running)
+
+      rollout
+      |> Ecto.Changeset.change(status: "paused", paused_reason: "Приостановлено: #{actor}")
+      |> Repo.update!()
+    end)
+  end
+
+  def pause(_, _), do: {:error, :invalid_request}
 
   def resume(id, requested_by) when is_binary(requested_by) do
     Repo.transaction(fn ->
@@ -113,6 +146,47 @@ defmodule Bastion.ManagedRollout do
       {:error, reason} ->
         {:error, reason}
     end
+  end
+
+  def reconcile_paused do
+    Repo.all(from r in Rollout, where: r.status == "paused")
+    |> Enum.each(fn rollout ->
+      Repo.transaction(fn ->
+        current = Repo.one!(from r in Rollout, where: r.id == ^rollout.id, lock: "FOR UPDATE")
+
+        if current.status == "paused" do
+          item =
+            Repo.one(
+              from i in Item,
+                where: i.rollout_id == ^current.id and i.status in ["running", "unknown"],
+                limit: 1,
+                lock: "FOR UPDATE"
+            )
+
+          if item do
+            operation = Repo.get!(Bastion.Nodes.Operation, item.operation_id)
+
+            case operation.status do
+              "ok" ->
+                item |> Ecto.Changeset.change(status: "ok") |> Repo.update!()
+
+              "error" ->
+                item
+                |> Ecto.Changeset.change(status: "error", error: inspect(operation.result))
+                |> Repo.update!()
+
+              "unknown" ->
+                item |> Ecto.Changeset.change(status: "unknown") |> Repo.update!()
+
+              _ ->
+                :ok
+            end
+          end
+        end
+      end)
+    end)
+
+    :ok
   end
 
   defp advance_locked(rollout) do
@@ -194,7 +268,7 @@ defmodule Bastion.ManagedRollout do
 
       "unknown" ->
         item |> Ecto.Changeset.change(status: "unknown") |> Repo.update!()
-        pause(rollout, "Результат команды неизвестен, требуется сверка с нодой")
+        pause_reason(rollout, "Результат команды неизвестен, требуется сверка с нодой")
 
       _ ->
         :waiting
@@ -203,10 +277,10 @@ defmodule Bastion.ManagedRollout do
 
   defp fail_item(rollout, item, reason) do
     item |> Ecto.Changeset.change(status: "error", error: reason) |> Repo.update!()
-    pause(rollout, reason)
+    pause_reason(rollout, reason)
   end
 
-  defp pause(rollout, reason) do
+  defp pause_reason(rollout, reason) do
     rollout
     |> Ecto.Changeset.change(status: "paused", paused_reason: reason)
     |> Repo.update!()

@@ -7,7 +7,9 @@ defmodule Bastion.ManagedRollout.Worker do
   end
 
   def perform(_job) do
-    Bastion.ManagedRollout.latest()
+    Bastion.ManagedRollout.reconcile_paused()
+
+    Bastion.ManagedRollout.running()
     |> case do
       %{status: "running", id: id} -> Bastion.ManagedRollout.advance(id)
       _ -> :ok
